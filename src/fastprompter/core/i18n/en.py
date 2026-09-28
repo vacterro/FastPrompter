@@ -1364,6 +1364,8 @@ TRANSLATIONS = {
     "␣ Remove gap below": "␣ Remove gap below",
     "■ STOP ALL SOUND": "■ STOP ALL SOUND",
     "▤ Fill from preset": "▤ Fill from preset",
+    "◀ Move Project Left": "◀ Move Project Left",
+    "▶ Move Project Right": "▶ Move Project Right",
     "▶ Sidebar Right": "▶ Sidebar Right",
     "♻ Manage Trash": "♻ Manage Trash",
     "♻ Restore": "♻ Restore",

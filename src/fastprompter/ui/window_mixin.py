@@ -602,11 +602,26 @@ class WindowMixin:
         was_visible = self.mini_settings_frame.isVisible()
         if not was_visible and hasattr(self, "_ensure_settings_built"):
             self._ensure_settings_built()
+        # Opening the panel lazy-builds a screenful of widgets and re-fits the
+        # window; on Windows that transient can hand the foreground away for a
+        # frame, and the main window's own hide-on-click-out (changeEvent) then
+        # reads it as the user clicking away — the window drops to the back of
+        # the z-order or hides outright the instant Settings opens. The ~30
+        # dialog sites already fence this with a counted focus lock; the
+        # embedded panel had none. Take one for the build/show transient and
+        # re-assert the front, without permanently disabling click-out.
+        if not was_visible and hasattr(self, "_increment_focus_lock"):
+            self._increment_focus_lock()
+            QTimer.singleShot(300, weak_qt_callback(
+                self, lambda w: w._decrement_focus_lock()))
         self.mini_settings_frame.setVisible(not was_visible)
         if not was_visible and hasattr(self, "_fit_settings_tabs"):
             self._fit_settings_tabs()
             QTimer.singleShot(0, weak_qt_callback(
                 self, type(self)._fit_settings_tabs))
+            if hasattr(self, "_bring_to_front"):
+                QTimer.singleShot(0, weak_qt_callback(
+                    self, type(self)._bring_to_front))
         self.data["hide_extra"] = "True" if was_visible else "False"
         self.mark_dirty()
 

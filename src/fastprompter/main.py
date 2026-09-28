@@ -8927,6 +8927,10 @@ class FastPrompter(
         self._cat_numbox_layout.setContentsMargins(0, 0, 0, 0)
         self._cat_numbox_layout.setSpacing(1)
         self._cat_num_buttons: list[QPushButton] = []
+        from fastprompter.ui.project_numbox_reorder import (
+            install_project_numbox_reorder,
+        )
+        install_project_numbox_reorder(self)
         numbox_on = self.data.get("numbox_tabs", "False") == "True"
         if numbox_on:
             self._rebuild_cat_numbox()
@@ -14026,6 +14030,12 @@ class FastPrompter(
             btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             btn.customContextMenuRequested.connect(
                 lambda pos, n=idx: self._cat_numbox_context(n, pos))
+            # Drag-to-reorder in box mode: the filter is installed on the
+            # container once, but the buttons are recreated every rebuild so
+            # each one has to re-register as a drag source here.
+            flt = getattr(self, "_project_numbox_reorder_filter", None)
+            if flt is not None:
+                btn.installEventFilter(flt)
             layout.addWidget(btn, i // per_row, i % per_row)
             self._cat_num_buttons.append(btn)
         # The row can be rebuilt while its own visibility is unreliable: the
@@ -15334,6 +15344,29 @@ class FastPrompter(
             self.cat_combo.setCurrentIndex(idx)
         callback()
 
+    def _move_project(self, idx, step):
+        """Reorder the project at combo row ``idx`` by ``step`` visible slots.
+
+        The combo row is a VISIBLE position; cats_order also holds hidden
+        projects. Swapping the two visible neighbours by their absolute index
+        in cats_order moves the pair without disturbing any hidden project
+        sitting between them (T-599 divergence)."""
+        visible = self.visible_categories()
+        new = idx + step
+        if not (0 <= idx < len(visible) and 0 <= new < len(visible)):
+            return
+        cat, neighbor = visible[idx], visible[new]
+        order = self.data.get("cats_order")
+        if not isinstance(order, list) or cat not in order or neighbor not in order:
+            return
+        self.add_data_undo_state("Reorder projects")
+        i, j = order.index(cat), order.index(neighbor)
+        order[i], order[j] = order[j], order[i]
+        self.mark_dirty()
+        # keep=cat: the moved project stays selected under the pointer
+        self.rebuild_cat_combo(keep=cat)
+        self._update_cat_numbox_active()
+
     def show_cat_context_menu(self, pos, anchor=None, project_idx=None,
                               global_pos=None):
         """`anchor` is the widget `pos` is relative to. It defaults to the
@@ -15361,6 +15394,20 @@ class FastPrompter(
                        on_target(self.rename_category))
         menu.addAction(tr("❌ Delete Project Tab", lang),
                        on_target(self.del_category))
+        # Reorder — moves the project among the VISIBLE tabs. idx is the
+        # right-clicked row (combo currentIndex or the number button that
+        # opened the menu), so the move works the same in dropdown and
+        # number-box mode; grey the ends so there is no no-op action.
+        visible_count = len(self.visible_categories())
+        menu.addSeparator()
+        act_left = menu.addAction(
+            tr("◀ Move Project Left", lang),
+            lambda _c=False, n=idx: self._move_project(n, -1))
+        act_left.setEnabled(idx > 0)
+        act_right = menu.addAction(
+            tr("▶ Move Project Right", lang),
+            lambda _c=False, n=idx: self._move_project(n, 1))
+        act_right.setEnabled(0 <= idx < visible_count - 1)
         menu.addSeparator()
         # Sync-Project: bind this project tab to a folder and read it as
         # silos, two-way, in real time (revertable via Unlink).
