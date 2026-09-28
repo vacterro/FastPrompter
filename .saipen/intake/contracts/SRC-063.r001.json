@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-063:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Editor hotkeys: full configurable list (no hardcode), Ctrl+MButton delete line, Help->Shortcut settings link, fix pasted-image Copy button overlapping text"
+    }
+  },
+  "derived_at": "2026-09-28T09:10:54Z",
+  "derived_from": "SRC-063",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "e842831f5e54282bc7e43ceb076985b0b10399e5c4ad4a46db10daf729a57d39"
+}

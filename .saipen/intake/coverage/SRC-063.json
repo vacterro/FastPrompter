@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-063:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1335 closed with verification evidence in LOG: verify -> PASS [target: T-1335] conf: high -- uv run pytest hotkey_spec_single_source(5) hotkey_migration(5) line_mark_toggle(22) t1330_image_and_sound(13) i18n_key_inventory+language_roundtrip(46) cheatsheet_drift(3); wider editor/hotkey/i18n batch 259 passed; ruff clean; compileall OK @3f19b21",
+      "text": "Editor hotkeys: full configurable list (no hardcode), Ctrl+MButton delete line, Help->Shortcut settings link, fix pasted-image Copy button overlapping text",
+      "verification": "the Work this request created reached its own verification gate; see the T-1335 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1335"
+    }
+  },
+  "schema_version": 1
+}

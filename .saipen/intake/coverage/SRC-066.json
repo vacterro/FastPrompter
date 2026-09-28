@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-066:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1337 closed with verification evidence in LOG: verify -> PASS [target: T-1337] conf: high -- uv run pytest tests/test_t1337_inline_visual_contract.py 12 passed; t1330_image_and_sound+t1265_image_click+clickable_links 101 passed; markdown_highlighter+markdown_highlighter_wave+performance 52 passed; line_mark_toggle+editor_paste_t1269+formatting_unicode_t1269 139 passed; i18n_key_inventory+language_roundtrip 19 passed; ruff clean; compileall OK ",
+      "text": "T-1337 repair inline image/link visual contract: split-brain conceal + hover-only Copy",
+      "verification": "the Work this request created reached its own verification gate; see the T-1337 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1337"
+    }
+  },
+  "schema_version": 1
+}

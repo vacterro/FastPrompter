@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-066:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1337 repair inline image/link visual contract: split-brain conceal + hover-only Copy"
+    }
+  },
+  "derived_at": "2026-09-28T14:55:51Z",
+  "derived_from": "SRC-066",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "104831da3ebd53d3a1622bf775d7925e9336fef2404d538b5e293a89c5cee6a9"
+}
