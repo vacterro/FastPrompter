@@ -324,7 +324,7 @@ Preserve it unless intentionally replacing the project-wide navigation scheme.
 
 This repository is part of the broader **SAIPEN / vacterro** project ecosystem.
 
-[**Project hub**](https://github.com/vacterro) · [**SAIPEN Core**](https://github.com/vacterro/saipen) · [**ZAICODE**](https://github.com/vacterro/zaicode) · [**FastPrompter**](https://github.com/vacterro/FastPrompter) · [**SAIPEN Community**](https://discord.gg/SEYaYkuVgN)
+[**Author hub**](https://github.com/vacterro) · [**SAIPEN HQ**](https://github.com/saipenhq) · [**SAIPEN Core**](https://github.com/vacterro/saipen) · [**ZAICODE**](https://github.com/vacterro/zaicode) · [**FastPrompter**](https://github.com/vacterro/FastPrompter) · [**SAIPEN Community**](https://discord.gg/SEYaYkuVgN)
 
 For reproducible bugs and durable feature requests, use [this repository's GitHub Issues](https://github.com/vacterro/FastPrompter/issues). Use Discord for quick discussion, screenshots, and cross-project feedback.
 
