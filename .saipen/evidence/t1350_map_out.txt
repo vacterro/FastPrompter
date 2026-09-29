@@ -1,0 +1,50 @@
+WITH a named, existing test file: 25 / 47
+   T-1349 -> tests/test_t1349_hover_grace.py
+   T-1336 -> tests/test_project_reorder_t1336.py
+   T-1296 -> tests/test_clipboard_interop_t1269.py
+   T-1294 -> tests/test_sound_pack_rollback_t1294.py
+   T-1266 -> tests/test_t1266_dual_claude.py
+   T-1240 -> tests/test_typecheck_vocab.py
+   T-1254 -> tests/test_freebuff_wallet_visibility.py
+   T-1252 -> tests/test_shutdown_ownership.py
+   T-1253 -> tests/test_reset_queue_hover.py
+   T-1234 -> tests/test_owner_mismatch_artifact.py, tests/test_t1227_silo_integrity.py
+   T-1235 -> tests/test_language_roundtrip.py
+   T-1232 -> tests/test_db_durability.py
+   T-1233 -> tests/test_i18n_key_inventory.py
+   T-1229 -> tests/test_language_roundtrip.py
+   T-1230 -> tests/test_settings_tab_sound.py
+   T-1231 -> tests/test_usage_limits_zcode.py
+   T-1225 -> tests/test_button_sound.py
+   T-1222 -> tests/test_state.py
+   T-1221 -> tests/test_sound_manager.py
+   T-1215 -> tests/test_timers.py
+   T-1214 -> tests/test_usage_limits_hide_zero.py
+   T-1213 -> tests/test_usage_limits_antigravity.py, tests/test_usage_limits_hide_zero.py
+   T-1212 -> tests/test_usage_limits_antigravity.py
+   T-1211 -> tests/test_user_regressions_20260905.py
+   T-1210 -> tests/test_usage_limits_gauge_layout.py
+
+WITHOUT one: 22
+   T-1297 | version sync via tools/sync_release_version.py with canonical VERSION first (all owners 0.8.68: VERSION, pypro
+   T-1295 | (E-2250) default_profile.py reconstructed through the repo's own format_default_profile_py writer = HEAD base 
+   T-1267 | (E-2238 build: >=2 discovered Claude accounts -> one bridge row per account in LimitSettingsDialog, button bou
+   T-1260 | (E-1936) gates 64 passed (test_shutdown_ownership + test_editor_timer_isolation + test_perf005_scaled_cache + 
+   T-1268 | (E-1935, E-1934 source) per-sample organization attribution proven on the operator's real two-home shape (org-
+   T-1261 | the cue now fires once, only on the committed branch, gated on not defer_ui (batch callers own their single cu
+   T-1265 | +2 clock regressions using an ADVANCING now-provider (one paint frame consumes exactly one sample, and the dig
+   T-1256 | (E-1894) ownership contract restored -- toast presentation audio is now an explicit opt-in: show_toast()/show_
+   T-1245 | (E-1245-closure) 7 events (app_show/settings_show/audio_hub_show/dialog_show/panel_show/notification_show/hove
+   T-1244 | (E-1244-closure) A1 concurrency repair -- play_result() mute gate is atomic with queue/channel admission under
+   T-1255 | (E-1888) all six canonical Problip WAV assets git-tracked in repository (commit bc5d551); SHA-256 byte-identic
+   T-1243 | (E-1885) authoritative session endpoint via _freebuff_http (no scraping/guessing); security suite green (disab
+   T-1251 | (E-1879) a STORED SOUND REFERENCE IS A REFERENCE, NOT A PATH -- get_sound_file_for_event/migrate_sound_setting
+   T-1250 | all mutating consumers fail closed on None (E-1875): cache_current_text (no mutation/dirty/last-edited, _last_
+   T-1242 | FIDELITY REPAIR VERIFIED (E-1873): loopback-measured root cause = Qt 6.11.1 QSoundEffect (pooled AND fresh) dr
+   T-1249 | (1) FALSE-POSITIVE PATH AUDITED in src/fastprompter/core/usage_limits/notifications.py evaluate_limit_notifica
+   T-1248 | (1) CURATED PALETTE editor.MARK_PALETTE {1 green #3DA43D, 2 red #D9483B, 3 yellow #E0A400, 4 blue #3D6FD9, 5 p
+   T-1247 | writer mutex is authoritative, IPC no-ACK is a responsiveness signal never a death verdict; bootstrap_ownershi
+   T-1236 | silo_identity_v1 is keyed by POSITION (category, is_archive, slot), so identity is stable only while every str
+   T-1226 | selected multi-paragraph chunk becomes ONE quote group (internal blanks become `>` continuations, indentation 
+   T-1208 | compileall src/FastPrompter.pyw/tools PASS; ruff check src/fastprompter clean; uv run pytest tests/ -q -> 1949
+   T-1205 | Compact AI usage tooltip and reorganize all Settings tabs to remove empty space is complete and the repository

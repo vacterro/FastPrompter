@@ -72,3 +72,5 @@ T-1250	REVERIFY_REUSED	-	tests/test_editor_snapshot_sentinel.py
 T-1251	REVERIFY_REUSED	-	tests/test_sound_ref_integrity.py
 T-1252	REVERIFY_REUSED	-	tests/test_shutdown_ownership.py
 T-1253	REVERIFY_REUSED	-	tests/test_reset_queue_hover.py
+T-1254	WORK_REVERIFIED	-	tests/test_freebuff_wallet_visibility.py
+T-1255	WORK_REVERIFIED	-	tests/test_problip_audio_fidelity.py
