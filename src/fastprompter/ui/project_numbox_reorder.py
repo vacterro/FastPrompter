@@ -1,4 +1,4 @@
-"""Drag-to-reorder for the project number-box row (box/цифры mode).
+"""Drag-to-reorder for the project number-box row (box/digits mode).
 
 The dropdown face of the project list reorders through the right-click menu
 (Move Left / Move Right). The number-box face is a QGridLayout of numbered
