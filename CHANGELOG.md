@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.69 - 2026-09-29
+
+- **Inline image/link/hover Copy corridor:** pasted images render as one clean
+  pill with no raw `file:///` leak; the inline Copy control is reachable on
+  hover with a single-shot grace timer, is bounded on both axes so it never
+  covers neighbouring prose, and handles wrapped link rows and far placement
+  using surrounding text geometry (T-1335..T-1349).
+- **Project UI:** project list context reorder and number-box drag reorder;
+  Settings mini-panel opens with focus-lock and no longer throws the main
+  window backward (T-1336).
+- **Editor hotkeys:** configurable hotkey registry, Ctrl+Middle-button deletes
+  a line, and a Help -> Shortcut settings surface (T-1335).
+- **Regression and reliability hardening:** repaired the audit regressions the
+  T-1335..T-1340 delta shipped, sound isolation off the provenance ring, and
+  sync shutdown/teardown serialization coverage.
+
 ## 0.8.68 - 2026-09-19
 
 - **Editor Unicode & clipboard reliability:** formatting commands (bold,
