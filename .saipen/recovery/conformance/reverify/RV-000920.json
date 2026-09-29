@@ -1,0 +1,51 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-29T19:00:17Z",
+  "evidence_class": "executed",
+  "findings_digest": "d32d87bff681f11cf7ed3b8589e42869ad88e5f18d0883ae0fc89a39b5fbcfc7",
+  "gate": "core",
+  "integrity_digest": "42580b80ba06d6f8",
+  "journal_op_id": "reverify.30a5e245f002",
+  "original_closure": {
+    "claim_time": "2026-09-28T10:02:15Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-3328",
+    "owner": "buffy",
+    "source_receipts": "SRC-064"
+  },
+  "own_problem_keys": [
+    "74968503754e53f9"
+  ],
+  "problem_count": 3,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000920",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "1d7ef4303fd7fe2a1d4cd14c9a9c5516cc681f89",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_project_reorder_t1336.py -q",
+      "duration_ms": 10613,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 98,
+      "output_digest": "38aec11b931765c3",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_project_reorder_t1336.py -q"
+    ],
+    "findings_digest": "d32d87bff681f11cf7ed3b8589e42869ad88e5f18d0883ae0fc89a39b5fbcfc7",
+    "gate": "core"
+  },
+  "verification_contract_digest": "692fb5ff03254eaa",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1336"
+}

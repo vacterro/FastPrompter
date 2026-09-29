@@ -1,0 +1,47 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-29T18:59:37Z",
+  "evidence_class": "executed",
+  "findings_digest": "a6f07d87d31d1d1897aa680e6ded05de79ed332a655f44d08a0f1da2f7a0d9a7",
+  "gate": "core",
+  "integrity_digest": "48234dcb35f37220",
+  "journal_op_id": "reverify.819fc2bfe6e7",
+  "original_closure": {
+    "claim_time": "2026-09-09T01:00:00Z",
+    "last_ticket_event": "E-1833",
+    "owner": "claude"
+  },
+  "own_problem_keys": [],
+  "problem_count": 35,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000919",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": null,
+  "source_tree_fingerprint": null,
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_language_roundtrip.py -q",
+      "duration_ms": 3,
+      "executed": true,
+      "exit_code": 3221225794,
+      "output_bytes": 0,
+      "output_digest": "e3b0c44298fc1c14",
+      "result": "FAIL"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_language_roundtrip.py -q"
+    ],
+    "findings_digest": "a6f07d87d31d1d1897aa680e6ded05de79ed332a655f44d08a0f1da2f7a0d9a7",
+    "gate": "core"
+  },
+  "verification_contract_digest": "82a3176588f3968b",
+  "verifier": "buffy",
+  "warning_count": 72,
+  "work": "T-1229"
+}

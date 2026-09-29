@@ -1,12 +1,12 @@
 # ASP Board
 
 ## DOING
-- [/] T-1350 [P2] conformance CURRENT_FAIL: 45 DONE tickets are 'claimed but unproven' and each needs a work reverify against the current tree; last recorded PASS was 27.09.26 19:03, pre-dating T-1349 and the docs merge | verify: saipen work reverify <T-###> per ticket until the claimed-but-unproven list is empty; then saipen validate reports conformance CURRENT_PASS | owner: buffy | claim_time: 2026-09-29T18:21:25Z
 
 
 ## TODO
 
 ## DONE
+- [x] T-1350 [P2] conformance CURRENT_FAIL: 45 DONE tickets are 'claimed but unproven' and each needs a work reverify against the current tree; last recorded PASS was 27.09.26 19:03, pre-dating T-1349 and the docs merge | verify: saipen work reverify <T-###> per ticket until the claimed-but-unproven list is empty; then saipen validate reports conformance CURRENT_PASS | owner: buffy | claim_time: 2026-09-29T19:09:45Z | closure_mode: own_patch
 - [x] T-1349 [P1] inline hover Copy reachability, temporal grace, vertical viewport safety, next-block collision safety (SRC-069; the orphan untracked RED file tests/test_t1349_hover_grace.py was recovered, not recreated, and no PASS evidence was inherited) | verify: pytest tests/test_t1349_hover_grace.py -> 12 passed; RED proven by ablation (grace removed -> 8 grace cases fail; old below-block fallback restored -> bottom-viewport + next-block cases fail); targeted T-1337..T-1349 + link/image/highlighter suites -> 180 passed; full tests/ -> 4014 passed, 0 failed, 16 skipped; ruff clean; compileall OK on both touched files; shipped as 4256dca then merged docs-only origin/main 4067e03f into c03e6b8 with product/test bytes byte-identical, NOT pushed | regression: required | user_explicit: true | source_receipts: SRC-069 | owner: buffy | claim_time: 2026-09-29T16:31:44Z | closure_mode: own_patch
 
 - [x] T-1347 [P2] two load-sensitive flakes make full tests/ runs non-deterministic: test_suite_exit_contract nested 0xC0000005 and test_perf001 wall-clock budget | regression: required | verify: three consecutive full tests/ runs each end with zero failures, or each flake is pinned with a stated reason for being timing-dependent | owner: buffy | claim_time: 2026-09-29T00:34:41Z | closure_mode: own_patch

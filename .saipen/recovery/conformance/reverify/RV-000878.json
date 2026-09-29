@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-29T18:41:36Z",
+  "evidence_class": "executed",
+  "findings_digest": "ca64f945472f5af768b1ee33939698673357101694c39343a0d72cd6768a5aef",
+  "gate": "core",
+  "integrity_digest": "f9cdc21460a55267",
+  "journal_op_id": "reverify.8392b31a2021",
+  "original_closure": {
+    "claim_time": "2026-09-06T13:01:49Z",
+    "last_ticket_event": "E-1651",
+    "owner": "codex"
+  },
+  "own_problem_keys": [
+    "13c11fc0165ae8e9"
+  ],
+  "problem_count": 44,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000878",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": null,
+  "source_tree_fingerprint": null,
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_usage_limits_antigravity.py -q",
+      "duration_ms": 2,
+      "executed": true,
+      "exit_code": 3221225794,
+      "output_bytes": 0,
+      "output_digest": "e3b0c44298fc1c14",
+      "result": "FAIL"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_usage_limits_antigravity.py -q"
+    ],
+    "findings_digest": "ca64f945472f5af768b1ee33939698673357101694c39343a0d72cd6768a5aef",
+    "gate": "core"
+  },
+  "verification_contract_digest": "52388b6b7f745a63",
+  "verifier": "buffy",
+  "warning_count": 72,
+  "work": "T-1212"
+}

@@ -1,0 +1,47 @@
+T-1205	tests/test_settings_ux.py
+T-1208	ALL
+T-1210	tests/test_usage_limits_gauge_layout.py
+T-1211	tests/test_user_regressions_20260905.py
+T-1212	tests/test_usage_limits_antigravity.py
+T-1213	tests/test_usage_limits_antigravity.py tests/test_usage_limits_hide_zero.py
+T-1214	tests/test_usage_limits_hide_zero.py
+T-1215	tests/test_timers.py
+T-1221	tests/test_sound_manager.py
+T-1222	tests/test_state.py
+T-1225	tests/test_button_sound.py
+T-1226	tests/test_formatting_mixin.py
+T-1229	tests/test_language_roundtrip.py
+T-1230	tests/test_settings_tab_sound.py
+T-1231	tests/test_usage_limits_zcode.py
+T-1232	tests/test_db_durability.py
+T-1233	tests/test_i18n_key_inventory.py
+T-1234	tests/test_owner_mismatch_artifact.py tests/test_t1227_silo_integrity.py
+T-1235	tests/test_language_roundtrip.py
+T-1236	tests/test_silo_history_identity_t1307.py
+T-1240	tests/test_typecheck_vocab.py
+T-1242	tests/test_audio_temporal_fidelity.py
+T-1243	tests/test_usage_limits_freebuff.py
+T-1244	tests/test_master_mute_concurrency_t1244.py
+T-1245	tests/test_appearance_sounds_t1245.py
+T-1247	tests/test_instance_lock.py
+T-1248	tests/test_line_mark_toggle.py
+T-1249	tests/test_weekly_reset_false_positive.py
+T-1250	tests/test_editor_snapshot_sentinel.py
+T-1251	tests/test_sound_ref_integrity.py
+T-1252	tests/test_shutdown_ownership.py
+T-1253	tests/test_reset_queue_hover.py
+T-1254	tests/test_freebuff_wallet_visibility.py
+T-1255	tests/test_problip_audio_fidelity.py
+T-1256	tests/test_notification_audio_ownership_t1256.py
+T-1260	tests/test_shutdown_ownership.py tests/test_editor_timer_isolation.py tests/test_perf005_scaled_cache.py tests/test_timer_fire.py tests/test_new_empty_silos.py
+T-1261	tests/test_t1227_silo_integrity.py
+T-1265	tests/test_t1265_interval_clock.py
+T-1266	tests/test_t1266_dual_claude.py
+T-1267	tests/test_t1267_claude_bridge_per_account.py
+T-1268	tests/test_t1268_claude_desktop_attribution.py
+T-1294	tests/test_sound_pack_rollback_t1294.py
+T-1295	tests/test_set_default_from_current.py
+T-1296	tests/test_clipboard_interop_t1269.py
+T-1297	tests/test_release_version.py
+T-1336	tests/test_project_reorder_t1336.py
+T-1349	tests/test_t1349_hover_grace.py
