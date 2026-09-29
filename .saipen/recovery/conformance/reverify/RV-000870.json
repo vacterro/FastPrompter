@@ -1,0 +1,70 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-29T17:46:56Z",
+  "evidence_class": "attested",
+  "findings_digest": "90c8a3ca4dd9ad3ed2d19d9bbd2fd7f2776fcc1561967d92e41fb7879abf1789",
+  "gate": "core",
+  "integrity_digest": "d39608dc61e91422",
+  "journal_op_id": "reverify.b327812c8630",
+  "original_closure": {
+    "claim_time": "2026-09-29T16:31:44Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-3494",
+    "owner": "buffy",
+    "source_receipts": "SRC-069"
+  },
+  "own_problem_keys": [
+    "808b46bc36299dc2",
+    "da8111511f4c830a"
+  ],
+  "problem_count": 61,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000870",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "c03e6b85108e501ac12803164140e5ae3fd1ce00",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "pytest tests/test_t1349_hover_grace.py",
+      "executed": false,
+      "kind": "attested",
+      "result": "PASS"
+    },
+    {
+      "command": "pytest tests",
+      "executed": false,
+      "kind": "attested",
+      "result": "PASS"
+    },
+    {
+      "command": "ruff check",
+      "executed": false,
+      "kind": "attested",
+      "result": "PASS"
+    },
+    {
+      "command": "python -m compileall -q src/fastprompter/ui/editor.py tests/test_t1349_hover_grace.py",
+      "executed": false,
+      "kind": "attested",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "pytest tests/test_t1349_hover_grace.py",
+      "pytest tests",
+      "ruff check",
+      "python -m compileall -q src/fastprompter/ui/editor.py tests/test_t1349_hover_grace.py"
+    ],
+    "findings_digest": "90c8a3ca4dd9ad3ed2d19d9bbd2fd7f2776fcc1561967d92e41fb7879abf1789",
+    "gate": "core"
+  },
+  "verification_contract_digest": "8ee5e9a535e439c7",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1349"
+}

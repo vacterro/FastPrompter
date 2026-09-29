@@ -1,0 +1,28 @@
+{
+  "blocking_findings": {
+    "problem_count": 0,
+    "problems": [],
+    "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+    "ruleset_version": 1,
+    "status": "complete",
+    "warning_count": 72
+  },
+  "board_hash": "db60a1b0bfb262dd",
+  "canonical_next_command": null,
+  "content_hash": "7f488e7eb18f598b",
+  "exit_code": 0,
+  "external_actions": [],
+  "gate": "core",
+  "kind": "conformance_receipt",
+  "log_hash": "dd96316445c2fb24",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "receipt_id": "receipt-402f43ed977b",
+  "remediation_commands": [],
+  "schema_version": 2,
+  "source_head": "3a9546c4d0769612f3337b8c5426f3ebef83ebfe",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "state_hash": "fc3e9c297c411cc6",
+  "timestamp_utc": "2026-09-29T00:21:07.725806Z",
+  "validator_protocol_version": "1",
+  "verdict": "PASS"
+}

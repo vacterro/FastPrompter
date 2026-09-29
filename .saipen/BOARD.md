@@ -1,16 +1,16 @@
 # ASP Board
 
 ## DOING
-- [/] T-1348 [P1] classify the five T-1335 hotkey keys in the bake policy (supersedes T-1341, whose verify clause was created degenerate) | needs: T-1341 | verify: pytest tests/test_bake_corrective_t1298.py tests/test_set_default_from_current.py tests/test_usage_limits_freebuff.py -> 75 passed, 0 failed | owner: buffy | claim_time: 2026-09-28T22:56:28Z
 
 
 ## TODO
-- [ ] T-1347 [P2] two load-sensitive flakes make full tests/ runs non-deterministic: test_suite_exit_contract nested 0xC0000005 and test_perf001 wall-clock budget | regression: required | verify: three consecutive full tests/ runs each end with zero failures, or each flake is pinned with a stated reason for being timing-dependent
-
-
-
+- [ ] T-1350 [P2] conformance CURRENT_FAIL: 45 DONE tickets are 'claimed but unproven' and each needs a work reverify against the current tree; last recorded PASS was 27.09.26 19:03, pre-dating T-1349 and the docs merge | verify: saipen work reverify <T-###> per ticket until the claimed-but-unproven list is empty; then saipen validate reports conformance CURRENT_PASS
 
 ## DONE
+- [x] T-1349 [P1] inline hover Copy reachability, temporal grace, vertical viewport safety, next-block collision safety (SRC-069; the orphan untracked RED file tests/test_t1349_hover_grace.py was recovered, not recreated, and no PASS evidence was inherited) | verify: pytest tests/test_t1349_hover_grace.py -> 12 passed; RED proven by ablation (grace removed -> 8 grace cases fail; old below-block fallback restored -> bottom-viewport + next-block cases fail); targeted T-1337..T-1349 + link/image/highlighter suites -> 180 passed; full tests/ -> 4014 passed, 0 failed, 16 skipped; ruff clean; compileall OK on both touched files; shipped as 4256dca then merged docs-only origin/main 4067e03f into c03e6b8 with product/test bytes byte-identical, NOT pushed | regression: required | user_explicit: true | source_receipts: SRC-069 | owner: buffy | claim_time: 2026-09-29T16:31:44Z | closure_mode: own_patch
+
+- [x] T-1347 [P2] two load-sensitive flakes make full tests/ runs non-deterministic: test_suite_exit_contract nested 0xC0000005 and test_perf001 wall-clock budget | regression: required | verify: three consecutive full tests/ runs each end with zero failures, or each flake is pinned with a stated reason for being timing-dependent | owner: buffy | claim_time: 2026-09-29T00:34:41Z | closure_mode: own_patch
+- [x] T-1348 [P1] classify the five T-1335 hotkey keys in the bake policy (supersedes T-1341, whose verify clause was created degenerate) | needs: T-1341 | verify: pytest tests/test_bake_corrective_t1298.py tests/test_set_default_from_current.py tests/test_usage_limits_freebuff.py -> 75 passed, 0 failed | owner: buffy | claim_time: 2026-09-28T22:56:28Z | closure_mode: own_patch
 - [x] T-1341 [P1] T-1341 classify the five T-1335 hotkey keys in the bake policy | verify: x | owner: buffy | claim_time: 2026-09-28T22:55:17Z | closure_mode: own_patch
 - [x] T-1342 [P1] promote the three T-1335/T-1336 tr() keys into the canonical en.json pack | regression: required | verify: python tools/validate_saitranslate.py exits 0 with STATUS VALIDATION PASSED and zero source tr() keys MISSING from en.json | owner: buffy | claim_time: 2026-09-28T21:39:13Z | closure_mode: own_patch
 - [x] T-1343 [P1] restore the QApplication font and stylesheet that test_project_reorder_t1336 leaks | regression: required | verify: pytest tests/test_project_reorder_t1336.py tests/test_t1339_wrapped_inline_copy.py in one process is green, and a font/stylesheet probe around _make_window+_teardown shows no change | owner: buffy | claim_time: 2026-09-28T21:37:40Z | closure_mode: own_patch
