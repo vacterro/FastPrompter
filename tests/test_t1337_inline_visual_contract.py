@@ -235,7 +235,14 @@ def test_leaving_clears_the_copy_control(tmp_path):
         ed._update_inline_hover(ed.cursorRect(cur).center())
         assert ed._hover_inline_kind == "link"
         ed._update_inline_hover(QPoint(5, 590))   # far away, empty area
+        # T-1349 supersedes the instant kill: the pointer gets ONE bounded
+        # grace to cross to a far-placed Copy, and the control is gone as
+        # soon as that grace is spent. It is never a permanent hold.
+        assert ed._hover_inline_kind == "link"
+        assert ed._inline_hover_grace_timer.isActive()
+        ed._on_inline_hover_grace_expired()
         assert ed._hover_inline_kind is None
+        assert not ed._inline_hover_grace_timer.isActive()
     finally:
         ed.close()
 

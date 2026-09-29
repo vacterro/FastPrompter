@@ -38,6 +38,20 @@ TS_STAMP_LINE_RE = re.compile(
 MD_IMAGE_RE = re.compile(r'!\[.*?\]\((.*?)\)')
 MD_LINK_RE = re.compile(r'(?<!!)\[([^\]]+)\]\(([^)]+)\)')
 
+# T-1349: how long a far-placed inline Copy stays painted after the pointer
+# leaves the target's NARROW ownership zone. The spatial gap between a
+# non-adjacent Copy and its target is deliberately dead (T-1338), so time --
+# not space -- carries the pointer across it. One bounded interval: long
+# enough to cross the gap, short enough that a stray mouse move cannot leave
+# a control hanging.
+INLINE_HOVER_GRACE_MS = 200
+
+
+def _mid_top(rect, size):
+    """Top edge that vertically centres a ``size`` box inside ``rect``."""
+    return rect.top() + (rect.height() - size) // 2
+
+
 # File types the editor can meaningfully load as plain text
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".py", ".js", ".ts", ".jsx", ".tsx", ".html", ".css",
@@ -505,6 +519,23 @@ class VaultTextEdit(QTextEdit):
         self._hover_inline_target = None      # URL (link) or local path (image)
         self._hover_inline_target_rect = None  # link glyph / image pill rect
         self._hover_inline_copy_rect = None    # the Copy control's own rect
+        self._hover_inline_mode = None         # preview mode it was armed in
+        # T-1349: ONE bounded temporal grace so a far-placed Copy stays
+        # reachable across the dead spatial gap. A single cancellable QTimer
+        # per editor -- never one per token, never a fire-and-forget
+        # singleShot that cannot be stopped.
+        self._inline_hover_grace_timer = QTimer(self)
+        self._inline_hover_grace_timer.setSingleShot(True)
+        self._inline_hover_grace_timer.setInterval(INLINE_HOVER_GRACE_MS)
+        self._inline_hover_grace_timer.timeout.connect(
+            self._on_inline_hover_grace_expired)
+        # T-1349: a view switch re-renders the markup, so any armed inline
+        # control (and its pending grace) is stale the moment it happens. The
+        # combo signal is optional: owner test doubles need not carry one.
+        _combo = getattr(getattr(self, "main_win", None), "preview_combo", None)
+        _switched = getattr(_combo, "currentIndexChanged", None)
+        if hasattr(_switched, "connect"):
+            _switched.connect(self._on_preview_mode_changed)
 
         # Persistent Ctrl+click word selections: list of QTextCursor objects.
         # Toggle with Ctrl+click; clear all with Ctrl+triple-click on any
@@ -641,6 +672,15 @@ class VaultTextEdit(QTextEdit):
         first = doc.findBlock(position)
         last = doc.findBlock(max(position, position + added))
         self._refresh_checkbox_flag(first.blockNumber(), last.blockNumber())
+
+        # T-1349: an edit can delete or rewrite the token an inline Copy is
+        # still holding. Drop the control and its grace the moment its target
+        # stops resolving, so a stale rect can never be clicked into a copy
+        # of a URL/path that is no longer in the document.
+        if (self._hover_inline_kind is not None
+                and first.blockNumber() <= self._hover_inline_block <= last.blockNumber()
+                and not self._inline_hover_still_valid()):
+            self._clear_inline_hover()
 
         # A fence line (```` ``` ````) is the only edit that can change code
         # membership or opener parity, so only a fence-touching edit must
@@ -1642,10 +1682,15 @@ class VaultTextEdit(QTextEdit):
         clickable. This answers only for the one control the pointer currently
         owns. Click handlers refresh the hover from the press position first,
         so a direct press onto the control still resolves it.
+
+        T-1349: grace keeps a FAR control alive across the dead gap, so the
+        revalidation guard is what stops it from acting on a token an edit or
+        a view switch has already invalidated.
         """
         if (self._hover_inline_kind == "link"
                 and self._hover_inline_copy_rect is not None
-                and self._hover_inline_copy_rect.contains(pos)):
+                and self._hover_inline_copy_rect.contains(pos)
+                and self._inline_hover_still_valid()):
             return self._hover_inline_target, self._hover_inline_copy_rect
         return None
 
@@ -1714,12 +1759,26 @@ class VaultTextEdit(QTextEdit):
                       max(4, width), r_start.height())]
 
 
+    def _copy_rect_inside_viewport(self, rect):
+        """T-1349: is ``rect`` fully inside the viewport on BOTH axes?
+
+        The old clamp only constrained X, so a vertical fallback happily
+        returned a control whose bottom hung below the last visible pixel --
+        painted off-screen and unclickable. Any candidate failing this is
+        rejected outright, never clamped into an unreachably thin sliver.
+        """
+        vp = self.viewport().rect()
+        return (rect.left() >= 2
+                and rect.right() <= vp.width() - 2
+                and rect.top() >= 2
+                and rect.bottom() <= vp.height() - 2)
+
     def _inline_copy_rect(self, block, target_rect):
         """T-1339: THE one occupancy-aware placement authority for the hover
         Copy control, shared by links and images.
 
-        A slot is acceptable only when it does not intersect visible text.
-        Priority:
+        A slot is acceptable only when it does not intersect visible text and
+        lies fully inside the viewport on BOTH axes (T-1349). Priority:
 
           1. immediately RIGHT of the target on its row, if text-free;
           2. immediately LEFT of the target on its row, if text-free;
@@ -1727,31 +1786,46 @@ class VaultTextEdit(QTextEdit):
              row nearest the target row (its own row first) -- so a wrapped
              label with prose on its row still gets a slot on a neighbouring
              row's empty tail rather than on top of prose;
-          4. non-text transient fallback: just below the block's last visual
-             row, where there is no text at all, clamped to the viewport.
+          4. a vertical slot immediately below, then above, the TARGET's own
+             row -- not below the whole QTextBlock. T-1349: "below the block"
+             was assumed text-free and was neither: the next block's first line
+             lives exactly there. Neighbour geometry is inspected instead.
+          5. a bounded viewport-overlay strip on the target's row, scanned
+             inward from the far edge. It never leaves the viewport, never
+             covers the target, and never inserts whitespace into the
+             document to make room.
 
-        Every returned rect satisfies 2 <= left and right <= width - 2.
+        Every returned rect satisfies 2 <= left/right <= width - 2 and the
+        same on top/bottom against the viewport height.
         """
         gap = 6
         size = max(14, target_rect.height() - 2)
-        top = target_rect.top() + (target_rect.height() - size) // 2
         vp_w = self.viewport().width()
         occupied = self._row_text_extents(block, target_rect, target_rect)
+        # The TARGET counts as a blocker too. `_row_text_extents` excludes it
+        # on purpose (that is what makes an adjacent slot adjacent), but a
+        # fallback that lands ON the token is worse than one beside it: the
+        # pointer can no longer reach the label, and the Copy hides what it
+        # belongs to. Overlap stays possible only when the viewport is too
+        # small to hold both -- see step 6.
+        blockers = (list(occupied) + self._neighbour_text_rects(block)
+                    + [target_rect])
 
-        def _free_on_row(x, y):
+        def _hits_text(rect):
+            return any(rect.intersects(o) for o in blockers)
+
+        def _free(x, y):
             r = QRect(x, y, size, size)
-            if r.left() < 2 or r.right() > vp_w - 2:
-                return None
-            if any(r.intersects(o) for o in occupied):
+            if not self._copy_rect_inside_viewport(r) or _hits_text(r):
                 return None
             return r
 
         # 1. immediate right of target
-        r = _free_on_row(target_rect.right() + gap, top)
+        r = _free(target_rect.right() + gap, _mid_top(target_rect, size))
         if r is not None:
             return r
         # 2. immediate left of target
-        r = _free_on_row(target_rect.left() - gap - size, top)
+        r = _free(target_rect.left() - gap - size, _mid_top(target_rect, size))
         if r is not None:
             return r
         # 3. trailing free space on the nearest visual row
@@ -1761,24 +1835,55 @@ class VaultTextEdit(QTextEdit):
             for _dist, row in sorted(
                     ((abs(rw["cy"] - ty), rw) for rw in rows),
                     key=lambda t: t[0]):
-                x = row["right"] + gap
-                rtop = row["top"] + (row["height"] - size) // 2
-                if x >= 2 and x + size <= vp_w - 2:
-                    cand = QRect(x, rtop, size, size)
-                    if not any(cand.intersects(o) for o in occupied):
-                        return cand
-            # 4. below the block's last row (guaranteed text-free)
-            last = rows[-1]
-            below_top = last["top"] + last["height"] + 2
+                r = _free(row["right"] + gap,
+                          row["top"] + (row["height"] - size) // 2)
+                if r is not None:
+                    return r
+            # 4. a slot just below / just above the TARGET's own row, proven
+            # free against the previous, current and next visible blocks.
             left = max(2, min(target_rect.left(), vp_w - 2 - size))
-            return QRect(left, below_top, size, size)
-        # no layout available: clamp beside the target
-        left = max(2, min(target_rect.right() + gap, vp_w - 2 - size))
-        return QRect(left, top, size, size)
+            for y in (target_rect.bottom() + gap,
+                      target_rect.top() - gap - size):
+                r = _free(left, y)
+                if r is not None:
+                    return r
+        # 5. bounded viewport overlay on the target's row, far edge inward.
+        y = max(2, min(_mid_top(target_rect, size),
+                       self.viewport().height() - 2 - size))
+        x = vp_w - 2 - size
+        while x > 2:
+            r = _free(x, y)
+            if r is not None:
+                return r
+            x -= gap
+        # 6. nothing in the viewport is free: still return a fully bounded
+        #    rect, at the far edge where the overlap (if any) is smallest. A
+        #    viewport too small to hold both the token and the control cannot
+        #    be solved -- staying on-screen is worth more than a clean corner.
+        return QRect(vp_w - 2 - size, y, size, size)
+
+
+    def _neighbour_text_rects(self, block):
+        """T-1349: viewport rects of the visible text in the PREVIOUS and NEXT
+        visible blocks around ``block``.
+
+        The removed "below the block is guaranteed text-free" assumption was
+        false in the most common document there is: one paragraph per line.
+        Bounded to the two immediate neighbours -- no document walk.
+        """
+        out = []
+        for nb in (block.previous(), block.next()):
+            if not nb.isValid() or not nb.isVisible():
+                continue
+            for r in self._block_visual_rows(nb):
+                w = r["right"] - r["left"]
+                if w > 1:
+                    out.append(QRect(r["left"], r["top"], w, r["height"]))
+        return out
 
     def _block_visual_rows(self, block):
-        """[{top, height, cy, right}] for each visual line of ``block`` in
-        viewport coords. Bounded to one block's layout (no document walk)."""
+        """[{left, top, height, cy, right}] for each visual line of ``block``
+        in viewport coords. Bounded to one block's layout (no document walk)."""
         rows = []
         try:
             layout = block.layout()
@@ -1787,7 +1892,8 @@ class VaultTextEdit(QTextEdit):
             for i in range(layout.lineCount()):
                 lr = layout.lineAt(i).naturalTextRect().translated(
                     br.topLeft()).translated(0, y_off)
-                rows.append({"top": int(lr.top()),
+                rows.append({"left": int(lr.left()),
+                             "top": int(lr.top()),
                              "height": int(lr.height()),
                              "cy": int(lr.center().y()),
                              "right": int(lr.right())})
@@ -1923,10 +2029,12 @@ class VaultTextEdit(QTextEdit):
 
         T-1337: hover-only. Answers only for the single control the pointer
         currently owns, so an idle document has no clickable copy squares.
+        T-1349: same stale-token guard as links.
         """
         if (self._hover_inline_kind == "image"
                 and self._hover_inline_copy_rect is not None
-                and self._hover_inline_copy_rect.contains(pos)):
+                and self._hover_inline_copy_rect.contains(pos)
+                and self._inline_hover_still_valid()):
             return self._hover_inline_target, self._hover_inline_copy_rect
         return None
 
@@ -2176,6 +2284,9 @@ class VaultTextEdit(QTextEdit):
     # ---- T-1337: one reusable hover-only inline Copy affordance --------
 
     def _clear_inline_hover(self):
+        # T-1349: clearing always kills the grace timer, so a cleared control
+        # can never be resurrected by a timeout that was already pending.
+        self._stop_inline_hover_grace()
         if self._hover_inline_kind is None:
             return
         self._hover_inline_kind = None
@@ -2183,7 +2294,91 @@ class VaultTextEdit(QTextEdit):
         self._hover_inline_target = None
         self._hover_inline_target_rect = None
         self._hover_inline_copy_rect = None
+        self._hover_inline_mode = None
         self.viewport().update()
+
+    # ---- T-1349: bounded temporal grace across the dead spatial gap ----
+
+    def _stop_inline_hover_grace(self):
+        timer = getattr(self, "_inline_hover_grace_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
+
+    def _arm_inline_hover_grace(self):
+        """Hold the painted control for one bounded interval after the pointer
+        leaves its ownership zone.
+
+        Armed ONLY from a genuine leave, and only while a control is actually
+        armed -- so ordinary unrelated mouse movement cannot keep a Copy
+        alive forever (the timer is never re-armed from the timeout, and a
+        leave that lands nowhere with nothing armed does nothing). This is
+        temporal hysteresis, not a widened target: the spatial gap between a
+        far Copy and its token stays dead for every other feature.
+        """
+        timer = getattr(self, "_inline_hover_grace_timer", None)
+        if timer is None:
+            return
+        if (self._hover_inline_kind is None
+                or self._hover_inline_copy_rect is None
+                or not self._inline_hover_still_valid()):
+            # Nothing is painted to keep alive -- cleared, or its geometry was
+            # nulled by a scroll/resize before the re-resolve. Grace holds a
+            # VISIBLE control across a gap; it never invents one.
+            self._clear_inline_hover()
+            return
+        if not timer.isActive():
+            timer.start()
+
+    def _on_inline_hover_grace_expired(self):
+        if sip.isdeleted(self):
+            return
+        # The pointer never came back within the interval: the control goes.
+        self._clear_inline_hover()
+
+    def _inline_hover_still_valid(self):
+        """T-1349: does the armed control still point at a REAL token?
+
+        Grace keeps an already-visible control alive for a quarter second.
+        It must never be a licence to act on a token that is gone: an edit
+        can delete the link, a preview switch re-renders the markup, and an
+        image pill stops existing the moment concealment is off. Anything
+        stale is refused at the click, not merely at the paint.
+        """
+        if self._hover_inline_kind is None or self._hover_inline_target is None:
+            return False
+        if self._hover_inline_mode != self._preview_mode():
+            return False
+        doc = self.document()
+        if not doc or sip.isdeleted(doc):
+            return False
+        try:
+            block = doc.findBlockByNumber(self._hover_inline_block)
+        except Exception:
+            return False
+        if not block.isValid():
+            return False
+        target = self._hover_inline_target
+        if self._hover_inline_kind == "image":
+            if not self._image_pills_enabled():
+                return False
+            for m in MD_IMAGE_RE.finditer(block.text()):
+                url = self._image_url_for(m.group(1))
+                if url is None or not url.isLocalFile():
+                    continue
+                path = os.path.realpath(os.path.abspath(
+                    url.toLocalFile()))
+                if path == target:
+                    return True
+            return False
+        return any(m.group(2) == target for m in MD_LINK_RE.finditer(block.text()))
+
+    def _on_preview_mode_changed(self, *_a):
+        """T-1349: a view switch re-renders the markup under the pointer, so
+        any armed inline control is stale geometry. Drop it instead of letting
+        the grace timer hold a control over a document that moved on."""
+        if sip.isdeleted(self):
+            return
+        self._clear_inline_hover()
 
     def _inline_hover_zone_contains(self, pos):
         """Is ``pos`` inside the CURRENT hover ownership zone?
@@ -2211,25 +2406,30 @@ class VaultTextEdit(QTextEdit):
         """Resolve the inline Copy target under ``pos`` and (re)arm the one
         reusable hover control. O(tokens in the hovered block).
 
-        Order matters (T-1338 §7/§8):
+        Order matters (T-1338 §7/§8, T-1349 §13):
           1. a concrete token (image pill, then link glyph) directly under the
              pointer WINS -- so hovering token B never stays stuck on token
              A's far-right Copy bridge, and geometry is recomputed fresh every
              move (a resize/scroll/font change cannot leave a stale rect);
           2. otherwise, if the pointer is still inside the CURRENT control's
              own rect or the small bridge to it, keep it alive (no flicker);
-          3. otherwise clear.
+          3. otherwise START the bounded grace and keep the control painted
+             (T-1349). A far-placed Copy is deliberately NOT spatially joined
+             to its token, so without time the crossing is impossible;
+          4. on grace expiry, clear.
 
         Links resolve in every view (copyable wherever they render); image
         pills only where they are painted (``_image_pills_enabled``).
         """
         token = self._inline_token_at(pos)
         if token is not None:
+            self._stop_inline_hover_grace()
             self._set_inline_hover(*token)
             return
         if self._inline_hover_zone_contains(pos):
+            self._stop_inline_hover_grace()
             return
-        self._clear_inline_hover()
+        self._arm_inline_hover_grace()
 
     def _inline_token_at(self, pos):
         """(kind, target, target_rect, copy_rect) for the image pill or link
@@ -2271,6 +2471,7 @@ class VaultTextEdit(QTextEdit):
         self._hover_inline_target = target
         self._hover_inline_target_rect = target_rect
         self._hover_inline_copy_rect = copy_rect
+        self._hover_inline_mode = self._preview_mode()
         if changed:
             self.viewport().update()
 
@@ -3297,6 +3498,10 @@ class VaultTextEdit(QTextEdit):
         the text did). Clears it if the pointer is off the viewport."""
         if sip.isdeleted(self):
             return
+        # T-1349: a grace started before the scroll describes geometry that has
+        # already moved; it is dropped here and only re-armed by the fresh
+        # resolve below, if the pointer still owns something.
+        self._stop_inline_hover_grace()
         point = self.viewport().mapFromGlobal(QCursor.pos())
         if not self.viewport().rect().contains(point):
             self._clear_inline_hover()
