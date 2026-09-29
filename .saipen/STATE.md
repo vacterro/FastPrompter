@@ -1,6 +1,6 @@
 ---
-phase: DONE
-task: none
+phase: SCOUT
+task: T-1350
 next_action: "PHASE SCOUT T-1350"
 blocker: "none"
 agent: buffy
@@ -13,10 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3495
+last_event: 3497
 style_contract: ded-6b950e75
-updated: "2026-09-29T17:48:32Z"
-transition_from: SHIP
+updated: "2026-09-29T18:21:59Z"
+transition_from: DONE
 execution_intent: goal
 goal_waves: 0
 goal_tickets: 0

@@ -239,10 +239,6 @@
     "SRC-068": {
       "linked_work": "T-1339",
       "source_sha256": "0df333a5eb5d1c0a8d9092b0ae466aa22f61e3177b139ec39ed7920b9ebe675a"
-    },
-    "SRC-069": {
-      "linked_work": "T-1349",
-      "source_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292"
     }
   },
   "next_id": 70,
@@ -317,6 +313,33 @@
       "source_sha256": "52f1510045cff4a66c0a09a538c66e4eda9dc8c03b4bf2ae962ba8931a8d80bd",
       "status": "CLOSED",
       "unresolved": 0
+    },
+    "SRC-069": {
+      "archive_ref": ".saipen/archive/retired/SRC-069.md",
+      "linked_work": "T-1349",
+      "measured_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292",
+      "receipt_id": "SRC-069",
+      "retired_at": "2026-09-29T18:21:59Z",
+      "retired_by": "buffy",
+      "retirement": {
+        "digest_mismatch": false,
+        "measured_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292",
+        "note": "",
+        "reason": "EMPTY_STALE_SOURCE",
+        "receipt_only": true,
+        "recorded_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292",
+        "retired_at": "2026-09-29T18:21:59Z",
+        "retired_by": "buffy",
+        "retirement_event": "E-3497",
+        "schema_version": 2,
+        "source_reason": "EMPTY_STALE_SOURCE",
+        "successor": ""
+      },
+      "retirement_event": "E-3497",
+      "schema_version": 2,
+      "source_reason": "EMPTY_STALE_SOURCE",
+      "source_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292",
+      "status": "INVALID"
     }
   }
 }

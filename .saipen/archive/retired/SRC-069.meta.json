@@ -1,4 +1,5 @@
 {
+  "archive_ref": ".saipen/archive/retired/SRC-069.md",
   "linked_work": "T-1349",
   "receipt_id": "SRC-069",
   "received_at": "2026-09-29T16:31:38Z",
@@ -13,6 +14,20 @@
     "note": "no operator carrier and no transport obligation: the stored bytes are what this session supplied, and nothing compared them with what the operator wrote",
     "witness": "model_supplied"
   },
+  "retirement": {
+    "digest_mismatch": false,
+    "measured_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292",
+    "note": "",
+    "reason": "EMPTY_STALE_SOURCE",
+    "receipt_only": true,
+    "recorded_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292",
+    "retired_at": "2026-09-29T18:21:59Z",
+    "retired_by": "buffy",
+    "retirement_event": "E-3497",
+    "schema_version": 2,
+    "source_reason": "EMPTY_STALE_SOURCE",
+    "successor": ""
+  },
   "schema_version": 1,
   "sensitive": false,
   "source_authority": {
@@ -22,7 +37,8 @@
   },
   "source_kind": "user_instruction",
   "source_sha256": "c713ba44f93216be0f02f16b9d86d4647997768309d7c981c4a588215f8eb292",
-  "status": "ACTIVE",
+  "status": "INVALID",
+  "storage_status": "ARCHIVED",
   "transport": {
     "newline_normalization": "none",
     "source_encoding": "utf-8",
