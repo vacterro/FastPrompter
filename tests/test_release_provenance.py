@@ -12,6 +12,7 @@ These tests pin the tooling that makes a public release trustworthy:
 
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -84,6 +85,17 @@ def test_validate_receipt_binds_all_four_facts(tmp_path):
         "release_commit": "a" * 40,
         "exe_sha256": exe_hash,
         "product_version": "",
+        "source_tree_fingerprint": "release-source-v1:" + "0" * 64,
+        "verification": {
+            "build": "BUILD_EXIT 0",
+        },
+        "probe": {
+            "ok": True,
+        },
+        "operator_manual_acceptance": {
+            "status": "ACCEPTED",
+            "reference": "verified",
+        },
     }
     assert rp.validate_receipt(receipt, exe, "1.2.3", "a" * 40) == []
     assert rp.validate_receipt(receipt, exe, "1.2.4", "a" * 40)
@@ -152,3 +164,75 @@ def test_inventory_report_is_a_report_not_a_mutation(tmp_path, monkeypatch):
     assert all(isinstance(entry["rationale"], str) for entry in report["entries"])
     sample = json.loads(json.dumps(report))
     assert sample["operation"] == "release_tree_inventory"
+
+
+def test_check_false_does_not_return_the_unresolved_argument(tmp_path):
+    """A failed git call must yield "", not whatever git echoed on stdout.
+
+    `git rev-parse <unknown>^{commit}` prints the literal argument back and exits
+    128. check=False skipped the raise, so the caller received that echo and read
+    it as a real answer. tools/release.py compares the result against HEAD and
+    refused to publish the first release of any untagged version with "version
+    already tagged at different commit; bump VERSION" -- advice that is actively
+    wrong for a version that was never tagged, because it sends the next person
+    bumping a version number for no reason.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    unknown = rp.git("rev-parse", "v9.9.9^{commit}", root=repo, check=False)
+    assert unknown == "", f"failed git leaked output: {unknown!r}"
+
+    head = rp.git_head(root=repo)
+    tagged = subprocess.run(["git", "tag", "v9.9.9"], cwd=repo, check=True)
+    assert tagged.returncode == 0
+    assert rp.git("rev-parse", "v9.9.9^{commit}", root=repo, check=False) == head
+
+
+def test_release_refuses_to_guess_about_an_untagged_version(tmp_path, monkeypatch):
+    """release.check_tag_provenance must pass when the tag simply does not exist."""
+    import release as rel
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    # rel.rp IS rp, so capture the real callable before patching it.
+    real_git_head = rp.git_head
+    monkeypatch.setattr(rel.rp, "git_head", lambda: real_git_head(root=repo))
+    monkeypatch.setattr(rel.rp, "git_remote_tag_commit", lambda *a, **k: None)
+    # Must not raise: there is no v1.2.3 tag, and that is a legitimate state for
+    # the first release of a version.
+    rel.check_tag_provenance("1.2.3")
+
+    # A tag that exists at a DIFFERENT commit must still be refused.
+    other = tmp_path / "other"
+    other.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=other, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.invalid"], cwd=other, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=other, check=True)
+    (other / "b.txt").write_text("b\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=other, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "other"], cwd=other, check=True)
+    subprocess.run(["git", "tag", "v1.2.3"], cwd=other, check=True)
+    subprocess.run(["git", "remote", "add", "origin", str(other)], cwd=repo, check=True)
+    subprocess.run(["git", "fetch", "-q", "origin"], cwd=repo, check=True)
+
+    def _remote(tag, remote="origin", root=None):
+        return subprocess.run(["git", "rev-parse", f"{tag}^{{commit}}"], cwd=other,
+                              capture_output=True, text=True).stdout.strip()
+
+    monkeypatch.setattr(rel.rp, "git_remote_tag_commit", _remote)
+    with pytest.raises(SystemExit):
+        rel.check_tag_provenance("1.2.3")

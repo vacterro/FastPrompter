@@ -120,6 +120,16 @@ def git(*args: str, root: Path = REPO_ROOT, check: bool = True) -> str:
         raise ProvenanceError(
             f"git {' '.join(args)} failed ({proc.returncode}): {proc.stderr.strip()[:300]}"
         )
+    if proc.returncode != 0:
+        # check=False means "do not raise", not "trust the output of a command
+        # that failed". Some git subcommands echo their unresolved argument back
+        # on stdout when the ref does not exist -- `git rev-parse v0.8.69^{commit}`
+        # prints the literal 'v0.8.69^{commit}' and exits 128. release.py then read
+        # that as a tag at the wrong commit and refused to publish the FIRST
+        # release of a version with the message "version already tagged at
+        # different commit; bump VERSION", which would have sent anyone bumping a
+        # version that was never tagged in the first place.
+        return ""
     return proc.stdout.strip()
 
 
@@ -370,18 +380,44 @@ def write_receipt(
     return receipt
 
 
+def version_matches_product_version(product_version: str, version: str) -> bool:
+    """True if PE product_version (e.g. '0.8.69.0') matches release version ('0.8.69')."""
+    if not product_version or not version:
+        return False
+    if product_version == version or product_version == f"{version}.0":
+        return True
+    try:
+        pv_parts = [int(p) for p in product_version.split(".")]
+        v_parts = [int(p) for p in version.split(".")]
+    except ValueError:
+        return False
+    if len(pv_parts) < len(v_parts) or pv_parts[:len(v_parts)] != v_parts:
+        return False
+    return all(x == 0 for x in pv_parts[len(v_parts):])
+
+
 def validate_receipt(
     receipt: dict,
     exe_path: Path,
     version: str,
     commit: str,
 ) -> list[str]:
-    """The four binds release.py refuses to publish without."""
+    """The binds release.py refuses to publish without."""
     failures: list[str] = []
     if receipt.get("version") != version:
         failures.append(f"receipt version {receipt.get('version')!r} != VERSION {version!r}")
     if receipt.get("release_commit") != commit:
         failures.append(f"receipt commit {receipt.get('release_commit')!r} != HEAD {commit!r}")
+
+    # Source tree fingerprint evidence
+    fingerprint = str(receipt.get("source_tree_fingerprint") or "").strip()
+    if not fingerprint:
+        failures.append("receipt missing source_tree_fingerprint")
+    else:
+        prefix = f"{FINGERPRINT_SCHEME}:"
+        if not fingerprint.startswith(prefix) or len(fingerprint.split(":", 1)[1]) != 64:
+            failures.append(f"receipt source_tree_fingerprint {fingerprint!r} is invalid")
+
     if not Path(exe_path).is_file():
         failures.append(f"EXE missing: {exe_path}")
         return failures
@@ -393,6 +429,51 @@ def validate_receipt(
         failures.append(
             f"receipt ProductVersion {receipt.get('product_version')!r} != {product_version!r}"
         )
+
+    # ProductVersion agreement with declared release version
+    if product_version:
+        if not version_matches_product_version(product_version, version):
+            failures.append(
+                f"declared release version {version!r} does not match EXE ProductVersion {product_version!r}"
+            )
+    rc_pv = receipt.get("product_version")
+    if rc_pv:
+        if not version_matches_product_version(rc_pv, version):
+            failures.append(
+                f"receipt ProductVersion {rc_pv!r} does not match release version {version!r}"
+            )
+
+    # Verification and build evidence
+    verification = receipt.get("verification")
+    if not isinstance(verification, dict):
+        failures.append("receipt missing verification evidence")
+    else:
+        build_ev = verification.get("build")
+        if not build_ev or not str(build_ev).strip():
+            failures.append("receipt missing build evidence in verification")
+
+    # Probe evidence
+    probe = receipt.get("probe")
+    if not isinstance(probe, dict):
+        failures.append("receipt missing probe evidence")
+    else:
+        if not probe.get("ok"):
+            failures.append(f"receipt probe evidence is not ok: {probe.get('ok')!r}")
+        if probe.get("exe_sha256") and probe.get("exe_sha256") != receipt.get("exe_sha256"):
+            failures.append("receipt probe exe_sha256 does not match receipt exe_sha256")
+
+    # Operator manual acceptance
+    acceptance = receipt.get("operator_manual_acceptance")
+    if not isinstance(acceptance, dict):
+        failures.append("receipt missing operator_manual_acceptance")
+    else:
+        if acceptance.get("status") != "ACCEPTED":
+            failures.append(
+                f"receipt operator_manual_acceptance status {acceptance.get('status')!r} != 'ACCEPTED'"
+            )
+        if not str(acceptance.get("reference") or "").strip():
+            failures.append("receipt operator_manual_acceptance reference is missing or empty")
+
     return failures
 
 

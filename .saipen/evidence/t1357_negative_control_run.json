@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "operation": "t1357_e3666_release_provenance_negative_controls",
+  "recorded_at": "2026-09-30T18:32:14Z",
+  "ticket": [
+    "T-1357",
+    "E-3666"
+  ],
+  "suite": "build/t1351_negative_controls.py",
+  "suite_sha256": "802dcb36ef665332fa69950d7c2a0124fd64806f88b9d6b6193995609f692378",
+  "release_commit": "a655fdd0e145f5239be03a327a0a225b53256329",
+  "release_tag": "v0.8.69",
+  "main_head": "e111ed869c49a5346aa531eefdad2c608a86ff8c",
+  "required_cases": {
+    "existing positive receipt verification passes": "baseline (shipped) / baseline (hardened) / restored",
+    "wrong commit rejected": "receipt bound to a different commit",
+    "wrong version rejected": "receipt version disagrees with VERSION",
+    "wrong EXE SHA rejected": "receipt binds a different EXE",
+    "wrong ProductVersion rejected": "ProductVersion disagrees with the declared version",
+    "missing fingerprint rejected": "receipt carries no source fingerprint",
+    "malformed fingerprint rejected": "source fingerprint is not a 64-hex digest",
+    "nonexistent tag does NOT appear as an existing tag": "a nonexistent tag does not appear as an existing tag",
+    "real tag at another commit still rejects": "a real tag at another commit still rejects"
+  },
+  "baseline_commit_source": "receipt.release_commit (commit of record), NOT the live worktree HEAD",
+  "baseline_rationale": "main advanced past the release after the authorized T-1259 push e111ed8; resolving HEAD would have measured branch drift, not receipt validity. The 'real tag at another commit' case covers the other direction explicitly.",
+  "non_vacuity_control": {
+    "method": "no-op validator substituted for both validators",
+    "undetected": "7/7 tamper cases",
+    "verdict": "control fires -- the gate rejects nothing only when the validator is neutered"
+  },
+  "results": [
+    "PASS  baseline (shipped): the real receipt validates",
+    "PASS  baseline (hardened): the real receipt validates",
+    "PASS  receipt bound to a different commit",
+    "PASS  receipt version disagrees with VERSION",
+    "PASS  receipt binds a different EXE",
+    "PASS  ProductVersion disagrees with the declared version",
+    "PASS  receipt carries no source fingerprint",
+    "PASS  source fingerprint is not a 64-hex digest",
+    "PASS  a nonexistent tag does not appear as an existing tag",
+    "PASS  the published tag v0.8.69 resolves to the release commit",
+    "PASS  (shipped) a real tag at another commit still rejects",
+    "PASS  (hardened) a real tag at another commit still rejects",
+    "PASS  restored (shipped): the real receipt validates again",
+    "PASS  restored (hardened): the real receipt validates again"
+  ],
+  "failures": 0,
+  "exit_code": 0,
+  "verdict": "NEGATIVE CONTROL PASSED",
+  "unit_suite": {
+    "cmd": "uv run python -m pytest tests/test_t1357_receipt_validator.py -q",
+    "result": "6 passed"
+  },
+  "stdout_tail": [
+    "KNOWN GAP (T-1357, lands for 0.8.70): the validator shipped in this release",
+    "does not check source_tree_fingerprint. It is checked here out of band, and",
+    "the receipt carries the recomputed 9bd64715 that matches the release tree."
+  ]
+}
