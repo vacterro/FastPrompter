@@ -1,0 +1,15 @@
+{
+  "schema": "regression-pair-v1",
+  "ticket": "T-1361",
+  "target": ".saipen/evidence/t1259_cleanup_check.py",
+  "verifier_sha256": "6a0ecd6aaa7cafcbc90f44f9d848c4f05f5d21dffeef6f8c878c8d16e09b2e8e",
+  "subject_pre_fix_sha256": "a284b93d22cf9b7d33e680a00c28ec6c1fae2448eb6c5863680c93c3116d6563",
+  "pre_fix_exit": 1,
+  "post_fix_exit": 0,
+  "red_against_pre_fix": true,
+  "green_against_post_fix": true,
+  "pair": "ADMISSIBLE",
+  "pre_fix_decisive_line": "FileNotFoundError: [Errno 2] No such file or directory: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\.saipen\\\\intake\\\\active\\\\SRC-004.md'",
+  "post_fix_decisive_line": "T-1259 CLEAN REVERIFY PASS",
+  "note": "identical fixture and oracle; the only variable is the gate implementation"
+}

@@ -58,11 +58,19 @@ def is_blocking(rel: str) -> bool:
 def main() -> int:
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     tracked = set(_git("ls-files", "-z"))
-    corpus = {
-        path: (ROOT / path).read_text(encoding="utf-8", errors="ignore")
-        for path in sorted(tracked)
-        if path.endswith(TEXT_SUFFIXES) and is_blocking(path)
-    }
+    # A tracked path can be gone from the working tree (e.g. an intake receipt
+    # retired to archive); it cannot hold a live reference, so skip rather than
+    # crash. Count them so the skip stays visible in the output.
+    missing = 0
+    corpus: dict[str, str] = {}
+    for path in sorted(tracked):
+        if not path.endswith(TEXT_SUFFIXES) or not is_blocking(path):
+            continue
+        target = ROOT / path
+        if not target.is_file():
+            missing += 1
+            continue
+        corpus[path] = target.read_text(encoding="utf-8", errors="ignore")
 
     violations: list[str] = []
     phase2 = manifest.get("phase2", {})
@@ -115,7 +123,7 @@ def main() -> int:
             continue
         violations.append(f"UNCLASSIFIED ROOT SCRIPT: {rel} ({'ignored' if rel in ignored else 'untracked'})")
 
-    print(f"corpus: {len(corpus)} blocking reference files")
+    print(f"corpus: {len(corpus)} blocking reference files ({missing} tracked paths absent from the working tree, skipped)")
     print(f"deleted paths proven absent+unreferenced: {len(all_deleted)}")
     print(f"preserved paths proven present+intact: {len(manifest['preserve'])}")
     if violations:

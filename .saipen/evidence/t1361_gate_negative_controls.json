@@ -1,0 +1,37 @@
+{
+  "schema": "negative-controls-v1",
+  "ticket": "T-1361",
+  "target": ".saipen/evidence/t1259_cleanup_check.py",
+  "purpose": "prove the tracked-path skip does not blind any detection clause",
+  "target_sha256": "6a0ecd6aaa7cafcbc90f44f9d848c4f05f5d21dffeef6f8c878c8d16e09b2e8e",
+  "controls": [
+    {
+      "control": " NC0 baseline clean tree PASSES             ",
+      "gate_exit": 0,
+      "behaved_correctly": true
+    },
+    {
+      "control": " NC1 deleted path recreated -> FAIL (_scratch_roskno_build.py) exit=1",
+      "gate_exit": 1,
+      "behaved_correctly": true
+    },
+    {
+      "control": " NC2 live reference in tracked blocking file -> FAIL exit=1",
+      "gate_exit": 1,
+      "behaved_correctly": true
+    },
+    {
+      "control": " NC3 unclassified root script -> FAIL       ",
+      "gate_exit": 1,
+      "behaved_correctly": true
+    },
+    {
+      "control": " NC4 after restore PASSES again             ",
+      "gate_exit": 0,
+      "behaved_correctly": true
+    }
+  ],
+  "controls_correct": "5/5",
+  "working_tree_restored": true,
+  "transcript": "build/_t1361_nc.txt"
+}
