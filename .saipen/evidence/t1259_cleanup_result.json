@@ -55,5 +55,27 @@
     "test_timer_to_dict.py",
     "test_timers_patch.py"
   ],
-  "skipped": []
+  "skipped": [],
+  "phase2": {
+    "deleted": [
+      "append_path_tests.py",
+      "bump.py",
+      "bump_changelog.py",
+      "finish_state.py",
+      "log_ship.py",
+      "mark_board.py",
+      "original.py",
+      "prune_board.py",
+      "rm_converge.py",
+      "scratch.py",
+      "update_state.py",
+      "update_state2.py",
+      "write_digest.py"
+    ],
+    "held": []
+  },
+  "totals": {
+    "deleted_total": 67,
+    "preserved_total": 0
+  }
 }

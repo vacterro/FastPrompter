@@ -63,6 +63,7 @@ _ROOT_ACCEPTED = {
 }
 
 _ROOT_SCRATCH_NAMES = {
+    "all_untranslated_context.json",
     "append_path_tests.py",
     "bump.py",
     "bump_changelog.py",
@@ -81,10 +82,30 @@ _ROOT_SCRATCH_NAMES = {
     "rm_converge.py",
     "ruff.json",
     "scratch.py",
+    "scratch_keys.json",
     "unique_keys.json",
     "update_state.py",
     "update_state2.py",
     "write_digest.py",
+}
+
+#: T-1353 one-off campaign probes. They live under tools/ but import nothing, are
+#: imported by nothing, and are superseded by the i18n_* chain, so shipping them
+#: as "release tooling" would misdescribe them. Kept on disk for the campaign
+#: record (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353
+#: material), never release input. Proof in
+#: .saipen/evidence/t1370_tool_lifecycle.json.
+_OBSOLETE_TOOL_NAMES = {
+    "tools/categorize_keys.py",
+    "tools/check_hsc.py",
+    "tools/check_keys.py",
+    "tools/dump_all_context.py",
+    "tools/find_hsc.py",
+    "tools/find_ru.py",
+    "tools/inspect_keys.py",
+    "tools/make_overview.py",
+    "tools/make_reference.py",
+    "tools/split_batches.py",
 }
 
 _SCRATCH_PREFIXES = ("fix_", "patch", "sweep_", "smoke_", "lm", "run")
@@ -133,6 +154,8 @@ def classify(path: str) -> tuple[str, str]:
         return "G", "machine-local SAIPEN in-flight state -- never release input (T-1241)"
     if path.startswith(".saipen/") or path.startswith("audit/"):
         return "E", "SAIPEN canonical memory / release evidence"
+    if path in _OBSOLETE_TOOL_NAMES:
+        return "H", "superseded one-off campaign probe, zero consumers (T-1370)"
     if path in GENERATED_SOURCE_FILES:
         return "D", "generated vocabulary required by tests and release"
     if path.startswith("tools/") or path.startswith("docs/"):

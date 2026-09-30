@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "operation": "t1370_tool_lifecycle",
+  "recorded_at": "2026-09-30T18:51:53Z",
+  "authorization": "SAIHANDOFF section 7",
+  "method": "AST import graph over every tracked .py plus every tools/*.py, plus an exact-name reference scan over every tracked text file; nothing is classified by name similarity",
+  "committed_to_cohort": [
+    "tools/i18n_contract.py",
+    "tools/i18n_identical_audit.py",
+    "tools/i18n_verified.py",
+    "tools/i18n_verified_identical.json",
+    "tools/i18n_remaining.py",
+    "tools/i18n_outlier.py",
+    "tools/i18n_apply_campaign.py",
+    "tools/i18n_recompute_coverage.py"
+  ],
+  "commit_rationale": {
+    "tools/i18n_contract.py": {
+      "referenced_by_tracked": [
+        ".saipen/BOARD.md",
+        ".saipen/LOG.md",
+        "tools/validate_saitranslate.py"
+      ],
+      "imported_by_tracked": [
+        "tools/validate_saitranslate.py"
+      ]
+    },
+    "tools/i18n_identical_audit.py": {
+      "referenced_by_tracked": [
+        ".saipen/LOG.md",
+        "tools/validate_saitranslate.py"
+      ],
+      "imported_by_tracked": [
+        "tools/validate_saitranslate.py"
+      ]
+    },
+    "tools/i18n_verified.py": {
+      "referenced_by_tracked": [
+        ".saipen/BOARD.md",
+        ".saipen/LOG.md",
+        "tools/validate_saitranslate.py"
+      ],
+      "imported_by_tracked": [
+        "tools/validate_saitranslate.py"
+      ]
+    },
+    "tools/i18n_verified_identical.json": {
+      "referenced_by_tracked": [
+        ".saipen/BOARD.md",
+        ".saipen/LOG.md",
+        "tools/validate_saitranslate.py"
+      ],
+      "imported_by_tracked": []
+    },
+    "tools/i18n_remaining.py": {
+      "referenced_by_tracked": [],
+      "imported_by_tracked": []
+    },
+    "tools/i18n_outlier.py": {
+      "referenced_by_tracked": [],
+      "imported_by_tracked": []
+    },
+    "tools/i18n_apply_campaign.py": {
+      "referenced_by_tracked": [
+        ".saipen/BOARD.md",
+        ".saipen/LOG.md"
+      ],
+      "imported_by_tracked": []
+    },
+    "tools/i18n_recompute_coverage.py": {
+      "referenced_by_tracked": [
+        ".saipen/BOARD.md",
+        ".saipen/LOG.md"
+      ],
+      "imported_by_tracked": []
+    }
+  },
+  "key_dependency": "tools/validate_saitranslate.py is TRACKED and imports i18n_contract, i18n_identical_audit and i18n_verified at run time, and reads tools/i18n_verified_identical.json. Without these eight files a clean clone raises ImportError in the release gate, so they are release input, not probes.",
+  "reclassified_obsolete": [
+    {
+      "path": "tools/categorize_keys.py",
+      "lines": 17,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/check_hsc.py",
+      "lines": 5,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/check_keys.py",
+      "lines": 22,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/dump_all_context.py",
+      "lines": 26,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/find_hsc.py",
+      "lines": 6,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/find_ru.py",
+      "lines": 6,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/inspect_keys.py",
+      "lines": 28,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/make_overview.py",
+      "lines": 14,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/make_reference.py",
+      "lines": 38,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    },
+    {
+      "path": "tools/split_batches.py",
+      "lines": 25,
+      "importers": [],
+      "name_references_in_tracked_files": [],
+      "own_imports": [],
+      "decision": "RECLASSIFIED_H",
+      "reason": "imports nothing, imported by nothing, superseded by the i18n_* chain; kept on disk (SAIHANDOFF section 3 forbids opportunistic deletion of T-1353 material) and never release input"
+    }
+  ],
+  "third_state_count": 0
+}

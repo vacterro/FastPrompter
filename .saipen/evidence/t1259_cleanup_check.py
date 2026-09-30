@@ -65,8 +65,11 @@ def main() -> int:
     }
 
     violations: list[str] = []
+    phase2 = manifest.get("phase2", {})
+    allowed_live = set(phase2.get("authorized_live_reference_classes", {}))
+    all_deleted = list(manifest["delete"]) + list(phase2.get("deleted", []))
 
-    for entry in manifest["delete"]:
+    for entry in all_deleted:
         rel = entry["path"]
         if (ROOT / rel).exists():
             violations.append(f"DELETED PATH PRESENT: {rel}")
@@ -74,8 +77,15 @@ def main() -> int:
             violations.append(f"DELETED PATH IS TRACKED: {rel}")
         pattern = re.compile(re.escape(rel))
         for path, text in corpus.items():
-            if path != rel and pattern.search(text):
+            if path != rel and pattern.search(text) and path not in allowed_live:
                 violations.append(f"LIVE REFERENCE REMAINS: {rel} <- {path}")
+
+    # The classifier denylist must keep naming the deleted scratch files, so a
+    # recurrence is still classified as scratch.
+    classifier = (ROOT / "tools" / "release_tree_inventory.py").read_text(encoding="utf-8")
+    for entry in phase2.get("deleted", []):
+        if f'"{entry["path"]}"' not in classifier:
+            violations.append(f"CLASSIFIER ENTRY DROPPED: {entry['path']}")
 
     for entry in manifest["preserve"]:
         path = ROOT / entry["path"]
@@ -86,7 +96,7 @@ def main() -> int:
         if digest != entry["sha256"]:
             violations.append(f"PRESERVED PATH MUTATED: {entry['path']}")
 
-    for entry in manifest["delete"]:
+    for entry in all_deleted:
         reason = entry.get("classification", "").strip()
         if not reason or not entry.get("sha256") or entry.get("bytes") is None:
             violations.append(f"INCOMPLETE MANIFEST RECORD: {entry['path']}")
@@ -94,7 +104,7 @@ def main() -> int:
     # Completeness: every root-level untracked/ignored .py must be accounted for
     # by exactly one manifest record, so new scratch cannot slip in unclassified.
     ignored = set(_git("ls-files", "-z", "--others", "--ignored", "--exclude-standard"))
-    accounted = {e["path"] for e in manifest["delete"]} | {
+    accounted = {e["path"] for e in all_deleted} | {
         e["path"] for e in manifest["preserve"]
     }
     for path in sorted(ROOT.iterdir()):
@@ -106,7 +116,7 @@ def main() -> int:
         violations.append(f"UNCLASSIFIED ROOT SCRIPT: {rel} ({'ignored' if rel in ignored else 'untracked'})")
 
     print(f"corpus: {len(corpus)} blocking reference files")
-    print(f"deleted paths proven absent+unreferenced: {len(manifest['delete'])}")
+    print(f"deleted paths proven absent+unreferenced: {len(all_deleted)}")
     print(f"preserved paths proven present+intact: {len(manifest['preserve'])}")
     if violations:
         for line in violations:
