@@ -1,0 +1,736 @@
+{
+  "schema_version": 1,
+  "ticket": "T-1259",
+  "operator_decision": "2026-09-30 CLEAN authorized under proven-zero-reference boundary",
+  "recorded_at": "2026-09-30T18:01:16Z",
+  "reference_corpus": {
+    "blocking_paths": 1113,
+    "definition": "src/ tests/ tests_smoke/ tools/ docs/ _res/ .github/ + root-level launchers/docs/config + .saipen STATE/BOARD/LOG/KNOWLEDGE/intake/MANIFEST",
+    "excluded_as_non_live": [
+      ".saipen/extensions/subs/** (archived subagent dispatch records)",
+      ".saipen/logs/** (past run logs)",
+      ".saipen/archive/** (past receipts)",
+      ".saipen/recovery/** (past snapshots)"
+    ]
+  },
+  "delete": [
+    {
+      "path": "_scratch_roskno_build.py",
+      "bytes": 5890,
+      "sha256": "cb6316ad7da72464e723cb60bc162e82951449b651e32b7acf3c82eb2c25a28e",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "_scratch_roskno_verify.py",
+      "bytes": 1734,
+      "sha256": "770147cb695f1e10bd669b2b4ef86bd25379ab7678812c7cc4d2b454cc9797c8",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "_scratch_t1353r3_build.py",
+      "bytes": 4267,
+      "sha256": "9153ba5c4ae4244975c0a9651b5cc35a85438dd4a9d56988b0ee5d830a4b2c79",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "analyze_est.py",
+      "bytes": 993,
+      "sha256": "b21d0c36710937881674740f1d8146ce60ef551a53a405ae276903ed7ee152ff",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "analyze_fi.py",
+      "bytes": 1086,
+      "sha256": "48254df5b6a99ffcab77d9d240597eac984150cc9649229138977b15dffca9d6",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "check_arm.py",
+      "bytes": 324,
+      "sha256": "e58dab7cc7bbf6adbb3189991154917b22504a33274fc9f9e0c0b3be8b1fecf9",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "check_locales.py",
+      "bytes": 448,
+      "sha256": "d6b8b1fc7c6a000f6b4c2c5acaebfd9936e0d6c39ba087bb2d1a0259b6ff7424",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "check_short_keys.py",
+      "bytes": 756,
+      "sha256": "06b54c3a1581bfbb555e86cc7e91550a25db2c41e49da8b6e5b2e8f8ee9fbdab",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "find_agent.py",
+      "bytes": 325,
+      "sha256": "5e8fc4d906065d24737c3c8363b1a7bcbf158c0dd54dbcf05f322ad130958298",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "find_agent_all.py",
+      "bytes": 173,
+      "sha256": "ef760ac4a680c6540aa1f3d99b5752b9f29702871fe771288b2cd4dc506d3703",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "find_agent_context.py",
+      "bytes": 230,
+      "sha256": "1943c506f4835701d3dda9d667218b5c7edf5d45248f7c07e03fba3698617709",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "find_agent_est.py",
+      "bytes": 533,
+      "sha256": "4e25e730a8322475c539f286b07e1960b19611c7f02306035447af19101f43ce",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "find_short_usage.py",
+      "bytes": 685,
+      "sha256": "ba3a95b029fd59c69f606705a127a99bba1c83f754cf9bae90a2927c7e550779",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "find_usage.py",
+      "bytes": 630,
+      "sha256": "9618d471df9e3feacd8d9e00c8a1468348da0f5d7655a2b7b4f968f5586c7838",
+      "git_state": "untracked",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_board.py",
+      "bytes": 416,
+      "sha256": "74c371921f03b9a699df1f74c977f2836ccb7f4ff454b043c8b0d37c175532da",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_encoding.py",
+      "bytes": 738,
+      "sha256": "5f8f7689507d8e74fe0fec5bb83e1002ec15132fb781afcc6602989e636bb46f",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_input_dialog.py",
+      "bytes": 1656,
+      "sha256": "0dcacedffa8cb5dd00e0b56842d0459aad6cb9908ce53b64c18e9355995f6c78",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_locales.py",
+      "bytes": 2349,
+      "sha256": "1e808d3b1c87b12c958b8c23730681ed549da8fae829e266402a77c669efa038",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_main.py",
+      "bytes": 3425,
+      "sha256": "179ed60f0655ac5985b84a692b345a1fd007f6b8a49106ba10cbb3dbcdead68d",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_main_import.py",
+      "bytes": 570,
+      "sha256": "53af5a28b6c048720580eaeca2e34972f990d71ac9fefdfc8ce3e9ca41963eb1",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_main_ui.py",
+      "bytes": 2173,
+      "sha256": "45c0795d8f07671027f4f4515c49a6fc8e609115763a09abd2dc3003f263fa83",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_missing.py",
+      "bytes": 701,
+      "sha256": "88bbad037432a9345aca1e7491612c4cd1322262b5167f4a8a9185f2d9faa80e",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_missing_2.py",
+      "bytes": 669,
+      "sha256": "38baef48798853a663cb8a66f52bd689261234d1a1a239e2fed42b93ae05042e",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_missing_3.py",
+      "bytes": 1007,
+      "sha256": "eb47a057efdda353b7b6138c8ab5eb382d6aefd9d2b2703c9534ffc74cfc202a",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_snippet.py",
+      "bytes": 2864,
+      "sha256": "fd6bbe695a08759780f658f3bd08dc04079ed3006d7d8ca2af70bf5b41b47c9f",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_state.py",
+      "bytes": 1143,
+      "sha256": "76022d25109fda3edeea7597dd0f01dce94e9851b5d43dc029541a7f0e95019b",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_test_paths.py",
+      "bytes": 415,
+      "sha256": "7785754a4b016fd898b753a203e5438436ec7f13ea853949f0e8af1a6f6ecae0",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_test_paths2.py",
+      "bytes": 688,
+      "sha256": "82d67cc0e2c2823932fbaf678659358dc8297fad69ce30747b0c339e8b86057e",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "fix_test_paths3.py",
+      "bytes": 583,
+      "sha256": "e9c109c4bfbd3d59ca9263d8e6ece340381f29a14a6f0804e2c7afa2d249e8a8",
+      "git_state": "ignored",
+      "classification": "one-off fix script (fix_* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "patch.py",
+      "bytes": 2420,
+      "sha256": "604ea32dedebda9766c6e9e9c5074ae2ed6723dffabb3112e51c2660d76a0e58",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/BOARD.md",
+        ".saipen/extensions/subs/saihunt/LOG.md",
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saipython/LOG.md",
+        ".saipen/extensions/subs/saipython/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/LOG.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md",
+        ".saipen/logs/LOG-004.md"
+      ]
+    },
+    {
+      "path": "patch_board.py",
+      "bytes": 1437,
+      "sha256": "0775024120dbed336e78950153df508279034d029e1b5176da1009c0d70f850a",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_links.py",
+      "bytes": 2744,
+      "sha256": "10f8069650746676118b82947e89a493a6d8d74c021590e10561d564ef45ca17",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_main_reading_links.py",
+      "bytes": 405,
+      "sha256": "478f5e565cde23bc0222279019f55090018e058326feec8eda6a27f0f4fca2f9",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_paths_tests.py",
+      "bytes": 2732,
+      "sha256": "d72d5e884709a95f2ff2ed504c17aba908b8b9f1f6d716b603638d4f2d581b22",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_t1013.py",
+      "bytes": 1892,
+      "sha256": "1da1084a59a1034750bbaf18a95aff5dabdeac72f90a78536ce127406f9a0e61",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_test_links.py",
+      "bytes": 2163,
+      "sha256": "d2e2a3d1d273f3e3ad1a72ba3b70c1524d3f4b5a2c12fa1a1baf51372525c249",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_themes.py",
+      "bytes": 414,
+      "sha256": "f77e861cc1a2ca89f423c367ce60bce538a900327f5903bc97d6f48718eac06e",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timer_dialog.py",
+      "bytes": 3405,
+      "sha256": "50ad46afa09ee6379f08be4088f8ea41b8886fd7cb135e3143b11a8a623b9880",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timer_dialog_tests.py",
+      "bytes": 3529,
+      "sha256": "582f5f7326fa3a8dd427dfc5e38a77b8f939e60990504478891dced610ee6b25",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timer_dialog_tests2.py",
+      "bytes": 263,
+      "sha256": "fe1b684b81a178923ad9997ed34cd1a90c71faeb3b4f31e44cdc4d24cb2c9aa9",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timer_dialog_tests3.py",
+      "bytes": 1313,
+      "sha256": "2a67e51d1b0170e765fc73ea77a768c6bf5d124ab15056a85bd1719f7f78e418",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timer_dialog_tests4.py",
+      "bytes": 373,
+      "sha256": "fb8c350916a78ce789a6bf54fd0399cf7fd793b9b4e4b26071bf861a0820d70a",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timer_dialog_tests5.py",
+      "bytes": 372,
+      "sha256": "1f7c2a36145eee9aaf2bfe06853afce0f53f7f3989d7ff83e60b19e0abedcc4b",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timers_from_dict.py",
+      "bytes": 547,
+      "sha256": "1af86838dc3574cff507c7fcdadf505ff4310b21511f1c6461a9c832cf62e313",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timers_limit.py",
+      "bytes": 3499,
+      "sha256": "a40f738c8d752145df1c772fa417c36ea9d4566c0eee1804179cd7baac66124e",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "patch_timers_todict.py",
+      "bytes": 506,
+      "sha256": "826def9932ec9bdfc7dfa716136ca43e5e3657e77fec3a01f4034b60bae52ed8",
+      "git_state": "ignored",
+      "classification": "one-off patch script (patch* prefix), class H scratch per tools/release_tree_inventory.py _SCRATCH_PREFIXES",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md"
+      ]
+    },
+    {
+      "path": "remove_bom.py",
+      "bytes": 200,
+      "sha256": "a8ef8411035e5fe617e7c201718a90e46934083d3af8e13a718adc7513ec4e22",
+      "git_state": "ignored",
+      "classification": "one-off fix script (remove_bom)",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "smoke_coverage.py",
+      "bytes": 776,
+      "sha256": "ace4cb6da4adde1555658d6332aaeee2d19dfc91b9ba588d2e18ae38bb916f60",
+      "git_state": "ignored",
+      "classification": "one-off smoke scratch script (smoke_* prefix), class H scratch",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "test_lock.py",
+      "bytes": 188,
+      "sha256": "792b79eb3fe0f028e80b941f444d635eaa9eef4b8601a1b22e444b736598f07b",
+      "git_state": "ignored",
+      "classification": "one-off throwaway probe named test_*.py at repo root; never collected (CI runs pytest tests/ tests_smoke/)",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "test_palette.py",
+      "bytes": 712,
+      "sha256": "24b7bcca1fffffa13ae0ef6fa9754d6aff70d10371f7e6942711d39daa3847d8",
+      "git_state": "ignored",
+      "classification": "one-off throwaway probe named test_*.py at repo root; never collected (CI runs pytest tests/ tests_smoke/)",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "test_timer_debug.py",
+      "bytes": 280,
+      "sha256": "2c1c4c20292af50d72c5f0ae74b0867ffd4a5a004cc4050276af5b0bdff86c66",
+      "git_state": "ignored",
+      "classification": "one-off throwaway probe named test_*.py at repo root; never collected (CI runs pytest tests/ tests_smoke/)",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "test_timer_load.py",
+      "bytes": 242,
+      "sha256": "c0338daa260b970a0be174c0a15e350f946fd04471a526af6919a5d704480be2",
+      "git_state": "ignored",
+      "classification": "one-off throwaway probe named test_*.py at repo root; never collected (CI runs pytest tests/ tests_smoke/)",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "test_timer_to_dict.py",
+      "bytes": 150,
+      "sha256": "7db7cfec0733d2a27efa6c80bcbe8f286b48c01124a72ae7db5b31192c354386",
+      "git_state": "ignored",
+      "classification": "one-off throwaway probe named test_*.py at repo root; never collected (CI runs pytest tests/ tests_smoke/)",
+      "live_references": [],
+      "historical_references": []
+    },
+    {
+      "path": "test_timers_patch.py",
+      "bytes": 834,
+      "sha256": "d8e2554442fc07f13b83942a6f247f70d3287ce3628d860df978c343b95e40ba",
+      "git_state": "ignored",
+      "classification": "one-off throwaway probe named test_*.py at repo root; never collected (CI runs pytest tests/ tests_smoke/)",
+      "live_references": [],
+      "historical_references": [
+        ".saipen/extensions/subs/saihunt/BOARD.md",
+        ".saipen/extensions/subs/saihunt/LOG.md",
+        ".saipen/extensions/subs/saihunt/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saipython/LOG.md",
+        ".saipen/extensions/subs/saipython/kitchen/OUTBOX.md",
+        ".saipen/extensions/subs/saitest/LOG.md",
+        ".saipen/extensions/subs/saitest/kitchen/OUTBOX.md",
+        ".saipen/logs/LOG-004.md"
+      ]
+    }
+  ],
+  "preserve": [
+    {
+      "path": "append_path_tests.py",
+      "bytes": 2757,
+      "sha256": "071a3c7400d32491af814e34f3fda25f00c37b262328276170a12924a5b7d687",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        ".saipen/BOARD.md",
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": [
+        ".saipen/recovery/manual-20260914-ux-gate/BOARD.original.md"
+      ]
+    },
+    {
+      "path": "bump.py",
+      "bytes": 393,
+      "sha256": "930514c9aabcd03f91671ebc458def667742fd5516cd1c9f78e2fd4eaaf903de",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "bump_changelog.py",
+      "bytes": 768,
+      "sha256": "a99e25ded1e9d8a6a6e07145cf7f3322aa56f3fffc49836d16f8776e59c0803a",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "finish_state.py",
+      "bytes": 659,
+      "sha256": "496178cdfd150c9e9a6e6cc4492c9c81c731dfa99b893fba96e131e6a2c06a2f",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "log_ship.py",
+      "bytes": 221,
+      "sha256": "ae4497c44ff37352d3160bcba98f7848a302659783b3ebfd48e96fbd4c2af4a1",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "mark_board.py",
+      "bytes": 743,
+      "sha256": "bbac97b23286d40cfa89370a200104e8951f7c32b01ac78556f03c06fa09e5af",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "original.py",
+      "bytes": 55081,
+      "sha256": "efe50fd16cb85b6ce0cd7bca244d44ca3eef90897e8d8a380bc49b48153c2614",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": [
+        ".saipen/logs/LOG-003.md"
+      ]
+    },
+    {
+      "path": "prune_board.py",
+      "bytes": 1034,
+      "sha256": "05ce1d6f496506c111ea2200966f6ec67208a4bfb33d0e64928930b46e0c6cd9",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "rm_converge.py",
+      "bytes": 227,
+      "sha256": "22d02684426ccf600e737c74c02ddc9513bb8cc147d73ba2639d8867983785b7",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        ".saipen/BOARD.md",
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": [
+        ".saipen/recovery/manual-20260914-ux-gate/BOARD.original.md"
+      ]
+    },
+    {
+      "path": "scratch.py",
+      "bytes": 957,
+      "sha256": "4f5d90840020dac4733c02f24f5bdd9c83a9cc72f2284551217243db07ebe470",
+      "git_state": "ignored",
+      "classification": "one-off scratch script/probe (_scratch_* prefix)",
+      "live_references": [
+        ".saipen/BOARD.md",
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": [
+        ".saipen/recovery/manual-20260914-ux-gate/BOARD.original.md"
+      ]
+    },
+    {
+      "path": "update_state.py",
+      "bytes": 412,
+      "sha256": "814df89247477594bbdf0fb16df34df237c50c248b2144f7270e3f97e6c7f6aa",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "update_state2.py",
+      "bytes": 411,
+      "sha256": "61e728997ea1d9afa47cf2d8ec55d8eefaaec74bb318fb49241b76c14a9e6932",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    },
+    {
+      "path": "write_digest.py",
+      "bytes": 306,
+      "sha256": "8ed718a3b4a7557d1c7ba7134cffc82c7dc7e7ff80f548d77cf04287cbc5a582",
+      "git_state": "ignored",
+      "classification": "one-off root-level analysis/probe script, unreferenced",
+      "live_references": [
+        "tools/release_tree_inventory.py"
+      ],
+      "historical_references": []
+    }
+  ],
+  "forbidden_respected": [
+    "git clean -fd not used",
+    "no wildcard deletion",
+    "no tracked file deleted",
+    "no file with a live reference deleted",
+    "no unrelated untracked material deleted"
+  ],
+  "not_in_scope_preserved": [
+    "root *.zip, *.db, *.xml, *.txt, *.json, *.log artifacts (not one-off scripts; ticket scope is patch/fix/scratch scripts)"
+  ]
+}
