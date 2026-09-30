@@ -29,6 +29,12 @@ def get_language() -> str:
 
 
 def set_language(code: str) -> None:
+    # Without this the assignment below is a STORE_FAST into a function local:
+    # the module global never changes, get_language() keeps returning EN, and
+    # tr() silently serves English no matter what the UI selected. The bytecode
+    # gave it away -- co_names held ('_current_lang_lock', 'upper') and never
+    # '_current_lang'.
+    global _current_lang
     with _current_lang_lock:
         _current_lang = code.upper()
 

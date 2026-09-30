@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "operation": "t1353_product_review",
+  "recorded_at": "2026-09-30T18:51:10Z",
+  "ticket": "T-1353",
+  "authorization": "SAIHANDOFF section 9",
+  "suite": "build/t1353_product_review.py",
+  "suite_sha256": "fee6fb0b70f29b701ab0fdca88313748d57631a4d2bedf5a51697a96a6aff8d9",
+  "locales": 33,
+  "keys_per_locale": 1568,
+  "gates": {
+    "release gate passes": "tools/validate_saitranslate.py exit 0",
+    "33/33 completeness": "every pack carries all en keys",
+    "zero unjustified English fallback": "identical values recorded in tools/i18n_verified_identical.json",
+    "placeholder parity": "only real {substitutions} compared; doubled-brace literals are documentation",
+    "generated JSON/Python parity": "32 modules equal their kitchen JSON",
+    "locale modules import": "32 modules imported",
+    "live language switching": "public set_language()+tr() path, the _engine STORE_FAST fix",
+    "runtime translation tests": "uv run python -m pytest tests/test_i18n_contract_t1353.py -q"
+  },
+  "defects_found_and_fixed": [
+    {
+      "defect": "2 Python source fragments were present as translation keys in the EN master and all 32 locale packs ('MUTED\" if muted else \"SOUND ON', 'MUTED\" if self.data.get(\"audio_global_muted')",
+      "evidence": "no caller in src/; the key-loss guard in tools/inject_translations.py refused to regenerate until they were removed from en.py",
+      "fix": "removed from the EN master and every pack, then regenerated all 32 modules with tools/inject_translations.py",
+      "keys": "1570 -> 1568"
+    },
+    {
+      "defect": "tests/test_second_wave.py validator fixture claimed 100% coverage while 2 of 3 keys were untranslated",
+      "evidence": "tests/test_second_wave.py::test_validator_no_false_dead_keys_and_honest_coverage failed after T-1353 promoted untranslated from warning to error",
+      "fix": "fixture now genuinely translates every key and claims the coverage its keys justify"
+    },
+    {
+      "defect": "423 identical values (keyboard labels, acronyms, filenames, pure format templates) were not recorded as language-neutral",
+      "evidence": "SAIHANDOFF section 9 requires zero UNJUSTIFIED English fallback; tools/i18n_verified_identical.json held only 13 entries per locale",
+      "fix": "tools/i18n_verified_identical.json extended to 423 entries per locale, each matched by a language-neutral rule"
+    }
+  ],
+  "non_vacuity_control": {
+    "method": "removed the single 'global _current_lang' line from src/fastprompter/core/i18n/_engine.py and re-ran the suite",
+    "observed": "live language switching FAILED and the runtime translation tests FAILED",
+    "verdict": "the gate is real: the T-1353 _engine fix is what makes it pass"
+  },
+  "results": [
+    "PASS  release gate tools/validate_saitranslate.py",
+    "PASS  33/33 locales complete",
+    "PASS  zero unjustified English fallback",
+    "PASS  placeholder parity",
+    "PASS  generated JSON/Python parity",
+    "PASS  locale modules import",
+    "PASS  live language switching",
+    "PASS  runtime translation tests"
+  ],
+  "notes": [
+    "NOTE  32 locale(s) localise the word inside a doubled-brace documentation literal (e.g. 'Settings &rarr; Header Fmt: {{text}}, ...'). Those are not format bindings, so the drift is a wording choice, not a defect."
+  ],
+  "exit_code": 0,
+  "verdict": "PRODUCT REVIEW PASSED"
+}

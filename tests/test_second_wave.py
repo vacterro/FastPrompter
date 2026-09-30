@@ -227,21 +227,23 @@ def _make_validator_project(root, langs):
     with open(os.path.join(locales, "en.json"), "w", encoding="utf-8") as f:
         json.dump(en, f, ensure_ascii=False)
     # every required language must exist, else the validator reports missing
-    # files. Fill each with the canonical keys (placeholder == key so they are
-    # not flagged as missing-in-locale; untranslated is only a warning).
+    # files. T-1353 promoted a byte-identical value from a warning to an error
+    # and added the honest-coverage check, so each fixture locale must really
+    # translate the key and must claim the coverage its keys justify.
     for lang in REQUIRED_LANGS:
         trans = dict(langs.get(lang, {}))
         for k in ("hello", "save", "quit"):
-            trans.setdefault(k, k)
+            trans.setdefault(k, f"[{lang}] {k}")
         data = {"translations": trans, "coverage_pct": 100.0}
         with open(os.path.join(locales, f"{lang}.json"), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
 
 
 def test_validator_no_false_dead_keys_and_honest_coverage(tmp_path):
-    # a locale that has the same keys but where one value is a placeholder
+    # every locale is genuinely translated, so nothing is a dead key and no
+    # locale under-claims its coverage
     _make_validator_project(tmp_path, {
-        "de": {"hello": "Hallo", "save": "Speichern", "quit": "quit"},
+        "de": {"hello": "Hallo", "save": "Speichern", "quit": "Beenden"},
     })
     proc = subprocess.run(
         [sys.executable, os.path.join(ROOT, "tools", "validate_saitranslate.py"),
