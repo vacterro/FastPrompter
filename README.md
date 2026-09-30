@@ -4,245 +4,375 @@
 
 # FastPrompter
 
-**Keyboard-first, local-first scratchpad & snippet workspace for Windows.**
+**Keyboard-first, local-first workspace for notes, prompts, snippets, project scratchpads, files, timers and lightweight automation on Windows.**
 
-One global hotkey opens the same local workspace — notes, prompts, commands,
-snippets, project scratchpads and small file bundles. No browser, no cloud,
-no account.
+One global hotkey brings the same workspace back from anywhere. Your text and project data stay local; optional integrations only run when you configure them.
 
-[Download portable EXE →](https://github.com/vacterro/FastPrompter/releases)
-<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.69**
-<a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT"></a>
-<img src="https://img.shields.io/badge/Windows-0078D6?style=flat-square&logoColor=white" alt="Windows">
+[**Download the latest portable EXE**](https://github.com/vacterro/FastPrompter/releases) · [Wiki](https://github.com/vacterro/FastPrompter/wiki) · [Issues](https://github.com/vacterro/FastPrompter/issues)
+
+<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=latest%20tag" alt="latest tag">
+<a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT license"></a>
+<img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=flat-square" alt="Windows 10 and 11">
+<img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square" alt="Python 3.11+">
 
 Guides: [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) · [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md)
 
-<img alt="FastPrompter main workspace" src="docs/images/fastprompter-main.png">
-<br><em>FastPrompter in active use — project tabs, hierarchical scratchpads, Markdown editor and side tools in one local workspace.</em>
+<img src="docs/images/readme/01-main-workspace.png" alt="FastPrompter main workspace with editor, project list and file tools">
+
+<sub>Main workspace: project list, scratchpad editor, toolbar actions, inline image pills and file tools in one window.</sub>
 
 </div>
 
 ---
 
-## Why FastPrompter
+## What FastPrompter is
 
-FastPrompter is for text you repeatedly need while working: temporary notes,
-prompts, commands, snippets, project scratchpads and small file bundles.
-One global hotkey (`Alt+X`) opens the same local workspace from anywhere —
-a browser, an IDE, a terminal — without switching to a cloud notebook.
-Changed text is saved automatically; there is no save button to remember.
+FastPrompter is a persistent desktop scratch workspace for the material that normally ends up scattered across text files, chat drafts, terminals, temporary notes and browser tabs.
 
-Your data stays yours: primary state lives beside the executable, and nothing
-leaves your machine unless you ask it to.
+Press the global hotkey, work in the same project, then hide it again. Text is auto-saved. Projects keep their own silos, snippets, archive and files. The app is portable, keyboard-heavy and deliberately local-first.
 
-## At a glance
+Typical uses:
 
-- **Global summon hotkey** — `Alt+X` / `F15` (rebindable, two slots) pops the
-  window up at your cursor from any application.
-- **Project-oriented organization** — up to 100 project tabs; each holds up to
-  100 auto-saved scratchpads ("silos"), 10 `F1`–`F10` snippets, and an archive.
-- **Auto-saved hierarchical scratchpads** — silos nest into a tree and support
-  pins, completion ticks, recency tints and multi-select; `Ctrl+Z` undoes text
-  *and* silo operations.
-- **Markdown & code editing** — live highlighting, clickable checkboxes,
-  folding, code fences with syntax tints, line numbers and one-click copy.
-- **Per-silo file containers** — drop any files into a silo's drawer; it is a
-  plain folder on disk, browsable in Explorer without the app.
-- **Local-first portable storage** — SQLite (WAL) database, `.bak` rotation,
-  daily Markdown snapshots, an optional one-way mirror and a restorable trash.
-  No cloud, no account, no telemetry.
-- **Optional local automation** — a watcher can queue prompts from a silo and
-  send them into a target app when the app is idle.
+- prompts and agent instructions;
+- project notes and TODO scratchpads;
+- commands and reusable snippets;
+- temporary research notes;
+- small per-project file collections;
+- AI usage-limit monitoring;
+- alarms, interval reminders and productivity timers;
+- sound cues and voice countdowns;
+- local automation that sends queued text into a target application you explicitly arm.
+
+## Highlights
+
+- **Global summon hotkey** — `Alt+X` / `F15` by default, with two configurable slots per action.
+- **Project workspace** — up to 100 project tabs with independent silos, snippets, archive and file containers.
+- **Hierarchical silos** — nested scratchpads with pins, completion marks, recency tinting, multi-select and undoable operations.
+- **Auto-save** — changed text is saved automatically; there is no save button you have to remember.
+- **Markdown-aware editor** — headings, checkboxes, code fences, line numbers, folding, live preview and inline image/file interactions.
+- **Per-silo files** — drag files into a normal folder-backed container and open them outside FastPrompter whenever you want.
+- **AI usage limits** — optional multi-account quota views for configured Codex, Claude, Antigravity, ZCode and Freebuff sources, including reset-time visibility and per-window notifications where available.
+- **Timers** — alarms, periodic notifications, one-off countdowns, productivity cycles and calendar events.
+- **Sound system** — per-event sounds, presets, playback rules, voice countdowns, ambience and per-event gain control.
+- **33 interface languages** — live UI language selection with flag indicators.
+- **Portable recovery** — SQLite + `.bak` + Markdown snapshots + optional mirror + persisted undo + trash.
+- **Optional watcher** — local, explicitly armed prompt delivery into a selected target app.
+
+## Screenshots
+
+The screenshots below are grouped by workflow instead of being a random wall of windows. The main README keeps the useful views visible and pushes the deep configuration screens into collapsible sections.
+
+### Workspace, files and navigation
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/11-file-container-preview.png" alt="Per-silo file container with image preview">
+<br><sub><strong>File container.</strong> Folder-backed files, image preview, copy/open actions and the editor beside it.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/12-silo-folder-grid.png" alt="Silo folder grid beside the FastPrompter editor">
+<br><sub><strong>Silo Folder view.</strong> A visual file grid attached to the current silo without hiding the editor or project list.</sub>
+</td>
+</tr>
+</table>
+
+### AI usage limits
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/02-ai-usage-overlay.png" alt="AI usage limits overlay with several providers and accounts">
+<br><sub><strong>Quick quota overlay.</strong> Multiple accounts and providers, remaining percentages and reset timing in one glance.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/03-ai-reset-queue.png" alt="Next AI usage reset queue">
+<br><sub><strong>Reset queue.</strong> Soonest upcoming automatic quota resets across configured accounts.</sub>
+</td>
+</tr>
+</table>
+
+<details>
+<summary><strong>AI limits: full settings gallery</strong></summary>
+<br>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/18-ai-limits-bars.png" alt="AI Limit Settings with quota bars">
+<br><sub>Quota bars and reset countdowns.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/19-ai-limits-accounts.png" alt="AI Limit Settings account selection">
+<br><sub>Account naming, visibility and header ordering.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/20-ai-limits-notifications.png" alt="AI Limit Settings notifications">
+<br><sub>Per-window alerts, sounds, thresholds and reset notifications.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/21-ai-limits-colours.png" alt="AI Limit Settings colour configuration">
+<br><sub>Theme-aware colours for quota states and provider reset timers.</sub>
+</td>
+</tr>
+</table>
+
+</details>
+
+### Timers and reminders
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/13-timers-alarms.png" alt="FastPrompter alarms tab">
+<br><sub><strong>Alarms.</strong> Named schedules with sounds, top-bar notifications and quick relative-time helpers.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/14-timers-interval-notifications.png" alt="FastPrompter interval notifications">
+<br><sub><strong>Interval notifications.</strong> Clock-boundary and periodic reminders with quick presets.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/15-timers-temp.png" alt="FastPrompter temporary timer">
+<br><sub><strong>Temporary timer.</strong> A disposable countdown for the thing you only need once.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/16-timers-productivity.png" alt="FastPrompter productivity timer">
+<br><sub><strong>Productivity timer.</strong> Work/break cycles with phase sounds and quick controls.</sub>
+</td>
+</tr>
+</table>
+
+<details>
+<summary><strong>Calendar view</strong></summary>
+<br>
+<img src="docs/images/readme/17-timers-calendar.png" alt="FastPrompter calendar timer view">
+<br><sub>Calendar events with repeat rules, date/time controls and notification settings.</sub>
+</details>
+
+### Settings and customization
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/05-settings-window.png" alt="Window and layout settings">
+<br><sub><strong>Window.</strong> Layout, presets, toolbar visibility, silo appearance and cursor integration.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/06-settings-editor.png" alt="Editor settings">
+<br><sub><strong>Editor.</strong> Live preview, line appearance, wrapping, code blocks, pasted-image mode and typing behavior.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/07-settings-clock.png" alt="Clock and passed-event settings">
+<br><sub><strong>Clock.</strong> Date/clock presentation plus passed-event indicators and AI-limit gauges.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/08-settings-data-backup.png" alt="Data, backup and sync-project settings">
+<br><sub><strong>Data.</strong> Silo-list behavior, local backup, file folders and one-way project sync.</sub>
+</td>
+</tr>
+</table>
+
+<details>
+<summary><strong>More settings: localization, Problip and shortcut help</strong></summary>
+<br>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/04-settings-localization-estonian.png" alt="FastPrompter settings translated to Estonian">
+<br><sub>Live localization example: the settings UI in Estonian.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/09-settings-problip.png" alt="Problip settings">
+<br><sub>Problip: optional randomized short cues with interval, sound-pool and playback controls.</sub>
+</td>
+</tr>
+</table>
+
+<img src="docs/images/readme/10-help-shortcuts.png" alt="FastPrompter keyboard shortcut help">
+<br><sub>Built-in shortcut reference for global and in-app actions.</sub>
+
+</details>
+
+### Sound system
+
+<img src="docs/images/readme/22-sound-events.png" alt="FastPrompter per-event sound settings">
+<br><sub><strong>Per-event routing.</strong> Choose sounds, enable/disable events, tune gain and normalize individual actions.</sub>
+
+<details>
+<summary><strong>Sound presets, playback, voice countdown and ambience</strong></summary>
+<br>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/23-sound-presets.png" alt="Sound presets and managed sound library">
+<br><sub>Presets and managed sound library.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/24-sound-playback.png" alt="Sound playback engine settings">
+<br><sub>Playback policy, mixer state and emergency stop.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/images/readme/25-sound-voice.png" alt="Voice countdown settings">
+<br><sub>Voice countdown sources, thresholds and playback behavior.</sub>
+</td>
+<td width="50%" valign="top">
+<img src="docs/images/readme/26-sound-ambience.png" alt="Ambience sound rules">
+<br><sub>Ambience rules with trigger, looping, fade and optional weather condition.</sub>
+</td>
+</tr>
+</table>
+
+</details>
 
 ## Quick start
 
-**Portable EXE (recommended).** Download `FastPrompter.exe` from the
-[Releases page](https://github.com/vacterro/FastPrompter/releases), run it,
-press `Alt+X`. No install, no Python, no admin rights. Data lives in a `data/`
-folder next to the EXE — copy that folder and you have your backup and your
-install in one move.
+### Portable EXE
 
-**From source** (Python 3.11+):
+1. Download `FastPrompter.exe` from [Releases](https://github.com/vacterro/FastPrompter/releases).
+2. Run it. No installer and no administrator rights are required.
+3. Press `Alt+X` to summon or hide the workspace.
+4. Keep the `data/` folder beside the EXE if you want a fully portable setup.
+
+### From source
+
+Python 3.11+ is recommended.
 
 ```powershell
 git clone https://github.com/vacterro/FastPrompter.git
 cd FastPrompter
 uv sync
-uv run python FastPrompter.pyw     # or: pip install -r requirements.txt; python FastPrompter.pyw
+uv run python FastPrompter.pyw
 ```
 
-**Build your own portable EXE** (unused Qt modules stripped; exact size
-depends on the pinned toolchain recorded in the build report):
+Build the portable EXE with the repository build pipeline:
 
 ```powershell
 uv run python tools/build.py
 ```
 
-## Local-first data & recovery
+## Workspace model
 
-**Where your data lives.** Primary state is a per-profile SQLite database —
-`local_data_v15.db` for profile 1, `local_data_v15_pN.db` for profile N — in a
-`data/` folder beside the executable (falling back to
-`%LOCALAPPDATA%\FastPrompter\` if that folder is not writable). Each profile
-owns an independent **File Container root**: profile 1 keeps the legacy
-layout, while profile 2+ are namespaced under `data/_profiles/pN/`, so one
-profile can never read, adopt or delete another profile's folders. Inside that
-root, every project/category maps to a **stable physical folder component**
-(a sanitized, collision-resistant derivative recorded in `category_file_dirs`)
-— the on-disk name is *not* the raw UI category name, and a renamed category
-keeps its physical folder. Each silo's files live in a sub-folder derived from
-its content; the trash lives under the same profile root. There is no cloud,
-no account and no telemetry; the core app makes no network calls.
+### Projects
 
-**What leaves the machine.** Nothing by default — no network calls, no
-telemetry, no account. Two opt-in features extend beyond the app: the daily
-Markdown snapshot folder (written to your local Documents, see below) and the
-watcher, which sends queued prompts into a target application you choose and
-explicitly arm.
+A project is the top-level workspace unit. Each project owns its own silos, snippets, archive and file containers. Projects can be created, renamed, reordered and switched from the keyboard or mouse.
 
-**How it survives.**
+### Silos
 
-- **Transactional saves** — SQLite in WAL mode; every save is a single
-  transaction. Changed text is autosaved on a 10-second timer and on hide,
-  close and silo/profile switches.
-- **Database backup** — a `.bak` copy is taken at startup and refreshed at
-  most once a minute after real changes; each new copy is validated before it
-  replaces the previous one, and a fresh or empty database never overwrites a
-  healthy backup.
-- **Daily Markdown snapshots** — every project's silos, snippets and archive
-  are exported as plain `.md` to `Documents\.fastprompter\YYYY-MM-DD\`
-  (on by default, at most every 2 minutes, last 7 days kept). A snapshot is
-  only marked complete after every export succeeded; a failed snapshot keeps
-  the previous day's copy. Readable without FastPrompter.
-- **Optional one-way mirror** — point Settings at any folder and silos are
-  mirrored there as `.md` shortly after you save (and flushed when you close).
-  It never reads back and never deletes.
-- **Undo across restarts** — the latest undo snapshots are written to
-  `<database>_undo.json` and reloaded on the next launch.
-- **Trash, not destruction** — clearing or trashing a silo moves its text and
-  files into the trash under the active profile's File Container root; the
-  Trash dialog restores them.
+A silo is an auto-saved scratchpad. Silos can be nested, pinned, marked complete, tinted by recency, moved and multi-selected. The same project can therefore hold temporary notes, durable reference material and active task scratchpads without requiring separate windows.
 
-The honest failure model lives under [Known limits](#known-limits).
+### Snippets
 
-## Engineering evidence
+Reusable text blocks can be assigned to `F1`–`F10` or `Ctrl+Shift+1`–`0`, including placeholder-style content for prompts and commands.
 
-Mechanisms, not marketing:
+### Files
 
-- **Stack** — Python 3.11, PyQt6, SQLite (standard library), Win32 APIs;
-  packaged as a portable single-file EXE with Nuitka.
-- **Persistence** — SQLite in WAL mode (`synchronous=NORMAL`) with
-  transactional delta saves: only changed rows are written, and snapshots are
-  only taken after a commit succeeds (`core/state.py`,
-  `utils/portable_backup.py`).
-- **Single-instance IPC** — a `QLocalServer` named pipe
-  (`FastPrompter_Server_V15`) with a temp-file token and an ACK handshake; a
-  second launch hands off to the running instance instead of stacking
-  (`core/ipc_server.py`).
-- **Two hotkey layers** — Win32 `RegisterHotKey` plus a native event filter
-  dispatches global keys with layout-independent VK resolution (QWERTY,
-  JCUKEN, AZERTY, QWERTZ); in-app keys are Qt `QShortcut`s. Both layers are
-  rebindable with two slots per action (`core/hotkeys.py`,
-  `core/hotkey_filter.py`).
-- **Custom editor stack** — a `QPlainTextEdit` subclass with a live Markdown
-  highlighter, a line gutter with fold arrows, section folding, code-fence
-  copy, clickable checkboxes, collapsible image pills, a four-zone file drop
-  overlay and hide-markup mode (`ui/editor.py`, `ui/markdown_highlighter.py`).
-- **Filesystem-backed containers** — each silo owns a stable, unique folder
-  under its profile's File Container root; the physical category component is
-  the sanitized `category_file_dirs` entry (independent of the UI name), so it
-  is rename-safe and recoverable through the trash (`ui/file_container.py`).
-- **Multi-layer recovery model** — transactional DB + startup/throttled `.bak`
-  + daily plain-Markdown snapshots + optional one-way mirror + persisted undo
-  + soft-delete trash. Each layer catches a different failure class.
-- **Watcher as a finite-state machine** — explicit
-  `DISARMED → ARMED → WATCHING → SENDING` states with settle, rate and
-  failure boundaries (`core/watcher/engine.py`).
-- **Tests** — a unit suite plus a smoke/integration suite that boots the real
-  application offscreen; CI gates compilation, ruff, Bandit Medium+, and the
-  full suite on `windows-latest` (see [Development](#development)).
+Each silo can own a plain folder on disk. Dropped files remain normal files and can be opened in Explorer. Image files can be previewed from the UI without turning the database into an opaque binary store.
 
-## Core features
+## Editor
 
-### Notes, snippets, projects
+The editor is based on `QPlainTextEdit` and adds FastPrompter-specific behavior on top:
 
-- **Silos** — up to 100 auto-saved scratchpads per project; nest into a
-  hierarchy, pin, tick, tint by recency, multi-select, middle-click to trash.
-- **Snippets** — named text blocks pasted with `F1`–`F10` (or
-  `Ctrl+Shift+1`–`0`), with variable placeholders.
-- **Projects** — up to 100 tabs, each with its own silos, snippets, archive
-  and files; right-click to add/rename/delete, wheel to switch.
-- **Search** — multi-word AND matching across silos (`foo bar` finds both).
-- **Archive** — one click stores a silo or snippet out of the way, restorable.
+- Markdown-aware live highlighting;
+- clickable checkboxes;
+- heading/divider helpers;
+- code fences and copy actions;
+- optional line numbers, line marks and zebra stripes;
+- section folding;
+- live preview / source-style modes;
+- inline image pills and file-drop actions;
+- word-wrap and monospace-code options;
+- undo that covers text plus key silo operations.
 
-### Files & organization
+## AI usage limits
 
-- **File containers** — per-silo plain folders under `data/files/`; drag files
-  in/out, preview images, link originals, Explorer-style views.
-- **Drop zones** — dragging a file onto the editor offers insert-as-text,
-  insert-link, copy-to-Files, or shortcut.
-- **Folder templates** — build a predefined structure (IN/OUT, assets, …)
-  inside a silo's container with one click.
-- **Trash** — middle-click moves a silo (text *and* files) to
-  `data/files/_trash/`; nothing is destroyed behind your back.
+AI Limits is an optional monitoring surface. When a provider source is configured and available, FastPrompter can display quota windows, account labels, remaining percentages and reset timing without turning those values into the editor's own state.
 
-### Workspace & UI
+Current source adapters cover combinations of Codex, Claude, Antigravity, ZCode and Freebuff depending on what is installed, authenticated and exposed by each provider.
 
-- **Global hotkeys** (rebindable, two slots each): `Alt+X`/`F15` toggle
-  window, `Shift+Alt+X` pie menu, `Alt+E` lock position, `Alt+S` always on
-  top, `Alt+D` sidebar, `Alt+A` hide on click-out, `Ctrl+Alt+Shift+Q` quit.
-- **Window modes** — frameless, lock-in-place, always-on-top, `Ctrl+Q` snap
-  to corners/zones, three-stage zen mode.
-- **Themes** — 9 built-in (Win95-style dark-golden, OLED, Dracula, Nord,
-  Solarized Dark, …) plus a full custom color editor.
-- **Scaling** — the whole UI scales 50–150% (`Ctrl+Plus`/`Ctrl+Minus` for
-  fine steps).
-- **Extras** — analog clock, date widget, Pomodoro-style timer, optional UI
-  sounds with per-event sound settings, and 33 interface languages with
-  flag icons (including the bonus «Дед» grandpa voice).
+The UI includes:
 
-### Optional automation
+- a compact top-bar summary;
+- a detailed hover overlay;
+- account filtering and ordering;
+- quota bars;
+- reset-time queue;
+- per-window threshold/reset notifications;
+- provider-aware colors.
 
-- **Watcher** — queue prompts from a silo and have them typed into a target
-  app when the app is idle. This is a local workflow automation, not a bot:
-  you arm it per session against one target you choose. It waits until the
-  target is observed idle, sends one prompt at a time with a minimum gap, a
-  per-session send cap and a consecutive-failure cutoff, and never persists
-  its armed state across restarts. Targets are declared as TOML adapters
-  (Claude Code, opencode, freebuff, Antigravity, …) over Win32 message or
-  Chromium CDP transports (`core/watcher/`, see the
-  [Watcher Engine wiki](https://github.com/vacterro/FastPrompter/wiki/Watcher-Engine-Architecture)).
-- **SAIPEN** — FastPrompter previously shipped a small viewer for `.saipen/`
-  state files (STATE/BOARD/LOG); it was removed in v0.8.4. The canonical
-  SAIPEN protocol lives in its own repository:
-  [github.com/vacterro/saipen](https://github.com/vacterro/saipen). The
-  watcher above is generic and does not depend on SAIPEN.
+Provider values are treated as observed data, not estimates. If a provider cannot be queried, FastPrompter should report that state instead of inventing a number.
 
-## Screenshots
+## Timers, reminders and sound
 
-<div align="center">
+FastPrompter includes several local reminder surfaces:
 
-<img alt="FastPrompter feature highlights" src="docs/images/fastprompter-highlights.webp">
-<br><em>Workspace views, editor utilities, language controls and sound settings.</em>
+- scheduled alarms;
+- periodic and clock-boundary notifications;
+- temporary countdown timers;
+- productivity work/break cycles;
+- calendar events;
+- optional Problip randomized cues.
 
-</div>
+The sound engine can attach different sounds to UI events and reminders, with per-event gain, presets, global playback policy, countdown voice packs, ambience rules and an emergency `STOP ALL SOUND` control.
 
-<details>
-<summary><strong>More screenshots</strong> — settings, timers, themes, file tools and customization</summary>
-<br>
+## Local-first data and recovery
 
-<div align="center">
+Primary application state is stored in SQLite. The default portable setup keeps data beside the executable; when that location is not writable, FastPrompter can fall back to the user-local application data directory.
 
-<img alt="FastPrompter more screenshots 1" src="docs/images/fastprompter-more-1.webp"><br><br>
-<img alt="FastPrompter more screenshots 2" src="docs/images/fastprompter-more-2.webp"><br><br>
-<img alt="FastPrompter more screenshots 3" src="docs/images/fastprompter-more-3.webp"><br><br>
-<img alt="FastPrompter more screenshots 4" src="docs/images/fastprompter-more-4.webp">
+Recovery is layered rather than pretending one backup mechanism can solve every failure mode:
 
-</div>
+- **Transactional database saves** using SQLite WAL;
+- **startup / throttled `.bak` copy** after real changes;
+- **daily Markdown snapshots** that remain readable without FastPrompter;
+- **optional one-way Markdown mirror** to another folder;
+- **persisted undo snapshots** across restarts;
+- **trash instead of immediate destruction** for silo/file removal.
 
-</details>
+Your notes, project files and settings are local by default. Optional features such as provider-usage probes or the watcher may communicate with a configured external target/provider because that is their explicit job; they are not required for normal notes/projects use.
 
-More images and deeper documentation live in the [Wiki](https://github.com/vacterro/FastPrompter/wiki).
+## Optional watcher
+
+The watcher can queue text from a silo and deliver it into a target application you explicitly arm for the current session.
+
+Its behavior is intentionally bounded:
+
+`DISARMED → ARMED → WATCHING → SENDING`
+
+It waits for the target to appear idle, sends one item at a time, enforces gaps and failure cutoffs, and does not persist an armed state across restarts.
+
+Target adapters live under `core/watcher/` and can use Win32 or Chromium/CDP-style transports depending on the target.
+
+## Keyboard-first controls
+
+Representative defaults:
+
+- `Alt+X` / `F15` — toggle FastPrompter;
+- `Shift+Alt+X` — pie menu;
+- `Alt+E` — lock window position;
+- `Alt+S` — always on top;
+- `Alt+D` — sidebar;
+- `Alt+A` — hide on click-out;
+- `Ctrl+Q` — snap window to screen zones;
+- `Ctrl+Plus` / `Ctrl+Minus` — UI scale;
+- `F1`–`F10` — snippets;
+- `Ctrl+Alt+Shift+Q` — quit.
+
+Most hotkeys are rebindable from the UI, with two slots per action where supported.
+
+## Themes and languages
+
+FastPrompter ships with multiple built-in themes including the dark/golden default, OLED, Dracula, Nord and Solarized-style variants, plus detailed color customization.
+
+The interface ships with 33 language packs. Language switching is designed to update the running UI rather than requiring a second install or separate executable.
 
 ## Development
 
@@ -254,62 +384,34 @@ uv run bandit -q -r src/fastprompter -ll
 uv run pytest tests/ tests_smoke/ -q
 ```
 
-- The suite spans the headless unit tree in `tests/` and the offscreen
-  real-app integration suite in `tests_smoke/` (which builds the actual
-  window). The authoritative test count and pass/fail state are produced by the
-  full gate run on the target Windows build at the exact revision under test —
-  **do not assume a specific total or an all-green result without that run.**
-  The live collection count can be obtained with
-  `uv run pytest tests/ tests_smoke/ --collect-only -q`.
-- CI (GitHub Actions on `windows-latest`) runs all four commands above on every
-  push to `main` and every pull request. Any failure blocks the job.
-- Pre-commit runs ruff with fixes, YAML validation, merge-conflict detection,
-  and a 500 KB added-file limit. It does not run the full CI matrix.
-- `mypy` and `pyright` are declared dev dependencies but do not currently gate
-  CI or pre-commit. Bandit does gate CI at Medium severity and above (`-ll`).
+CI runs on Windows and is expected to gate compilation, linting, Bandit Medium+ findings and the repository test suites. The authoritative test total belongs to the exact revision being tested; do not copy an old test count forward as release evidence.
 
-## Documentation & Wiki
+## Documentation
 
-- **Guides** — [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) ·
-  [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md) — the
-  friendly, grandpa-voiced explanation of every feature.
-- **[CHANGELOG](CHANGELOG.md)** — version history with the reasoning behind
-  each release.
-- **[GitHub Wiki](https://github.com/vacterro/FastPrompter/wiki)** —
-  [Architecture](https://github.com/vacterro/FastPrompter/wiki/Architecture-Overview),
-  [Module Structure](https://github.com/vacterro/FastPrompter/wiki/Module-Structure),
-  [Core API](https://github.com/vacterro/FastPrompter/wiki/Core-API-and-Classes),
-  [Configuration](https://github.com/vacterro/FastPrompter/wiki/Configuration),
-  [Keyboard Shortcuts](https://github.com/vacterro/FastPrompter/wiki/Keyboard-Shortcuts-and-Cheatsheet),
-  [User Guide](https://github.com/vacterro/FastPrompter/wiki/User-Guide),
-  [Watcher Engine](https://github.com/vacterro/FastPrompter/wiki/Watcher-Engine-Architecture),
-  [Deployment](https://github.com/vacterro/FastPrompter/wiki/Deployment-Guide).
+- [English guide](GUIDE_EN.md)
+- [Русское руководство](GUIDE_RU.md)
+- [Deutsche Anleitung](GUIDE_DE.md)
+- [Eesti juhend](GUIDE_EST.md)
+- [日本語ガイド](GUIDE_JA.md)
+- [CHANGELOG](CHANGELOG.md)
+- [GitHub Wiki](https://github.com/vacterro/FastPrompter/wiki)
+- [Watcher Engine architecture](https://github.com/vacterro/FastPrompter/wiki/Watcher-Engine-Architecture)
 
-**Freshness policy:** the README and the code in `src/` are canonical. Wiki
-pages describe the v0.8.x codebase they were written against; when a page
-and the code disagree, the code wins.
+The README and the current source tree are the primary truth for current behavior. Wiki pages may describe an earlier v0.8.x state if a subsystem changed later.
 
-## Versioning & releases
+## Versioning and releases
 
-The canonical version lives in `VERSION` and is synced to `pyproject.toml`,
-`FastPrompter.pyw` and `uv.lock` by `tools/sync_release_version.py`; every
-release is tagged `v<version>` at the exact tested source commit. Portable EXE
-builds are published to the
-[Releases page](https://github.com/vacterro/FastPrompter/releases) through the
-draft-first `release.cmd` pipeline. The last published EXE can lag the latest
-source tag — check the release date before downloading.
+The canonical version is stored in `VERSION` and synchronized with the project/release metadata by repository tooling. Releases are tagged `v<version>` at the exact accepted source commit and published through the repository release pipeline.
+
+Do not infer release identity from a filename alone. For reproducible release work, use the release commit, executable hash and provenance records produced by the release tooling.
 
 ## Known limits
 
-- **Autosave window** — text is written on a 10-second timer plus lifecycle
-  events; a forced process kill can lose up to ~10 seconds of typing.
-- **Power loss** — SQLite runs with `synchronous=FULL` (durable commits); the
-  WAL journal and the daily Markdown snapshots provide the recovery path.
-- **`.bak` is a single generation** — a rollback point, not an archive.
-- **Snapshots keep 7 days** — older day folders are pruned.
-- **Watcher** — detection is best-effort (file/sqlite/window/process probes);
-  a wrong reading can cost at most one prompt within a rate-limit window.
-  It only ever sends into a target you armed.
+- Autosave still has a finite interval; a hard process kill can lose the most recent unsaved seconds of typing.
+- A `.bak` file is a rollback point, not a complete backup history.
+- Daily snapshots are intentionally pruned rather than retained forever.
+- Optional provider integrations depend on what each provider exposes and on the local authentication state.
+- Watcher target-idle detection is best-effort and should only be armed against a target you intend to automate.
 
 ## License
 
@@ -317,7 +419,7 @@ MIT — see [`LICENSE`](LICENSE).
 
 ---
 
-<sub>Built with Python, PyQt6 and ❤️ by [vacterro](https://github.com/vacterro)</sub>
+<sub>Built with Python, PyQt6 and an unreasonable amount of attention to tiny workflow annoyances by [vacterro](https://github.com/vacterro).</sub>
 
 <!-- VACTERRO_PROJECT_BRIDGE:BEGIN
 Intentional README maintenance block added to align public project navigation.
@@ -332,6 +434,6 @@ This repository is part of the broader **SAIPEN / vacterro** project ecosystem.
 
 [**Author hub**](https://github.com/vacterro) · [**SAIPEN HQ**](https://github.com/saipenhq) · [**SAIPEN Core**](https://github.com/vacterro/saipen) · [**ZAICODE**](https://github.com/vacterro/zaicode) · [**FastPrompter**](https://github.com/vacterro/FastPrompter) · [**SAIPEN Community**](https://discord.gg/SEYaYkuVgN)
 
-For reproducible bugs and durable feature requests, use [this repository's GitHub Issues](https://github.com/vacterro/FastPrompter/issues). Use Discord for quick discussion, screenshots, and cross-project feedback.
+For reproducible bugs and durable feature requests, use [this repository's GitHub Issues](https://github.com/vacterro/FastPrompter/issues). Use Discord for quick discussion, screenshots and cross-project feedback.
 
 <!-- VACTERRO_PROJECT_BRIDGE:END -->
