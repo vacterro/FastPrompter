@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-build = ["nuitka>=4.1.2"]
+build = ["nuitka==4.2.1"]
 
 [project.scripts]
 fastprompter = "fastprompter.main:main_entry"

@@ -1,9 +1,15 @@
 *.py text eol=lf
 *.md text eol=lf
+FastPrompter.pyw text eol=lf
+pyproject.toml text eol=lf
+uv.lock text eol=lf
+.gitattributes text eol=lf
 
 # SAIPEN byte-bound evidence (digest-verified; never convert line endings) -- T-1508.
 .saipen/intake/** -text
 .saipen/archive/source/** -text
 .saipen/archive/retired/** -text
+# Historical snapshots retain original bytes, including original whitespace.
+.saipen/archive/translation_backups/backup_*/** -text -diff
 .saipen/recovery/log-detail/** -text
 .saipen/recovery/board-compaction/** -text

@@ -1786,14 +1786,14 @@ class VaultTextEdit(QTextEdit):
              row nearest the target row (its own row first) -- so a wrapped
              label with prose on its row still gets a slot on a neighbouring
              row's empty tail rather than on top of prose;
-          4. a vertical slot immediately below, then above, the TARGET's own
-             row -- not below the whole QTextBlock. T-1349: "below the block"
-             was assumed text-free and was neither: the next block's first line
-             lives exactly there. Neighbour geometry is inspected instead.
+          4. a vertical slot below/above the target row, then below/above
+             its visible block rows. Every slot is checked against ALL
+             viewport text: a tall control can reach another wrapped row
+             or more than one neighbouring paragraph (T-1352).
           5. a bounded viewport-overlay strip on the target's row, scanned
              inward from the far edge. It never leaves the viewport, never
-             covers the target, and never inserts whitespace into the
-             document to make room.
+             covers the target when a free slot exists, and never inserts
+             whitespace into the document to make room.
 
         Every returned rect satisfies 2 <= left/right <= width - 2 and the
         same on top/bottom against the viewport height.
@@ -1801,15 +1801,11 @@ class VaultTextEdit(QTextEdit):
         gap = 6
         size = max(14, target_rect.height() - 2)
         vp_w = self.viewport().width()
-        occupied = self._row_text_extents(block, target_rect, target_rect)
-        # The TARGET counts as a blocker too. `_row_text_extents` excludes it
-        # on purpose (that is what makes an adjacent slot adjacent), but a
-        # fallback that lands ON the token is worse than one beside it: the
-        # pointer can no longer reach the label, and the Copy hides what it
-        # belongs to. Overlap stays possible only when the viewport is too
-        # small to hold both -- see step 6.
-        blockers = (list(occupied) + self._neighbour_text_rects(block)
-                    + [target_rect])
+        # A 16px Copy can straddle two 13px text rows. Protecting only the
+        # hovered row left the other rows of this block unprotected, even
+        # though adjacent paragraphs were checked. The pill also extends
+        # beyond its concealed markup, so it remains an explicit blocker.
+        blockers = self._visible_text_rects() + [target_rect]
 
         def _hits_text(rect):
             return any(rect.intersects(o) for o in blockers)
@@ -1829,7 +1825,7 @@ class VaultTextEdit(QTextEdit):
         if r is not None:
             return r
         # 3. trailing free space on the nearest visual row
-        rows = self._block_visual_rows(block)
+        rows = self._block_visual_rows(block, visible_only=True)
         if rows:
             ty = target_rect.center().y()
             for _dist, row in sorted(
@@ -1839,11 +1835,14 @@ class VaultTextEdit(QTextEdit):
                           row["top"] + (row["height"] - size) // 2)
                 if r is not None:
                     return r
-            # 4. a slot just below / just above the TARGET's own row, proven
-            # free against the previous, current and next visible blocks.
+            # 4. Try the target row first, then the block boundary. A dense
+            # wrapped block may have no room between its own rows; the free
+            # space after it is usable only when no later text occupies it.
             left = max(2, min(target_rect.left(), vp_w - 2 - size))
             for y in (target_rect.bottom() + gap,
-                      target_rect.top() - gap - size):
+                      target_rect.top() - gap - size,
+                      rows[-1]["top"] + rows[-1]["height"] + gap,
+                      rows[0]["top"] - gap - size):
                 r = _free(left, y)
                 if r is not None:
                     return r
@@ -1856,42 +1855,53 @@ class VaultTextEdit(QTextEdit):
             if r is not None:
                 return r
             x -= gap
-        # 6. nothing in the viewport is free: still return a fully bounded
-        #    rect, at the far edge where the overlap (if any) is smallest. A
-        #    viewport too small to hold both the token and the control cannot
-        #    be solved -- staying on-screen is worth more than a clean corner.
+        # 6. No searched slot is free: keep the control fully bounded at the
+        # far edge. In a crowded/tiny viewport overlap can be unavoidable.
         return QRect(vp_w - 2 - size, y, size, size)
 
 
-    def _neighbour_text_rects(self, block):
-        """T-1349: viewport rects of the visible text in the PREVIOUS and NEXT
-        visible blocks around ``block``.
-
-        The removed "below the block is guaranteed text-free" assumption was
-        false in the most common document there is: one paragraph per line.
-        Bounded to the two immediate neighbours -- no document walk.
-        """
+    def _visible_text_rects(self):
+        """T-1352: text occupancy bounded to the viewport, never the document."""
         out = []
-        for nb in (block.previous(), block.next()):
-            if not nb.isValid() or not nb.isVisible():
+        nb = self._first_visible_block()
+        vp_h = self.viewport().height()
+        while nb is not None and nb.isValid():
+            if self.cursorRect(QTextCursor(nb)).top() > vp_h:
+                break
+            if not nb.isVisible():
+                nb = nb.next()
                 continue
-            for r in self._block_visual_rows(nb):
+            for r in self._block_visual_rows(nb, visible_only=True):
                 w = r["right"] - r["left"]
                 if w > 1:
                     out.append(QRect(r["left"], r["top"], w, r["height"]))
+            nb = nb.next()
         return out
 
-    def _block_visual_rows(self, block):
+    def _block_visual_rows(self, block, *, visible_only=False):
         """[{left, top, height, cy, right}] for each visual line of ``block``
-        in viewport coords. Bounded to one block's layout (no document walk)."""
+        in viewport coords. ``visible_only`` also bounds a huge wrapped block
+        to its on-screen lines instead of walking its whole layout."""
         rows = []
         try:
             layout = block.layout()
             br = self.document().documentLayout().blockBoundingRect(block)
             y_off = -self.verticalScrollBar().value()
-            for i in range(layout.lineCount()):
+            first = 0
+            if visible_only:
+                top_cursor = self.cursorForPosition(QPoint(0, 0))
+                if top_cursor.block() == block:
+                    line = layout.lineForTextPosition(top_cursor.position() - block.position())
+                    if line.isValid():
+                        first = line.lineNumber()
+            for i in range(first, layout.lineCount()):
                 lr = layout.lineAt(i).naturalTextRect().translated(
                     br.topLeft()).translated(0, y_off)
+                if visible_only:
+                    if lr.top() > self.viewport().height():
+                        break
+                    if lr.bottom() < 0:
+                        continue
                 rows.append({"left": int(lr.left()),
                              "top": int(lr.top()),
                              "height": int(lr.height()),
@@ -1900,44 +1910,6 @@ class VaultTextEdit(QTextEdit):
         except Exception:
             pass
         return rows
-
-
-    def _row_text_extents(self, block, row_rect, exclude_rect):
-        """Viewport rects of the visible TEXT on the visual row containing
-        ``row_rect``, excluding the span covered by ``exclude_rect`` (the
-        target itself). Used to prove a Copy slot is text-free.
-
-        Bounded to one block's layout line; no document walk (T-1339 §11).
-        """
-        extents = []
-        try:
-            layout = block.layout()
-            br = self.document().documentLayout().blockBoundingRect(block)
-            y_off = -self.verticalScrollBar().value()
-            centre_y = row_rect.center().y()
-            for i in range(layout.lineCount()):
-                line = layout.lineAt(i)
-                lr = line.naturalTextRect().translated(
-                    br.topLeft()).translated(0, y_off)
-                if not (lr.top() <= centre_y <= lr.bottom()):
-                    continue
-                # the row's text runs from its left to its natural right; the
-                # target occupies exclude_rect within it. Represent the text
-                # as the two segments flanking the target.
-                row_left = int(lr.left())
-                row_right = int(lr.right())
-                if exclude_rect.left() - row_left > 2:
-                    extents.append(QRect(row_left, row_rect.top(),
-                                         exclude_rect.left() - row_left,
-                                         row_rect.height()))
-                if row_right - exclude_rect.right() > 2:
-                    extents.append(QRect(exclude_rect.right(), row_rect.top(),
-                                         row_right - exclude_rect.right(),
-                                         row_rect.height()))
-                break
-        except Exception:
-            pass
-        return extents
 
 
     def _visual_row_right(self, block, rect):

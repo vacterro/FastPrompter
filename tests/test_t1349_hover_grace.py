@@ -134,7 +134,7 @@ def _premium_slots(ed, block, target):
     size = max(14, target.height() - 2)
     top = target.top() + (target.height() - size) // 2
     vp_w = ed.viewport().width()
-    occupied = ed._row_text_extents(block, target, target)
+    occupied = _row_text_rects(ed, block)
     cands = [QRect(target.right() + 6, top, size, size),
              QRect(target.left() - 6 - size, top, size, size)]
     for row in ed._block_visual_rows(block):
