@@ -107,3 +107,4 @@ src/fastprompter/_extract.txt
 .saipen/saitranslate/kitchen/*.py
 
 /_RECOVERY_*/
+db_dump.json
