@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "saipen status"
+next_action: "saipen work start T-1371"
 blocker: none
 agent: buffy
 saipen_version: 7
