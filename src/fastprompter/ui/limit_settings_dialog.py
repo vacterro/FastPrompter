@@ -103,20 +103,20 @@ def _window_name(window) -> str:
     pool = getattr(window, "group_label", "") or ""
     prefix = f"{pool} · " if pool else ""
     if key == FIVE_HOUR:
-        return f"{prefix}5 hours"
+        return f"{prefix}" + tr("5 hours")
     if key == WEEKLY:
-        return f"{prefix}7 days"
+        return f"{prefix}" + tr("7 days")
     if key == MONTHLY:
-        return f"{prefix}30 days"
+        return f"{prefix}" + tr("30 days")
     if key == "spend_limit":
-        return f"{prefix}spend limit"
+        return f"{prefix}" + tr("spend limit")
     if key == "quota":
-        return f"{prefix}quota"
+        return f"{prefix}" + tr("quota")
     mins = window.duration_minutes
     if isinstance(mins, (int, float)) and mins > 0:
         if mins < 1440:
-            return f"{prefix}{int(mins / 60)} hours"
-        return f"{prefix}{int(mins / 1440)} days"
+            return f"{prefix}{int(mins / 60)} " + tr("hours")
+        return f"{prefix}{int(mins / 1440)} " + tr("days")
     return f"{prefix}{key}"
 
 
@@ -2081,21 +2081,21 @@ class LimitSettingsDialog(QDialog):
                 # The command records absolute interpreter/launcher paths, so a
                 # moved checkout or a switch to the frozen build leaves Claude
                 # Code running a path that no longer exists — silently.
-                text = ("Connected to an OLD FastPrompter path · press "
-                        "Reconnect to repair")
+                text = tr("Connected to an OLD FastPrompter path · press "
+                          "Reconnect to repair")
             elif status["connected"] and status["has_cache"]:
-                text = "Connected · structured limits received"
+                text = tr("Connected · structured limits received")
             elif status["connected"]:
-                text = "Connected · waiting for first Claude API response"
+                text = tr("Connected · waiting for first Claude API response")
             else:
-                text = "Not connected"
+                text = tr("Not connected")
             if button is not None:
                 if status.get("stale"):
                     button.setText(tr('Reconnect Claude Code'))
                 else:
                     button.setText(
-                        "Disconnect Claude Code" if status["connected"]
-                        else "Connect Claude Code")
+                        tr("Disconnect Claude Code") if status["connected"]
+                        else tr("Connect Claude Code"))
             if label is not None:
                 label.setText(text)
         except Exception as exc:

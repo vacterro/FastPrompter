@@ -119,12 +119,12 @@ class LimitOverview(QWidget):
             shot = snap.snapshots.get(account.key)
             rows.append(("account", account, shot))
             if shot is None:
-                rows.append(("note", "not probed yet", None))
+                rows.append(("note", tr("not probed yet"), None))
                 continue
             if shot.status not in (OK, STALE):
                 rows.append(("note",
                              f"{shot.status.lower()} — "
-                             f"{shot.error_summary or 'no data'}", None))
+                             f"{shot.error_summary or tr('no data')}", None))
                 continue
             if self._hide_unusable():
                 windows = display_windows(shot.windows)
@@ -172,8 +172,8 @@ class LimitOverview(QWidget):
             hiding = (str(self.main_win.data.get(
                 "limit_gauges_hide_zero_usage", "False")) == "True"
                 or self._hide_unusable())
-            msg = ("All AI accounts hidden (0% usage or no usable 5h window)"
-                   if hiding else "No AI accounts detected")
+            msg = (tr("All AI accounts hidden (0% usage or no usable 5h window)")
+                   if hiding else tr("No AI accounts detected"))
             rows.append(("note", msg, None))
         self._rows = rows
         self.setFixedHeight(self._content_height())
