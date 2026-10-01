@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-10-01T21:52:03Z",
+  "evidence_class": "executed",
+  "findings_digest": "1681706222b14ec5914b38f3d6ac568eff642368d068c3a997c6a75c627c31e1",
+  "gate": "core",
+  "integrity_digest": "2ee4404dea486fda",
+  "journal_op_id": "reverify.a97aa8012404",
+  "original_closure": {
+    "claim_time": "2026-10-01T21:51:23Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-3822",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [],
+  "problem_count": 48,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001375",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "32f8bd6327d2d8ef1487bf0eb14c699142f744ba",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -c \"import subprocess,sys; o=subprocess.run([sys.executable,'tools/validate.py','--gate core'],capture_output=True,text=True); t=o.stdout+o.stderr; print('gate_rc=',o.returncode,'provenance_fail_lines=',t.count('closure provenance does not resolve')); sys.exit(1 if 'closure provenance does not resolve' in t else 0)\"",
+      "duration_ms": 221,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 36,
+      "output_digest": "4084752e766745ee",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -c \"import subprocess,sys; o=subprocess.run([sys.executable,'tools/validate.py','--gate core'],capture_output=True,text=True); t=o.stdout+o.stderr; print('gate_rc=',o.returncode,'provenance_fail_lines=',t.count('closure provenance does not resolve')); sys.exit(1 if 'closure provenance does not resolve' in t else 0)\""
+    ],
+    "findings_digest": "1681706222b14ec5914b38f3d6ac568eff642368d068c3a997c6a75c627c31e1",
+    "gate": "core"
+  },
+  "verification_contract_digest": "4b159fc057980cc7",
+  "verifier": "buffy",
+  "warning_count": 78,
+  "work": "T-1373"
+}

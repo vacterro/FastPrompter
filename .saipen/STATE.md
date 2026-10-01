@@ -2,7 +2,7 @@
 phase: DONE
 task: none
 next_action: "saipen continue"
-blocker: OPERATOR DECISION REQUIRED -- every remaining open ticket is blocked on human authority or an external resource, none agent-actionable: T-1373/T-1374 (SAIPEN_HOME relocation), T-1375 (C-001, T-1269 hashes have no committed blob), T-1376 (sub collect/dispose circular), T-1379 (saitranslate producer owns the translation half), T-1377/T-1382 (soft caps, corrected arithmetic in each ticket). T-1371 is no longer here: C-069 is discharged as v0.8.69.
+blocker: none
 agent: buffy
 saipen_version: 7
 saipen_home: "C:/Users/vac34/.agents/skills/saipen"
@@ -13,13 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3810
+last_event: 3846
 style_contract: ded-71fc58de
-updated: "2026-10-01T21:38:43Z"
-transition_from: SHIP
+updated: "2026-10-01T22:08:23Z"
+transition_from: DONE
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 4
+goal_tickets: 7
 ---
 T-1336 DONE 28.09.26 (E-3328):
 
