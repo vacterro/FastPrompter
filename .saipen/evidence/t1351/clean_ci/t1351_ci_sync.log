@@ -1,0 +1,49 @@
+warning: `VIRTUAL_ENV=V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+Using CPython 3.11.9 interpreter at: C:\Users\vac34\AppData\Local\Programs\Python\Python311\python.exe
+Creating virtual environment at: .venv
+Resolved 46 packages in 0.89ms
+   Building fastprompter @ file:///V:/_TEMP_/fp_rc_0869_17cb793_20260930
+      Built fastprompter @ file:///V:/_TEMP_/fp_rc_0869_17cb793_20260930
+Prepared 1 package in 418ms
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 38 packages in 4.23s
+ + ast-serialize==0.6.0
+ + bandit==1.9.4
+ + beautifulsoup4==4.15.0
+ + certifi==2026.7.22
+ + charset-normalizer==3.5.1
+ + colorama==0.4.6
+ + deep-translator==1.11.4
+ + fastprompter==0.8.69 (from file:///V:/_TEMP_/fp_rc_0869_17cb793_20260930)
+ + idna==3.19
+ + iniconfig==2.3.0
+ + librt==0.13.0
+ + markdown==3.10.3
+ + markdown-it-py==4.2.0
+ + mdurl==0.1.2
+ + mypy==2.3.0
+ + mypy-extensions==1.1.0
+ + nodeenv==1.10.0
+ + packaging==26.3
+ + pathspec==1.1.1
+ + pluggy==1.6.0
+ + pygments==2.20.0
+ + pynput==1.8.2
+ + pyqt6==6.11.0
+ + pyqt6-qt6==6.11.1
+ + pyqt6-sip==13.11.1
+ + pyright==1.1.411
+ + pytest==9.1.1
+ + pytest-timeout==2.4.0
+ + pyyaml==6.0.3
+ + requests==2.34.2
+ + rich==15.0.0
+ + ruff==0.16.2
+ + six==1.17.0
+ + soupsieve==2.9.2
+ + stevedore==5.9.0
+ + typing-extensions==4.16.0
+ + tzdata==2026.4
+ + urllib3==2.7.0

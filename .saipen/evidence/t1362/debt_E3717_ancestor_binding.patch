@@ -1,0 +1,87 @@
+--- V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN/tools/saipen_engine/debt.py	2026-09-27 21:59:25.097336000 +0300
++++ C:/Users/vac34/.agents/skills/saipen/tools/saipen_engine/debt.py	2026-10-01 04:11:34.029132500 +0300
+@@ -231,6 +231,59 @@
+         return {"source_head": None, "source_tree_fingerprint": None}
+ 
+ 
++def _head_is_ancestor(receipt_head, live_head, root: Path) -> bool:
++    """True when ``receipt_head`` is an ancestor of ``live_head`` in this repo.
++
++    A closure receipt is stamped with the HEAD that existed when it was minted.
++    Because ``freshness._is_saipen_path`` excludes ``.saipen/`` from the
++    git-delta-v1 fingerprint, a protocol-only commit advances HEAD while
++    leaving the fingerprint byte-identical. Requiring exact HEAD equality
++    therefore rejects evidence the fingerprint still fully vouches for, and
++    makes a fresh clone unsatisfiable: committing a receipt advances HEAD and
++    invalidates that same receipt. Accepting an ancestor restores the
++    provenance half of the binding WITHOUT loosening the load-bearing half --
++    callers must still match ``source_tree_fingerprint`` exactly, so no
++    stale-code evidence is admitted. Ancestry is checked against this
++    repository, so a receipt from a divergent branch or an unrelated clone
++    stays rejected.
++    """
++    if not receipt_head or not live_head:
++        return False
++    if receipt_head == live_head:
++        return True
++    try:
++        completed = subprocess.run(
++            [
++                "git",
++                "-C",
++                str(root),
++                "merge-base",
++                "--is-ancestor",
++                str(receipt_head),
++                str(live_head),
++            ],
++            capture_output=True,
++            timeout=VALIDATOR_CAPTURE_TIMEOUT,
++        )
++    except (OSError, subprocess.SubprocessError):
++        return False
++    return completed.returncode == 0
++
++
++def _receipt_binds_current_tree(receipt: dict, identity: dict, root: Path) -> bool:
++    """The single binding rule shared by closure-evidence admission and reuse.
++
++    The content fingerprint must match exactly; the HEAD may match exactly or
++    be an ancestor of the live HEAD. Both halves are load-bearing, and this
++    one helper keeps them from drifting apart at the two call sites.
++    """
++    if receipt.get("source_tree_fingerprint") != identity["source_tree_fingerprint"]:
++        return False
++    return _head_is_ancestor(
++        receipt.get("source_head"), identity["source_head"], root
++    )
++
++
+ def create_snapshot(
+     root: Path | str,
+     agent: str,
+@@ -1524,11 +1577,7 @@
+                 continue
+             if existing.get("verification_contract_digest") != contract_digest:
+                 continue
+-            if (
+-                existing.get("source_head") != identity["source_head"]
+-                or existing.get("source_tree_fingerprint")
+-                != identity["source_tree_fingerprint"]
+-            ):
++            if not _receipt_binds_current_tree(existing, identity, root):
+                 continue
+             if existing.get("verdict") in ("PASS", "PASS_WITH_CARRIED_DEBT"):
+                 return {
+@@ -1699,10 +1748,6 @@
+     if evidence_class_of(receipt) == "attested":
+         return None
+     identity = _source_identity(root)
+-    if (
+-        receipt.get("source_head") != identity["source_head"]
+-        or receipt.get("source_tree_fingerprint")
+-        != identity["source_tree_fingerprint"]
+-    ):
++    if not _receipt_binds_current_tree(receipt, identity, root):
+         return None
+     return receipt

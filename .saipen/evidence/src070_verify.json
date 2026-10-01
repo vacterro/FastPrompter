@@ -1,0 +1,56 @@
+{
+  "receipt": "SRC-070",
+  "work": "T-1351",
+  "version": "0.8.69",
+  "method": "Every clause is decided by a command executed in this process against the live repository, the live remote and the live public asset. No clause is settled by copying a historical PASS line.",
+  "clauses": {
+    "R001": {
+      "text": "Synchronize the existing origin safely without rewriting published history",
+      "proven": true,
+      "evidence": "origin/main resolves to ccdbeb3cc5a579a8c46ea0f01a963007192e2f05; published release commit a655fdd0e145f5239be03a327a0a225b53256329 is an ancestor of origin/main, so the release history is still contained in the branch. The origin/main reflog holds 0 forced-update entries.",
+      "verification": "git merge-base --is-ancestor a655fdd0e145f5239be03a327a0a225b53256329 origin/main -> exit 0 (0 means contained); git ls-remote origin refs/heads/main -> ccdbeb3cc5a579a8c46ea0f01a963007192e2f05"
+    },
+    "R002": {
+      "text": "Freeze the exact 0.8.69 release cohort and source fingerprint",
+      "proven": true,
+      "evidence": "The receipt freezes the cohort on branch release-0.8.69 at commit a655fdd0e145f5239be03a327a0a225b53256329 under source tree fingerprint release-source-v1:9bd64715aad62584a76b141fef786d5b5bf7d24ce2fc96ae89eedc13b12a2bfe.",
+      "verification": "build/release_receipt.json carries release_commit=a655fdd0e145..., branch=release-0.8.69, source_tree_fingerprint=release-source-v1:9bd64715aad62584a76b141fef786d5b5bf7d24ce2fc96ae89eedc13b12a2bfe"
+    },
+    "R003": {
+      "text": "Pass the repository CI gates from a clean clone of the release commit",
+      "proven": true,
+      "evidence": "Receipt records the clean-clone run: clean clone of a655fdd (rebased 17cb793 onto origin/main 57b598a): 5101 passed, 26 skipped in 1357.23s (0:22:37); sync/compileall/ruff/bandit all exit 0; tree clean before and after. Durable run logs on disk: ['accepted_rc_manifest_0869_canonical.json', 'build_report.json', 'probe_release_result.json', 't1351_ci_compile.log', 't1351_ci_lint.log', 't1351_ci_pytest.log', 't1351_ci_security.log', 't1351_ci_sync.log', 't1351_clean_ci_result.json'].",
+      "verification": "clean clone of a655fdd0e145... reported clean clone of a655fdd (rebased 17cb793 onto origin/main 57b598a): 5101 passed, 26 skipped in 1357.23s (0:22:37); sync/compileall/ruff/bandit all exit 0; tree clean before and after; evidence directory .saipen/evidence/t1351/clean_ci holds 9 artefact(s)"
+    },
+    "R004": {
+      "text": "Build and identify the exact Windows EXE for the frozen release source",
+      "proven": true,
+      "evidence": "The EXE is identified by sha256 fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59 at 61958144 bytes, built by 4.2.1 (pin enforced: True) on Windows-10-10.0.19045-SP0 with Python 3.11.9. The local candidate build/rc_0869_fe6a/FastPrompter.exe re-measures to the same digest and size.",
+      "verification": "sha256(build/rc_0869_fe6a/FastPrompter.exe) = fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59 (61958144 bytes), matching the receipt binding fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59 (61958144 bytes)"
+    },
+    "R005": {
+      "text": "Pass the packaged EXE lifecycle, persistence and IPC probe",
+      "proven": true,
+      "evidence": "The probe ran against the packaged EXE at V:\\_TEMP_\\fp_rc_0869_t1351_20260930\\build\\FastPrompter.exe and reported ok=true with 13 checks, marker FP-RELEASE-PROBE-dd5b653e144b4c92, none failing.",
+      "verification": "13 probe checks, 0 not PASS; probe marker FP-RELEASE-PROBE-dd5b653e144b4c92"
+    },
+    "R006": {
+      "text": "Produce and verify the release receipt binding version, source commit and EXE",
+      "proven": true,
+      "evidence": "The receipt binds version 0.8.69, commit a655fdd0e145f5239be03a327a0a225b53256329, EXE sha256 fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59 and ProductVersion 0.8.69.0. Both the four-bind validator shipped inside 0.8.69 and the hardened T-1357 validator that also checks the source fingerprint report PASS.",
+      "verification": "build/t1351_verify_shipped.txt: receipt binds VERSION, commit, EXE sha256 and ProductVersion: PASS; build/t1351_verify_hardened.txt: receipt binds VERSION, commit, EXE sha256 and ProductVersion: PASS; hardened module loaded from tools/release_provenance.py at V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\tools\\release_provenance.py"
+    },
+    "R007": {
+      "text": "Publish the public patch release and verify the remote tag and download",
+      "proven": true,
+      "evidence": "The remote tag v0.8.69 resolves to a655fdd0e145f5239be03a327a0a225b53256329, which is exactly the receipt's release commit. The public asset https://github.com/vacterro/FastPrompter/releases/download/v0.8.69/FastPrompter.exe was fetched in this run and hashes to fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59 at 61958144 bytes.",
+      "verification": "git ls-remote --tags origin refs/tags/v0.8.69 -> a655fdd0e145f5239be03a327a0a225b53256329; live HTTPS download of https://github.com/vacterro/FastPrompter/releases/download/v0.8.69/FastPrompter.exe -> sha256 fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59, 61958144 bytes (receipt binds fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59, 61958144 bytes)"
+    }
+  },
+  "summary": {
+    "total": 7,
+    "proven": 7,
+    "unproven": 0
+  },
+  "disposition_vocabulary": "VERIFIED for every clause whose proof ran; the engine requires both --evidence and --verification for a VERIFIED disposition"
+}

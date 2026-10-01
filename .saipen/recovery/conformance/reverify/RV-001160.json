@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T20:19:15Z",
+  "evidence_class": "executed",
+  "findings_digest": "fc4c3bab770bd0dd9126c37a9be78e79ff6c23a6c443f97a1ee69e8efa1579cb",
+  "gate": "core",
+  "integrity_digest": "7bce7deb2507aaca",
+  "journal_op_id": "reverify.b1f1d9b72244",
+  "original_closure": {
+    "claim_time": "2026-09-08T06:45:00Z",
+    "last_ticket_event": "E-2437",
+    "owner": "opencode"
+  },
+  "own_problem_keys": [
+    "9d281f259f5ac590"
+  ],
+  "problem_count": 49,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001160",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "ccdbeb3cc5a579a8c46ea0f01a963007192e2f05",
+  "source_tree_fingerprint": "git-delta-v1:2c623480f87cf3517216ccd4e343b874578e8d6fafc1606975caea5776d29bc6",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_fold_blocks_t1226.py -q",
+      "duration_ms": 771,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 98,
+      "output_digest": "22dda2ca00ae6324",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_fold_blocks_t1226.py -q"
+    ],
+    "findings_digest": "fc4c3bab770bd0dd9126c37a9be78e79ff6c23a6c443f97a1ee69e8efa1579cb",
+    "gate": "core"
+  },
+  "verification_contract_digest": "e74f788aa145ae97",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1226"
+}

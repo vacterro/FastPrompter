@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T09:10:50Z",
+  "evidence_class": "executed",
+  "findings_digest": "62bffa7c4530489038f370b7acd080f011560fb4d72cab9a507fe0859a997032",
+  "gate": "core",
+  "integrity_digest": "00bdc2d2a69a4bc2",
+  "journal_op_id": "reverify.8e1171b61601",
+  "original_closure": {
+    "last_ticket_event": "E-1986",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "9e751aeb49c5306f"
+  ],
+  "problem_count": 8,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001013",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "b7eac60b03963d043e8019fac80ab7070e2e31bf",
+  "source_tree_fingerprint": "git-delta-v1:619ffb224fa927a50cb489fab70485403c22627d9fb40119c8b85a9751f3c878",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run --no-sync python -m pytest tests/test_t1268_claude_desktop_attribution.py -q",
+      "duration_ms": 448,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "d0d5fe161f7f6a5c",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run --no-sync python -m pytest tests/test_t1268_claude_desktop_attribution.py -q"
+    ],
+    "findings_digest": "62bffa7c4530489038f370b7acd080f011560fb4d72cab9a507fe0859a997032",
+    "gate": "core"
+  },
+  "verification_contract_digest": "30c9774a9c825887",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1268"
+}

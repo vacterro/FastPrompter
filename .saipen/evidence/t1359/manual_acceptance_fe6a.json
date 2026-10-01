@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "source_receipt": "SRC-071",
+  "operator_report": "Да, PASS. Пусть тогда по дефолту будет включен сразу 24h chime пресет сразу.",
+  "recorded_at": "2026-09-30T10:52:37.006651+00:00",
+  "exe_sha256": "fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59",
+  "product_version": "0.8.69.0",
+  "source_tree_fingerprint": "release-source-v1:9bd64715aad62584a76b141fef786d5b5bf7d24ce2fc96ae89eedc13b12a2bfe",
+  "tested_source_commit": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "scope": "settings opening/changing, text saving, closing and restarting",
+  "followup_request": "Enable the existing 24h Chime preset by default."
+}

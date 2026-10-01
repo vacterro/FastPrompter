@@ -1,0 +1,49 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-09-30T23:48:23Z",
+  "evidence_class": "executed",
+  "findings_digest": "8a8f9a58c2973c6cfa43e8fe154238a9fbb106ea448e25dbb2c1e3e6f45e1b4f",
+  "gate": "core",
+  "integrity_digest": "856a4c75b866f3ac",
+  "journal_op_id": "reverify.d8f7f989d426",
+  "original_closure": {
+    "claim_time": "2026-09-11T21:40:00Z",
+    "last_ticket_event": "E-1994",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "bd8090f672325457"
+  ],
+  "problem_count": 17,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001253",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "6e640476b20b12fd4aca7a49f2dffbe7e07ff517",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_freebuff_wallet_visibility.py -q",
+      "duration_ms": 9306,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "3fcc0fb3c0e72b09",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_freebuff_wallet_visibility.py -q"
+    ],
+    "findings_digest": "8a8f9a58c2973c6cfa43e8fe154238a9fbb106ea448e25dbb2c1e3e6f45e1b4f",
+    "gate": "core"
+  },
+  "verification_contract_digest": "f6470a091ffd533b",
+  "verifier": "saipen-cli",
+  "warning_count": 81,
+  "work": "T-1254"
+}

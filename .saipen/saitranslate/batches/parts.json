@@ -1,0 +1,398 @@
+{
+ "ar": {
+  "target_language": "العربية",
+  "language_name_en": "Arabic",
+  "strings": 528,
+  "parts": [
+   "ar.part1.json",
+   "ar.part2.json",
+   "ar.part3.json",
+   "ar.part4.json",
+   "ar.part5.json"
+  ]
+ },
+ "bg": {
+  "target_language": "Български",
+  "language_name_en": "Bulgarian",
+  "strings": 652,
+  "parts": [
+   "bg.part1.json",
+   "bg.part2.json",
+   "bg.part3.json",
+   "bg.part4.json",
+   "bg.part5.json",
+   "bg.part6.json"
+  ]
+ },
+ "cs": {
+  "target_language": "Čeština",
+  "language_name_en": "Czech",
+  "strings": 664,
+  "parts": [
+   "cs.part1.json",
+   "cs.part2.json",
+   "cs.part3.json",
+   "cs.part4.json",
+   "cs.part5.json",
+   "cs.part6.json"
+  ]
+ },
+ "da": {
+  "target_language": "Dansk",
+  "language_name_en": "Danish",
+  "strings": 546,
+  "parts": [
+   "da.part1.json",
+   "da.part2.json",
+   "da.part3.json",
+   "da.part4.json",
+   "da.part5.json"
+  ]
+ },
+ "de": {
+  "target_language": "Deutsch",
+  "language_name_en": "German",
+  "strings": 546,
+  "parts": [
+   "de.part1.json",
+   "de.part2.json",
+   "de.part3.json",
+   "de.part4.json",
+   "de.part5.json"
+  ]
+ },
+ "ded": {
+  "target_language": "«Дед»",
+  "language_name_en": "Grandpa Voice",
+  "strings": 442,
+  "parts": [
+   "ded.part1.json",
+   "ded.part2.json",
+   "ded.part3.json",
+   "ded.part4.json"
+  ]
+ },
+ "el": {
+  "target_language": "Ελληνικά",
+  "language_name_en": "Greek",
+  "strings": 658,
+  "parts": [
+   "el.part1.json",
+   "el.part2.json",
+   "el.part3.json",
+   "el.part4.json",
+   "el.part5.json",
+   "el.part6.json"
+  ]
+ },
+ "est": {
+  "target_language": "Eesti",
+  "language_name_en": "Estonian",
+  "strings": 213,
+  "parts": [
+   "est.part1.json",
+   "est.part2.json"
+  ]
+ },
+ "fi": {
+  "target_language": "Suomi",
+  "language_name_en": "Finnish",
+  "strings": 534,
+  "parts": [
+   "fi.part1.json",
+   "fi.part2.json",
+   "fi.part3.json",
+   "fi.part4.json",
+   "fi.part5.json"
+  ]
+ },
+ "fra": {
+  "target_language": "Français",
+  "language_name_en": "French",
+  "strings": 604,
+  "parts": [
+   "fra.part1.json",
+   "fra.part2.json",
+   "fra.part3.json",
+   "fra.part4.json",
+   "fra.part5.json",
+   "fra.part6.json"
+  ]
+ },
+ "he": {
+  "target_language": "עברית",
+  "language_name_en": "Hebrew",
+  "strings": 596,
+  "parts": [
+   "he.part1.json",
+   "he.part2.json",
+   "he.part3.json",
+   "he.part4.json",
+   "he.part5.json"
+  ]
+ },
+ "hi": {
+  "target_language": "हिन्दी",
+  "language_name_en": "Hindi",
+  "strings": 646,
+  "parts": [
+   "hi.part1.json",
+   "hi.part2.json",
+   "hi.part3.json",
+   "hi.part4.json",
+   "hi.part5.json",
+   "hi.part6.json"
+  ]
+ },
+ "hr": {
+  "target_language": "Hrvatski",
+  "language_name_en": "Croatian",
+  "strings": 660,
+  "parts": [
+   "hr.part1.json",
+   "hr.part2.json",
+   "hr.part3.json",
+   "hr.part4.json",
+   "hr.part5.json",
+   "hr.part6.json"
+  ]
+ },
+ "hu": {
+  "target_language": "Magyar",
+  "language_name_en": "Hungarian",
+  "strings": 667,
+  "parts": [
+   "hu.part1.json",
+   "hu.part2.json",
+   "hu.part3.json",
+   "hu.part4.json",
+   "hu.part5.json",
+   "hu.part6.json"
+  ]
+ },
+ "id": {
+  "target_language": "Bahasa Indonesia",
+  "language_name_en": "Indonesian",
+  "strings": 656,
+  "parts": [
+   "id.part1.json",
+   "id.part2.json",
+   "id.part3.json",
+   "id.part4.json",
+   "id.part5.json",
+   "id.part6.json"
+  ]
+ },
+ "it": {
+  "target_language": "Italiano",
+  "language_name_en": "Italian",
+  "strings": 602,
+  "parts": [
+   "it.part1.json",
+   "it.part2.json",
+   "it.part3.json",
+   "it.part4.json",
+   "it.part5.json",
+   "it.part6.json"
+  ]
+ },
+ "ja": {
+  "target_language": "日本語",
+  "language_name_en": "Japanese",
+  "strings": 585,
+  "parts": [
+   "ja.part1.json",
+   "ja.part2.json",
+   "ja.part3.json",
+   "ja.part4.json",
+   "ja.part5.json"
+  ]
+ },
+ "ko": {
+  "target_language": "한국어",
+  "language_name_en": "Korean",
+  "strings": 596,
+  "parts": [
+   "ko.part1.json",
+   "ko.part2.json",
+   "ko.part3.json",
+   "ko.part4.json",
+   "ko.part5.json"
+  ]
+ },
+ "nl": {
+  "target_language": "Nederlands",
+  "language_name_en": "Dutch",
+  "strings": 602,
+  "parts": [
+   "nl.part1.json",
+   "nl.part2.json",
+   "nl.part3.json",
+   "nl.part4.json",
+   "nl.part5.json",
+   "nl.part6.json"
+  ]
+ },
+ "no": {
+  "target_language": "Norsk",
+  "language_name_en": "Norwegian",
+  "strings": 606,
+  "parts": [
+   "no.part1.json",
+   "no.part2.json",
+   "no.part3.json",
+   "no.part4.json",
+   "no.part5.json",
+   "no.part6.json"
+  ]
+ },
+ "pl": {
+  "target_language": "Polski",
+  "language_name_en": "Polish",
+  "strings": 603,
+  "parts": [
+   "pl.part1.json",
+   "pl.part2.json",
+   "pl.part3.json",
+   "pl.part4.json",
+   "pl.part5.json",
+   "pl.part6.json"
+  ]
+ },
+ "pt": {
+  "target_language": "Português",
+  "language_name_en": "Portuguese",
+  "strings": 601,
+  "parts": [
+   "pt.part1.json",
+   "pt.part2.json",
+   "pt.part3.json",
+   "pt.part4.json",
+   "pt.part5.json",
+   "pt.part6.json"
+  ]
+ },
+ "ro": {
+  "target_language": "Română",
+  "language_name_en": "Romanian",
+  "strings": 667,
+  "parts": [
+   "ro.part1.json",
+   "ro.part2.json",
+   "ro.part3.json",
+   "ro.part4.json",
+   "ro.part5.json",
+   "ro.part6.json"
+  ]
+ },
+ "ru": {
+  "target_language": "Русский",
+  "language_name_en": "Russian",
+  "strings": 205,
+  "parts": [
+   "ru.part1.json",
+   "ru.part2.json"
+  ]
+ },
+ "sk": {
+  "target_language": "Slovenčina",
+  "language_name_en": "Slovak",
+  "strings": 665,
+  "parts": [
+   "sk.part1.json",
+   "sk.part2.json",
+   "sk.part3.json",
+   "sk.part4.json",
+   "sk.part5.json",
+   "sk.part6.json"
+  ]
+ },
+ "spa": {
+  "target_language": "Español",
+  "language_name_en": "Spanish",
+  "strings": 601,
+  "parts": [
+   "spa.part1.json",
+   "spa.part2.json",
+   "spa.part3.json",
+   "spa.part4.json",
+   "spa.part5.json",
+   "spa.part6.json"
+  ]
+ },
+ "sv": {
+  "target_language": "Svenska",
+  "language_name_en": "Swedish",
+  "strings": 611,
+  "parts": [
+   "sv.part1.json",
+   "sv.part2.json",
+   "sv.part3.json",
+   "sv.part4.json",
+   "sv.part5.json",
+   "sv.part6.json"
+  ]
+ },
+ "th": {
+  "target_language": "ไทย",
+  "language_name_en": "Thai",
+  "strings": 594,
+  "parts": [
+   "th.part1.json",
+   "th.part2.json",
+   "th.part3.json",
+   "th.part4.json",
+   "th.part5.json"
+  ]
+ },
+ "tur": {
+  "target_language": "Türkçe",
+  "language_name_en": "Turkish",
+  "strings": 651,
+  "parts": [
+   "tur.part1.json",
+   "tur.part2.json",
+   "tur.part3.json",
+   "tur.part4.json",
+   "tur.part5.json",
+   "tur.part6.json"
+  ]
+ },
+ "ukr": {
+  "target_language": "Українська",
+  "language_name_en": "Ukrainian",
+  "strings": 599,
+  "parts": [
+   "ukr.part1.json",
+   "ukr.part2.json",
+   "ukr.part3.json",
+   "ukr.part4.json",
+   "ukr.part5.json"
+  ]
+ },
+ "vi": {
+  "target_language": "Tiếng Việt",
+  "language_name_en": "Vietnamese",
+  "strings": 644,
+  "parts": [
+   "vi.part1.json",
+   "vi.part2.json",
+   "vi.part3.json",
+   "vi.part4.json",
+   "vi.part5.json",
+   "vi.part6.json"
+  ]
+ },
+ "zh": {
+  "target_language": "中文",
+  "language_name_en": "Chinese",
+  "strings": 594,
+  "parts": [
+   "zh.part1.json",
+   "zh.part2.json",
+   "zh.part3.json",
+   "zh.part4.json",
+   "zh.part5.json"
+  ]
+ }
+}

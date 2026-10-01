@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-29T19:39:28Z",
+  "evidence_class": "executed",
+  "findings_digest": "63a1c9e913ce8ca1f8bb15ce964fbc3deb661b8e8cf69365f202c054a0626a0a",
+  "gate": "core",
+  "integrity_digest": "961cf6ca1ebd390c",
+  "journal_op_id": "reverify.22ff469df9f7",
+  "original_closure": {
+    "claim_time": "2026-09-12T03:16:00Z",
+    "last_ticket_event": "E-1888",
+    "owner": "gemini"
+  },
+  "own_problem_keys": [
+    "54ec96595e5d98dc"
+  ],
+  "problem_count": 2,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000971",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "4dc82ac9932a4b1080f9a78499a1e902b2882eae",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_problip_audio_fidelity.py -q",
+      "duration_ms": 1065,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "c3acbaab2306c0da",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_problip_audio_fidelity.py -q"
+    ],
+    "findings_digest": "63a1c9e913ce8ca1f8bb15ce964fbc3deb661b8e8cf69365f202c054a0626a0a",
+    "gate": "core"
+  },
+  "verification_contract_digest": "c163200445a729b4",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1255"
+}

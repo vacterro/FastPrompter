@@ -1,0 +1,27 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_________________ test_build_extra_pins_the_accepted_compiler _________________
+
+    def test_build_extra_pins_the_accepted_compiler():
+        project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+>       assert f"nuitka=={_accepted_compiler()}" in project["project"]["optional-dependencies"]["build"]
+E       AssertionError: assert 'nuitka==4.2.1' in ['nuitka>=4.1.2']
+
+tests\test_t1355_locked_compiler.py:23: AssertionError
+______________ test_locked_setup_resolves_the_accepted_compiler _______________
+
+    def test_locked_setup_resolves_the_accepted_compiler():
+        lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+        compilers = [package for package in lock["package"] if package["name"] == "nuitka"]
+        assert len(compilers) == 1
+>       assert compilers[0]["version"] == _accepted_compiler()
+E       AssertionError: assert '4.1.2' == '4.2.1'
+E         
+E         - 4.2.1
+E         + 4.1.2
+
+tests\test_t1355_locked_compiler.py:30: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_t1355_locked_compiler.py::test_build_extra_pins_the_accepted_compiler
+FAILED tests/test_t1355_locked_compiler.py::test_locked_setup_resolves_the_accepted_compiler
+2 failed in 0.16s

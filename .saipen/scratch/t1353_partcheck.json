@@ -1,0 +1,551 @@
+{
+ "ar": {
+  "parts": 5,
+  "filled": 528,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 3,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Silo",
+   "Sync-Project"
+  ]
+ },
+ "bg": {
+  "parts": 6,
+  "filled": 652,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 2,
+  "identical_keys": [
+   "Silo",
+   "Sync-Project"
+  ]
+ },
+ "cs": {
+  "parts": 6,
+  "filled": 664,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 7,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "Backspace",
+   "Ctrl+W…",
+   "Editor",
+   "Silo",
+   "Sync-Project"
+  ]
+ },
+ "da": {
+  "parts": 5,
+  "filled": 546,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 23,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Agent",
+   "Alt+W…",
+   "Auto",
+   "Ctrl+W…",
+   "Data",
+   "Format:",
+   "Interval",
+   "Interval:",
+   "Layout",
+   "Navigation",
+   "Pause",
+   "Presets",
+   "Presets…",
+   "Silo",
+   "Status",
+   "Symbol:",
+   "Sync-Project",
+   "Tags",
+   "Timer",
+   "Transport",
+   "Ultra",
+   "🎨 Silo Color Box"
+  ]
+ },
+ "de": {
+  "parts": 5,
+  "filled": 546,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 29,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Agent",
+   "Alt+W…",
+   "Auto",
+   "Editor",
+   "Format:",
+   "Global: {pct}%",
+   "Layout",
+   "Limit",
+   "MUTED\" if muted else \"SOUND ON",
+   "MUTED\" if self.data.get(\"audio_global_muted: ",
+   "Name",
+   "Name:",
+   "Navigation",
+   "Pause",
+   "Pool",
+   "Silo",
+   "Silos",
+   "Silos:",
+   "Start",
+   "Status",
+   "Symbol:",
+   "Sync-Project",
+   "Timer",
+   "Transport",
+   "Ultra",
+   "in 10m",
+   "in 1h",
+   "📄 Text"
+  ]
+ },
+ "ded": {
+  "parts": 4,
+  "filled": 442,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 1,
+  "identical_keys": [
+   "**__{text}__** ({time})"
+  ]
+ },
+ "el": {
+  "parts": 6,
+  "filled": 659,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 11,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "Backspace",
+   "BkUp",
+   "Ctrl+W…",
+   "Night Owl (22:00 - 06:00 @ 0.05)",
+   "Rpl",
+   "Rstr",
+   "Silo",
+   "Sync-Project",
+   "Ultra"
+  ]
+ },
+ "est": {
+  "parts": 2,
+  "filled": 212,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 8,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Agent",
+   "Alt+W…",
+   "Backspace",
+   "Ctrl+W…",
+   "DEGRADED BACKEND",
+   "Silo",
+   "Sync-Project"
+  ]
+ },
+ "fi": {
+  "parts": 5,
+  "filled": 534,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 7,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "Auto",
+   "Ctrl+W…",
+   "MUTED\" if muted else \"SOUND ON",
+   "Silo",
+   "Sync-Project"
+  ]
+ },
+ "fra": {
+  "parts": 6,
+  "filled": 604,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 26,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Agent",
+   "Alt+W…",
+   "Archive",
+   "Auto",
+   "Ctrl+W…",
+   "Date",
+   "Gain",
+   "MUTED\" if self.data.get(\"audio_global_muted\": ",
+   "Mode",
+   "Navigation",
+   "Notification",
+   "Pause",
+   "Pool",
+   "Silence",
+   "Silo",
+   "Silos",
+   "Sync-Project",
+   "Test",
+   "Total",
+   "Transport",
+   "Ultra",
+   "Vol",
+   "Volume",
+   "clips",
+   "silos"
+  ]
+ },
+ "he": {
+  "parts": 5,
+  "filled": 596,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 6,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "Backspace",
+   "Ctrl+W…",
+   "Silo",
+   "Sync-Project"
+  ]
+ },
+ "hi": {
+  "parts": 6,
+  "filled": 646,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 6,
+  "identical_keys": [
+   "Alt+W…",
+   "Ctrl+W…",
+   "MUTED\" if muted else \"SOUND ON",
+   "MUTED\" if self.data.get(\"audio_global_muted",
+   "Night Owl (22:00 - 06:00 @ 0.05)",
+   "Sync-Project"
+  ]
+ },
+ "hr": {
+  "parts": 6,
+  "filled": 240,
+  "empty": 420,
+  "bad_json": 0,
+  "identical": 7,
+  "identical_keys": [
+   "Agent",
+   "Alt+W…",
+   "Auto",
+   "Backspace",
+   "BkUp",
+   "Ctrl+W…",
+   "Format:"
+  ]
+ },
+ "hu": {
+  "parts": 6,
+  "filled": 240,
+  "empty": 307,
+  "bad_json": 1,
+  "identical": 6,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "Auto",
+   "Backspace",
+   "BkUp",
+   "Ctrl+W…"
+  ]
+ },
+ "id": {
+  "parts": 6,
+  "filled": 656,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 27,
+  "identical_keys": [
+   "Alt+W…",
+   "Backspace",
+   "Ctrl+W…",
+   "Data",
+   "Editor",
+   "Event",
+   "File",
+   "Folder",
+   "Format:",
+   "Gain",
+   "Gain: {gain}",
+   "Global: {pct}%",
+   "Interval",
+   "Interval:",
+   "Item",
+   "Mode",
+   "Mode:",
+   "Mouse",
+   "Silo",
+   "Status",
+   "Sync-Project",
+   "Toolbar",
+   "Ultra",
+   "Vol",
+   "Vol:",
+   "Volume",
+   "Volume:"
+  ]
+ },
+ "it": {
+  "parts": 6,
+  "filled": 602,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 19,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Account",
+   "Alt+W…",
+   "Auto",
+   "Backspace",
+   "Backup DB",
+   "Ctrl+W…",
+   "File",
+   "Pool",
+   "Pre-render",
+   "Silo",
+   "Sync-Project",
+   "Timer",
+   "Ultra",
+   "Vol",
+   "Vol:",
+   "Volume",
+   "Volume:",
+   "{} file"
+  ]
+ },
+ "ja": {
+  "parts": 5,
+  "filled": 585,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 3,
+  "identical_keys": [
+   "Alt+W…",
+   "Backspace",
+   "Ctrl+W…"
+  ]
+ },
+ "ko": {
+  "parts": 5,
+  "filled": 0,
+  "empty": 596,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "nl": {
+  "parts": 6,
+  "filled": 602,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 21,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Account",
+   "Alt+W…",
+   "Auto",
+   "Backspace",
+   "Ctrl+W…",
+   "Cursors",
+   "Item",
+   "Silo",
+   "Status",
+   "Sync-Project",
+   "Timer",
+   "Timers",
+   "Transport",
+   "Trigger",
+   "Ultra",
+   "Vol",
+   "Vol:",
+   "Volume",
+   "Volume:",
+   "clips"
+  ]
+ },
+ "no": {
+  "parts": 6,
+  "filled": 606,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 16,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "Ctrl+W…",
+   "Data",
+   "Format:",
+   "Night Owl (22:00 - 06:00 @ 0.05)",
+   "Pause",
+   "Silo",
+   "Start",
+   "Status",
+   "Symbol:",
+   "Sync-Project",
+   "Test",
+   "Ultra",
+   "Vol",
+   "Vol:"
+  ]
+ },
+ "pl": {
+  "parts": 6,
+  "filled": 603,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 15,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Agent",
+   "Alt+W…",
+   "Backspace",
+   "Ctrl+W…",
+   "Format:",
+   "Limit",
+   "Silo",
+   "Start",
+   "Status",
+   "Symbol:",
+   "Sync-Project",
+   "Test",
+   "Transport",
+   "Ultra"
+  ]
+ },
+ "pt": {
+  "parts": 6,
+  "filled": 0,
+  "empty": 601,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "ro": {
+  "parts": 6,
+  "filled": 667,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 8,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "BkUp",
+   "Ctrl+W…",
+   "Rpl",
+   "Rstr",
+   "Silo",
+   "Sync-Project"
+  ]
+ },
+ "ru": {
+  "parts": 2,
+  "filled": 0,
+  "empty": 205,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "sk": {
+  "parts": 6,
+  "filled": 665,
+  "empty": 0,
+  "bad_json": 0,
+  "identical": 20,
+  "identical_keys": [
+   "**__{text}__** ({time})",
+   "Alt+W…",
+   "Auto",
+   "Backspace",
+   "BkUp",
+   "Ctrl+W…",
+   "Interval",
+   "Interval:",
+   "Limit",
+   "MUTED\" if muted else \"SOUND ON",
+   "MUTED\" if self.data.get(\"audio_global_muted\":",
+   "Rpl",
+   "Rstr",
+   "Silo",
+   "Symbol:",
+   "Sync-Project",
+   "Test",
+   "Ultra",
+   "🎨 Silo Color Box",
+   "📄 Text"
+  ]
+ },
+ "spa": {
+  "parts": 6,
+  "filled": 0,
+  "empty": 601,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "sv": {
+  "parts": 6,
+  "filled": 0,
+  "empty": 611,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "th": {
+  "parts": 5,
+  "filled": 0,
+  "empty": 594,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "tur": {
+  "parts": 6,
+  "filled": 0,
+  "empty": 651,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "ukr": {
+  "parts": 5,
+  "filled": 0,
+  "empty": 599,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "vi": {
+  "parts": 6,
+  "filled": 0,
+  "empty": 644,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ },
+ "zh": {
+  "parts": 5,
+  "filled": 0,
+  "empty": 594,
+  "bad_json": 0,
+  "identical": 0,
+  "identical_keys": []
+ }
+}

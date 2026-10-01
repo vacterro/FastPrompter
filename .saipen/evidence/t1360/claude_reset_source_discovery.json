@@ -1,0 +1,13 @@
+{
+  "ticket": "T-1360",
+  "captured_at": "2026-09-30T11:55:00Z",
+  "subject": "Claude manual reset-offer source discovery attempt",
+  "method": "Bounded probes against the user's own Claude sources on this machine. No tokens logged; outputs below are verbatim vendor text without credentials.",
+  "findings": {
+    "claude_cli": "C:\\Users\\vac34\\.local\\bin\\claude.exe, version 2.1.285. `claude -p \"/usage\" --output-format json` answers: is_error=true, result=\"Not logged in · Please run /login\". No authenticated /usage payload obtainable right now.",
+    "statusline_cache_default": "~/.claude has no fastprompter-rate-limits.json (bridge not connected); no offer-shaped block exists in this cache's documented schema (rate_limits percentages only).",
+    "statusline_cache_account2": "~/.claude-account2/fastprompter-rate-limits.json carries only {five_hour: {used_percentage}, seven_day: {used_percentage}}; no reset-offer metadata.",
+    "desktop_sampler": "plan-usage-history records percentages only (per FastPrompter provider docs)."
+  },
+  "decision": "No first-party Claude payload on this machine currently exposes reset-offer/campaign metadata, and the CLI is not logged in to fetch one. Per T-1360 rule 8, no vendor campaign key is hard-coded. Implementation ships a GENERIC defensive campaign parser (explicit availability evidence required; null/absent metadata never means available) applied to the first-party payloads FastPrompter already reads, so a future payload that does carry offers is surfaced without schema invention. Until such a payload exists, Claude shows no reset offers and no fake zero."
+}

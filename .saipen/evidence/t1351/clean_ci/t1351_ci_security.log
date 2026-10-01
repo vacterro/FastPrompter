@@ -1,0 +1,78 @@
+warning: `VIRTUAL_ENV=V:\___VAC\__K\__CODE\_PY\_FastPrompter\.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\ambience_store.py:109
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\ambience_store.py:131
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\ambience_store.py:198
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\ambience_store.py:212
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\ambience_store.py:221
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: above is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: literal is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: tuple is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: immediately is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: above is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: only is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: placeholders is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: values is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: bound is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: separately is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:807
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:812
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:1856
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\state.py:2593
+[manager]	WARNING	Test in comment: local is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: user is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: authored is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: hook is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: not is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: provider is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: output is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B602), but no failed test on file src/fastprompter\core\usage_limits\claude_statusline.py:291
+[manager]	WARNING	Test in comment: HTTPS is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: above is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: redirects is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: refused is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: HTTPS is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: allowlist is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: above is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: redirects is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: refused is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: closed is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: table is not a test name or id, ignoring
+[manager]	WARNING	Test in comment: constant is not a test name or id, ignoring
+[tester]	WARNING	nosec encountered (B608), but no failed test on file src/fastprompter\core\voice_store.py:233

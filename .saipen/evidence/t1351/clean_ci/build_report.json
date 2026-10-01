@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "operation": "build_report",
+  "recorded_at": "2026-09-30T08:32:27Z",
+  "result": "BUILD_EXIT 0",
+  "toolchain": {
+    "python": "3.11.9",
+    "nuitka": "4.2.1",
+    "nuitka_pin": "4.2.1",
+    "nuitka_pin_enforced": true,
+    "pyqt6": "6.11.0",
+    "upx_policy": "off",
+    "upx_version": "",
+    "platform": "Windows-10-10.0.19045-SP0"
+  },
+  "exe": {
+    "path": "build/FastPrompter.exe",
+    "size": 61958144,
+    "sha256": "fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59"
+  }
+}

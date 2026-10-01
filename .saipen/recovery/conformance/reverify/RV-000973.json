@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T08:50:07Z",
+  "evidence_class": "executed",
+  "findings_digest": "c84354d39546eb427936868f45daa8eab0fdd80ad21fca7bb4807ec7196744e0",
+  "gate": "core",
+  "integrity_digest": "0afc0b3ec9f0a50e",
+  "journal_op_id": "reverify.d8cdecaceb39",
+  "original_closure": {
+    "claim_time": "2026-09-04T15:13:36Z",
+    "last_ticket_event": "E-3498",
+    "owner": "codex"
+  },
+  "own_problem_keys": [
+    "71716f2a340a3bc6"
+  ],
+  "problem_count": 49,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000973",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "b7eac60b03963d043e8019fac80ab7070e2e31bf",
+  "source_tree_fingerprint": "git-delta-v1:619ffb224fa927a50cb489fab70485403c22627d9fb40119c8b85a9751f3c878",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run --no-sync python -m pytest tests/test_cat_numbox_shrink.py tests/test_project_reorder_t1336.py -q",
+      "duration_ms": 20834,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "48cdddab431620ba",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run --no-sync python -m pytest tests/test_cat_numbox_shrink.py tests/test_project_reorder_t1336.py -q"
+    ],
+    "findings_digest": "c84354d39546eb427936868f45daa8eab0fdd80ad21fca7bb4807ec7196744e0",
+    "gate": "core"
+  },
+  "verification_contract_digest": "d9de6a9530eaf82f",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1203"
+}

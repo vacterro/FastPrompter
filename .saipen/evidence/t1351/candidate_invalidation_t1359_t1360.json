@@ -1,0 +1,16 @@
+{
+  "ticket": "T-1359+T-1360",
+  "captured_at": "2026-09-30T13:05:00Z",
+  "subject": "Release-candidate invalidation after product-source changes (handoff rule 20)",
+  "invalidated": {
+    "candidate_commit": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+    "clean_clone_final_release_authority": "the 5101-passed / 26-skipped clean-clone CI at 17cb793 is historical regression evidence only",
+    "exe_sha256": "fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59",
+    "packaged_probe_bound_to_that_exe": "13/13 PASS remains valid only for the fe6a artifact",
+    "manual_acceptance": "the recorded SRC-071 acceptance (.saipen/evidence/t1359/manual_acceptance_fe6a.json) binds THAT binary and does not transfer",
+    "old_release_receipt_authority": "receipts RV-001020..RV-001067 bind the 17cb793 source identity"
+  },
+  "reason": "T-1359 (fresh-profile 24h Chime default via shared core/interval_presets.py) and T-1360 (cross-provider ResetOffer model, Codex adapter, ZCode Coding Plan reset-card read path, Claude defensive campaign parser, topbar/overview/settings presentation) change product source bytes after the candidate freeze.",
+  "policy": "All listed records are kept as historical evidence. Nothing is deleted. No acceptance of the fe6a EXE may be requested. The final 0.8.69 corridor restarts from a new candidate commit per handoff rule 22.",
+  "next": "T-1356 .gitattributes raw-byte repair, then T-1358 cohort authority, then T-1357 receipt validator, then a NEW T-1351 source candidate."
+}

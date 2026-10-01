@@ -1,0 +1,167 @@
+{
+  "verdict": "PASS",
+  "commit": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "clone": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930",
+  "source_fingerprint": "release-source-v1:9bd64715aad62584a76b141fef786d5b5bf7d24ce2fc96ae89eedc13b12a2bfe",
+  "archived_originals_byte_identical": [
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/__init__.py",
+      "sha256": "7f6992d843b7d057abccfd9f12fd7ed3082f1256c4455c0cc02208c135e0e697"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/_compat.py",
+      "sha256": "f9d187c90536065f9279278fe8071e6b4976f64202b3ef67c6a90098e0230aa3"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/_container.py",
+      "sha256": "985b1e53db7e7dcadf65902d18286f2a70b0a8017863e7251f67ba5d2adcec08"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/_context.py",
+      "sha256": "46e902c688ca74eeb93c186c6ecc0ff141416f1ad69de7e7236673226f006cc0"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/_engine.py",
+      "sha256": "f717e1139adb68a0d0f4024cac883847228249f23dcdbdb315b6423b62ef5248"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/ar.py",
+      "sha256": "8869f9f74723364685d5062258dbb79de4ff3ead1412832ae0533cfd542e9242"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/bg.py",
+      "sha256": "7d9f1646c97200593c6b47fefe5ed40b3eab94ece220717688bf8b335faa3a38"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/cs.py",
+      "sha256": "8d4ebd74fd5804ce720ea061cb3f302ca3065df577ddbf762e3adaa77720861f"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/da.py",
+      "sha256": "0a0a6eb1e3472d62942c9aa72453056c89da47fbc6faac3caa6326ae98fc423e"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/de.py",
+      "sha256": "458506946d3805b555067deff5872c30e881d7223a94718148604416a85b63ec"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/ded.py",
+      "sha256": "9b904347406e9477db40196e3b506aad1f5633556f2cfc1746ea26b669f47ced"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/el.py",
+      "sha256": "e7a5f14e343a59c13c04cfaf34b5d7b9ea62dfb3f666329feea7915d0481553d"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/en.py",
+      "sha256": "9319294f181e81e5444a40900f5fd7c72652c98343849c246ea3bf6e0c0620f0"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/est.py",
+      "sha256": "34692c881f58b8254c249e7d5a92869c35c22586119130c9a20e66ee26f25fdb"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/fi.py",
+      "sha256": "c131f0ace40299f8e2084c7094f036e8e2c0a93b26a7dbf00403654630176c22"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/fra.py",
+      "sha256": "ee8ffd27d6b3f3f0cdb70b245f1b0f95157289d66524966691b34b07892a0cfd"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/he.py",
+      "sha256": "2acebbbded36a824a287c5d911f7a88c6d72060212511513f89fc2ca0da9ff93"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/hi.py",
+      "sha256": "fedbe6bdc12fae9eefc410b4b9be433c8a57ec0f867b52206ee03ddcec80ea54"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/hr.py",
+      "sha256": "a7430baf485cfbd29c4a38c07ad3b5e23a8cb6f3fc81c7bc12ffae5ef0372331"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/hu.py",
+      "sha256": "e3b69591199874ecaa62f1f552e8383f3d87ba36fedef8c8add405861cc761de"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/id.py",
+      "sha256": "8932d168c9185eecd581c9a22d0a26e31fd23bcc80dd8f96f5f4ed332128a50a"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/it.py",
+      "sha256": "84bf5de87043fae91326dc87b6dd3343b875cd912d51def452151260b56a0b1a"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/ja.py",
+      "sha256": "4df4c5cb3d6a4e6acbb1f0e5139e7d81b2ce4dbe5d7c3a7f1858141b5d556985"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/ko.py",
+      "sha256": "74d0946027176817cff2252c4f1ac8e7be2c3ef6b964c4869d835c4e768815f1"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/nl.py",
+      "sha256": "fd7d0333f66eac4af821432bbb7df9e070be076e8a360ce148100a179b8b3116"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/no.py",
+      "sha256": "927b841a180d2f971614fde57971ae23697469dda64eaef5b9a90208ec3a144c"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/pl.py",
+      "sha256": "220f79bb629d83d3a87a7335e081cf2e902661c8659a19970a9c5b43cf371c9b"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/pt.py",
+      "sha256": "b49f0da6af571ad31626432efc5f4fbca0d6ce6ee22c7c3ddb08ebf6f1417170"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/ro.py",
+      "sha256": "9037602b99531a5ca21cbea7e373a037e25a50dfc1e0f73581e95ee66e613111"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/ru.py",
+      "sha256": "e87af7f88c52baa4422dec62112fd29504e9f43e1a65cb357e018cbb6cf39bb2"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/sk.py",
+      "sha256": "65d23df11a07ae4da8eb800c3a15fd9282b17a93c43c747363ba24931e4bb98e"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/spa.py",
+      "sha256": "684892f6cfcc093920fdca427ada4d7c85ba3e0709c6bcbe84422769548e91c3"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/sv.py",
+      "sha256": "1051ab51040d4853b350436c5688f355df7ca0feef8f1f96e250cea6f939171c"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/th.py",
+      "sha256": "81b8a99dec304342133c56766d8c7925711befce7eda695950753a4a006d0b33"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/tur.py",
+      "sha256": "9ec27c97604f939f00666116882f1237f63918225f6a0b42f2a65a7cdab3fe38"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/ukr.py",
+      "sha256": "8315f7474809088253c28047908e199d178e5ddad12d758fc561f997f7febeab"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/vi.py",
+      "sha256": "5b789a060f7f810a794e3b2c17a96f1c8673445cf96cac3b1085a888afcec225"
+    },
+    {
+      "path": ".saipen/archive/translation_backups/backup_py_20260912/zh.py",
+      "sha256": "795ba2a3ceeb5cab3de12af1cc44eb90846e60732b882109acc0d78529acbf0b"
+    }
+  ],
+  "legacy_kitchen_backup_absent": true,
+  "active_attributes": "src/fastprompter/ui/editor.py: text: set\nsrc/fastprompter/ui/editor.py: diff: unspecified\nsrc/fastprompter/ui/editor.py: whitespace: unspecified\nsrc/fastprompter/ui/editor.py: eol: lf\nFastPrompter.pyw: text: set\nFastPrompter.pyw: diff: unspecified\nFastPrompter.pyw: whitespace: unspecified\nFastPrompter.pyw: eol: lf\npyproject.toml: text: set\npyproject.toml: diff: unspecified\npyproject.toml: whitespace: unspecified\npyproject.toml: eol: lf\n",
+  "clean_clone": true,
+  "whitespace_negative_control": {
+    "exit": 3,
+    "output": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930\\build\\t1356_whitespace_after.py:1: trailing whitespace.\n+value = 1 \n"
+  }
+}

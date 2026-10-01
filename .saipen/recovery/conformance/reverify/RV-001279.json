@@ -1,0 +1,47 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-10-01T00:28:23Z",
+  "evidence_class": "executed",
+  "findings_digest": "b173009d2b55894f617e8b1303a954a7c83775fbd64230fee20f6abcfbca86b4",
+  "gate": "core",
+  "integrity_digest": "9fba288ef66d12f2",
+  "journal_op_id": "reverify.017233de0ec7",
+  "original_closure": {
+    "claim_time": "2026-09-07T02:22:51Z",
+    "last_ticket_event": "E-1697",
+    "owner": "opencode"
+  },
+  "own_problem_keys": [],
+  "problem_count": 38,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001279",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "10da652cec0142f36f112c835dc8921a4ccb1f94",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_audit_overflow.py tests/test_performance.py tests/test_restore.py tests/test_search_archive_editing.py -q",
+      "duration_ms": 6067,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "ddd9d9dc51c39248",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_audit_overflow.py tests/test_performance.py tests/test_restore.py tests/test_search_archive_editing.py -q"
+    ],
+    "findings_digest": "b173009d2b55894f617e8b1303a954a7c83775fbd64230fee20f6abcfbca86b4",
+    "gate": "core"
+  },
+  "verification_contract_digest": "f6c07034a98f0898",
+  "verifier": "buffy",
+  "warning_count": 80,
+  "work": "T-1222"
+}

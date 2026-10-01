@@ -1,0 +1,25 @@
+{
+  "cohort": "C-069",
+  "publication": "pending",
+  "registry_tracked": false,
+  "registry_ignored": true,
+  "closure_stage_files": [
+    ".saipen/STATE.md",
+    ".saipen/BOARD.md",
+    ".saipen/LOG.md",
+    ".saipen/kitchen/digest.md",
+    ".saipen/kitchen/crew_release_evidence.json",
+    ".saipen/kitchen/release_receipt.json"
+  ],
+  "registry_missing_from_closure_stage": true,
+  "cohort_member_hash_mismatches_in_clean_clone": [
+    {
+      "work": "T-1355",
+      "path": "pyproject.toml",
+      "recorded": "2bf394ee164bf134",
+      "primary": "2bf394ee164bf134",
+      "fresh_clone": "3eedf7cf1da61657"
+    }
+  ],
+  "note": "Read-only observations. No registry was edited, no publication status was changed, and no external writes occurred."
+}

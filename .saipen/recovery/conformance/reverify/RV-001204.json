@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T22:01:17Z",
+  "evidence_class": "executed",
+  "findings_digest": "5ebc3e021792026387425e408d38a6aa08c7e3cce0e8f9bda40344688942de7e",
+  "gate": "core",
+  "integrity_digest": "07dacf562e77d91a",
+  "journal_op_id": "reverify.0783b0e332fc",
+  "original_closure": {
+    "claim_time": "2026-09-13T22:41:12Z",
+    "last_ticket_event": "E-1987",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "c7a633919445da07"
+  ],
+  "problem_count": 14,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001204",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "fe167a74f8808e94228b2b590de3ff60b878ea70",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_t1227_silo_integrity.py -q",
+      "duration_ms": 9501,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "14fe5a1be8139fa5",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_t1227_silo_integrity.py -q"
+    ],
+    "findings_digest": "5ebc3e021792026387425e408d38a6aa08c7e3cce0e8f9bda40344688942de7e",
+    "gate": "core"
+  },
+  "verification_contract_digest": "b357763430894e1c",
+  "verifier": "buffy",
+  "warning_count": 80,
+  "work": "T-1261"
+}

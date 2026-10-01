@@ -1,0 +1,487 @@
+{
+  "note": "Candidate inconsistencies: establish actual formatting call sites before classifying runtime defects.",
+  "canonical_key_count": 1570,
+  "issue_counts": {
+    "ar": 1,
+    "bg": 1,
+    "cs": 2,
+    "da": 1,
+    "de": 1,
+    "ded": 0,
+    "el": 0,
+    "est": 1,
+    "fi": 2,
+    "fra": 0,
+    "he": 1,
+    "hi": 4,
+    "hr": 3,
+    "hu": 1,
+    "id": 2,
+    "it": 1,
+    "ja": 0,
+    "ko": 0,
+    "nl": 0,
+    "no": 1,
+    "pl": 1,
+    "pt": 1,
+    "ro": 1,
+    "ru": 0,
+    "sk": 2,
+    "spa": 1,
+    "sv": 1,
+    "th": 0,
+    "tur": 2,
+    "ukr": 0,
+    "vi": 1,
+    "zh": 0
+  },
+  "unparseable_source_keys": [],
+  "issues": [
+    {
+      "locale": "ar",
+      "key": "what {project} means in an agent's paths",
+      "value": "ماذا يعني {المشروع} في مسارات الوكيل",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "المشروع": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "bg",
+      "key": "**__{text}__** ({time})",
+      "value": "**__{текст}__** ({време})",
+      "source_fields": {
+        "text": 1,
+        "time": 1
+      },
+      "translated_fields": {
+        "текст": 1,
+        "време": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "cs",
+      "key": "Template for the Ctrl+E header.\n{text} — the line's text\n{time} — timestamp\n{state} — Morning / Day / Evening / Night\nMarkdown markers (** __ etc.) are yours to add or drop.",
+      "value": "Šablona pro záhlaví Ctrl+E.\n{text} — text řádku\n{time} — časové razítko\n{stát} — Ráno / Den / Večer / Noc\nZnačky markdown (** __ atd.) jsou na vás, které můžete přidat nebo odstranit.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "text": 1,
+        "time": 1,
+        "stát": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "cs",
+      "key": "what {project} means in an agent's paths",
+      "value": "co znamená {projekt} na cestách agenta",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "projekt": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "da",
+      "key": "How Ctrl+E rewrites the line it is pressed on.\n{text} is the line's own words, {time} the stamp, {state} the\ntime-of-day word. Everything else is kept exactly as typed.",
+      "value": "Hvordan Ctrl+E omskriver linjen, den trykkes på.\n{tekst} er linjens egne ord, {tid} stemplet, {stat}\ntidspunkt på dagen. Alt andet opbevares nøjagtigt som skrevet.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "tekst": 1,
+        "tid": 1,
+        "stat": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "de",
+      "key": "what {project} means in an agent's paths",
+      "value": "was {Projekt} in den Pfaden eines Agenten bedeutet",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "Projekt": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "est",
+      "key": "what {project} means in an agent's paths",
+      "value": "mida {projekt} agendi teedel tähendab",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "projekt": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "fi",
+      "key": "How Ctrl+E rewrites the line it is pressed on.\n{text} is the line's own words, {time} the stamp, {state} the\ntime-of-day word. Everything else is kept exactly as typed.",
+      "value": "Kuinka Ctrl+E kirjoittaa uudelleen sen rivin, jolla sitä painetaan.\n{teksti} on rivin omia sanoja, {aika} leima, {tila}\nvuorokaudenajan sana. Kaikki muu on säilytetty täsmälleen kirjoitettuna.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "teksti": 1,
+        "aika": 1,
+        "tila": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "fi",
+      "key": "what {project} means in an agent's paths",
+      "value": "mitä {projekti} tarkoittaa agentin poluilla",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "projekti": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "he",
+      "key": "How Ctrl+E rewrites the line it is pressed on.\n{text} is the line's own words, {time} the stamp, {state} the\ntime-of-day word. Everything else is kept exactly as typed.",
+      "value": "כיצד Ctrl+E משכתב את השורה שעליה נלחץ.\n{טקסט} הוא המילים של השורה עצמה, {זמן} החותמת, {ציינו} את\nמילת השעה ביום. כל השאר נשמר בדיוק כפי שהוקלדו.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "טקסט": 1,
+        "זמן": 1,
+        "ציינו": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hi",
+      "key": "**__{text}__** ({time})",
+      "value": "**__{पाठ}__** ({समय})",
+      "source_fields": {
+        "text": 1,
+        "time": 1
+      },
+      "translated_fields": {
+        "पाठ": 1,
+        "समय": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hi",
+      "key": "Settings &rarr; Header Fmt: {text}, {time}, {state} (Morning/Day/Evening/Night) — bold markers are yours to keep or drop",
+      "value": "सेटिंग्स &rarr; हेडर एफएमटी: {पाठ}, {समय}, {राज्य} (सुबह/दिन/शाम/रात) - बोल्ड मार्कर आपके पास रखने या छोड़ने के लिए हैं",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "पाठ": 1,
+        "समय": 1,
+        "राज्य": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hi",
+      "key": "Template for the Ctrl+E header.\n{text} — the line's text\n{time} — timestamp\n{state} — Morning / Day / Evening / Night\nMarkdown markers (** __ etc.) are yours to add or drop.",
+      "value": "Ctrl+E हेडर के लिए टेम्पलेट.\n{पाठ} - पंक्ति का पाठ\n{समय} - टाइमस्टैम्प\n{राज्य} - सुबह / दिन / शाम / रात\nजोड़ने या हटाने के लिए मार्कडाउन मार्कर (** __ आदि) आपके हैं।",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "पाठ": 1,
+        "समय": 1,
+        "राज्य": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hi",
+      "key": "what {project} means in an agent's paths",
+      "value": "किसी एजेंट के पथ में {प्रोजेक्ट} का क्या अर्थ है",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "प्रोजेक्ट": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hr",
+      "key": "**__{text}__** ({time})",
+      "value": "**__{tekst}__** ({vrijeme})",
+      "source_fields": {
+        "text": 1,
+        "time": 1
+      },
+      "translated_fields": {
+        "tekst": 1,
+        "vrijeme": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hr",
+      "key": "Template for the Ctrl+E header.\n{text} — the line's text\n{time} — timestamp\n{state} — Morning / Day / Evening / Night\nMarkdown markers (** __ etc.) are yours to add or drop.",
+      "value": "Predložak za Ctrl+E zaglavlje.\n{text} — tekst retka\n{vrijeme} — vremenska oznaka\n{state} — jutro / dan / večer / noć\nMarkdown oznake (** __ itd.) možete dodati ili ispustiti.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "text": 1,
+        "vrijeme": 1,
+        "state": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hr",
+      "key": "what {project} means in an agent's paths",
+      "value": "što {projekt} znači u stazama agenta",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "projekt": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "hu",
+      "key": "what {project} means in an agent's paths",
+      "value": "mit jelent a {projekt} egy ügynök útjain",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "projekt": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "id",
+      "key": "**__{text}__** ({time})",
+      "value": "**__{teks}__** ({waktu})",
+      "source_fields": {
+        "text": 1,
+        "time": 1
+      },
+      "translated_fields": {
+        "teks": 1,
+        "waktu": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "id",
+      "key": "Template for the Ctrl+E header.\n{text} — the line's text\n{time} — timestamp\n{state} — Morning / Day / Evening / Night\nMarkdown markers (** __ etc.) are yours to add or drop.",
+      "value": "Templat untuk tajuk Ctrl+E.\n{text} — teks baris\n{waktu} — stempel waktu\n{state} — Pagi / Siang / Sore / Malam\nPenanda penurunan harga (** __ dll.) adalah milik Anda untuk ditambahkan atau dihilangkan.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "text": 1,
+        "waktu": 1,
+        "state": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "it",
+      "key": "what {project} means in an agent's paths",
+      "value": "cosa significa {progetto} nei percorsi di un agente",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "progetto": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "no",
+      "key": "How Ctrl+E rewrites the line it is pressed on.\n{text} is the line's own words, {time} the stamp, {state} the\ntime-of-day word. Everything else is kept exactly as typed.",
+      "value": "Hvordan Ctrl+E skriver om linjen den trykkes på.\n{tekst} er linjens egne ord, {time} stempelet, {state}\nord på dagen. Alt annet holdes nøyaktig som skrevet.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "tekst": 1,
+        "time": 1,
+        "state": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "pl",
+      "key": "How Ctrl+E rewrites the line it is pressed on.\n{text} is the line's own words, {time} the stamp, {state} the\ntime-of-day word. Everything else is kept exactly as typed.",
+      "value": "Jak Ctrl+E przepisuje linię, na której jest naciśnięty.\n{tekst} to własne słowa wiersza, {czas} znaczek, {stan}\nsłowo określające porę dnia. Wszystko inne jest zachowywane dokładnie tak, jak wpisano.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "tekst": 1,
+        "czas": 1,
+        "stan": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "pt",
+      "key": "what {project} means in an agent's paths",
+      "value": "o que {projeto} significa nos caminhos de um agente",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "projeto": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "ro",
+      "key": "what {project} means in an agent's paths",
+      "value": "ce înseamnă {proiect} în căile unui agent",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "proiect": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "sk",
+      "key": "Template for the Ctrl+E header.\n{text} — the line's text\n{time} — timestamp\n{state} — Morning / Day / Evening / Night\nMarkdown markers (** __ etc.) are yours to add or drop.",
+      "value": "Šablóna pre hlavičku Ctrl+E.\n{text} — text riadku\n{time} — časová pečiatka\n{štát} — Ráno / Deň / Večer / Noc\nZnačky (** __ atď.) môžete pridať alebo pustiť.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "text": 1,
+        "time": 1,
+        "štát": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "sk",
+      "key": "what {project} means in an agent's paths",
+      "value": "čo znamená {projekt} na cestách agenta",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "projekt": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "spa",
+      "key": "what {project} means in an agent's paths",
+      "value": "qué significa {proyecto} en los caminos de un agente",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "proyecto": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "sv",
+      "key": "How Ctrl+E rewrites the line it is pressed on.\n{text} is the line's own words, {time} the stamp, {state} the\ntime-of-day word. Everything else is kept exactly as typed.",
+      "value": "Hur Ctrl+E skriver om raden den trycks på.\n{text} är radens egna ord, {tid} stämpeln, {state}\ndagsord. Allt annat hålls exakt som skrivet.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "text": 1,
+        "tid": 1,
+        "state": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "tur",
+      "key": "**__{text}__** ({time})",
+      "value": "**__{metin}__** ({zaman})",
+      "source_fields": {
+        "text": 1,
+        "time": 1
+      },
+      "translated_fields": {
+        "metin": 1,
+        "zaman": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "tur",
+      "key": "what {project} means in an agent's paths",
+      "value": "Bir temsilcinin yollarında {proje} ne anlama gelir?",
+      "source_fields": {
+        "project": 1
+      },
+      "translated_fields": {
+        "proje": 1
+      },
+      "detail": "Different format-field occurrences"
+    },
+    {
+      "locale": "vi",
+      "key": "How Ctrl+E rewrites the line it is pressed on.\n{text} is the line's own words, {time} the stamp, {state} the\ntime-of-day word. Everything else is kept exactly as typed.",
+      "value": "Cách Ctrl+E viết lại dòng được nhấn vào.\n{văn bản} là từ riêng của dòng, {thời gian} dấu, {state}\ntừ thời gian trong ngày. Mọi thứ khác được giữ chính xác như đã gõ.",
+      "source_fields": {
+        "text": 1,
+        "time": 1,
+        "state": 1
+      },
+      "translated_fields": {
+        "văn bản": 1,
+        "thời gian": 1,
+        "state": 1
+      },
+      "detail": "Different format-field occurrences"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-09-30T23:58:56Z",
+  "evidence_class": "executed",
+  "findings_digest": "1792bec042ac15e72be2591033b921a49398d2ced4dde6a6c3781107a05cbf25",
+  "gate": "core",
+  "integrity_digest": "e4232e8a9213ea51",
+  "journal_op_id": "reverify.9e00f97456e5",
+  "original_closure": {
+    "claim_time": "2026-09-30T17:55:42Z",
+    "last_ticket_event": "E-3669",
+    "owner": "buffy",
+    "source_receipts": "SRC-070"
+  },
+  "own_problem_keys": [],
+  "problem_count": 2,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001268",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "6e640476b20b12fd4aca7a49f2dffbe7e07ff517",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_release_provenance.py -q",
+      "duration_ms": 1098,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 98,
+      "output_digest": "7cd357de600d0a9f",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_release_provenance.py -q"
+    ],
+    "findings_digest": "1792bec042ac15e72be2591033b921a49398d2ced4dde6a6c3781107a05cbf25",
+    "gate": "core"
+  },
+  "verification_contract_digest": "2344746450a31a90",
+  "verifier": "saipen-cli",
+  "warning_count": 81,
+  "work": "T-1351"
+}

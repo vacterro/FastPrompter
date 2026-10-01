@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T09:02:10Z",
+  "evidence_class": "executed",
+  "findings_digest": "8c37090e7be0c038163b6e65ca7729cb96b69946f8ab2c0ef514685b1d549717",
+  "gate": "core",
+  "integrity_digest": "b3b1c792e5c201c9",
+  "journal_op_id": "reverify.d1980e4472d6",
+  "original_closure": {
+    "claim_time": "2026-09-12T04:02:01Z",
+    "last_ticket_event": "E-1993",
+    "owner": "zcode"
+  },
+  "own_problem_keys": [
+    "bf386182dcc9dbb4"
+  ],
+  "problem_count": 28,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-000993",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "b7eac60b03963d043e8019fac80ab7070e2e31bf",
+  "source_tree_fingerprint": "git-delta-v1:619ffb224fa927a50cb489fab70485403c22627d9fb40119c8b85a9751f3c878",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run --no-sync python -m pytest tests/test_typecheck_vocab.py -q",
+      "duration_ms": 704,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 98,
+      "output_digest": "cd9f00546c34cfb5",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run --no-sync python -m pytest tests/test_typecheck_vocab.py -q"
+    ],
+    "findings_digest": "8c37090e7be0c038163b6e65ca7729cb96b69946f8ab2c0ef514685b1d549717",
+    "gate": "core"
+  },
+  "verification_contract_digest": "9904c64867683b7b",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1240"
+}

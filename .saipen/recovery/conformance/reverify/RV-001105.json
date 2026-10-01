@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T13:00:17Z",
+  "evidence_class": "executed",
+  "findings_digest": "1339ae80fbd5b07ce27616f0e5b77b25a1b441fe8b46bb0431615d45e2ad28e8",
+  "gate": "core",
+  "integrity_digest": "53a41980df1df22c",
+  "journal_op_id": "reverify.82b97c95d160",
+  "original_closure": {
+    "last_ticket_event": "E-1988",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "e383bb7770569846"
+  ],
+  "problem_count": 11,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001105",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "source_tree_fingerprint": "git-delta-v1:eb01c3bd874f6d52097ab00f36dd8342fd8aef467c074e02ffd36cf540f6e506",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run --no-sync python -m pytest tests/test_t1265_interval_clock.py -q",
+      "duration_ms": 648,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 168,
+      "output_digest": "059b28dac0439d46",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run --no-sync python -m pytest tests/test_t1265_interval_clock.py -q"
+    ],
+    "findings_digest": "1339ae80fbd5b07ce27616f0e5b77b25a1b441fe8b46bb0431615d45e2ad28e8",
+    "gate": "core"
+  },
+  "verification_contract_digest": "9a315b25be077615",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1265"
+}

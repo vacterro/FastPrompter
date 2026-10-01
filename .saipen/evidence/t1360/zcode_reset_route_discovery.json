@@ -1,0 +1,40 @@
+{
+  "ticket": "T-1360",
+  "captured_at": "2026-09-30T11:55:00Z",
+  "subject": "ZCode Coding Plan reset-card route and schema, proven from the installed vendor client",
+  "method": "Static extraction from C:\\Users\\vac34\\AppData\\Local\\Programs\\ZCode\\resources\\app\\app.asar (current installed client), cross-checked with bounded live probes. No credential values are recorded; tokens were read only in-process and never printed.",
+  "proven_from_client_bundle": {
+    "quota_path_constant": "oGe = \"/api/monitor/usage/quota/limit\" (matches FastPrompter _zcode_http.QUOTA_PATH)",
+    "reset_base_constant": "xC = \"/api/v1/coding-plan/reset\" (same module scope as oGe, offset -6865 bytes from getCodingPlanResetStatus)",
+    "routes": {
+      "status": "GET  {base}/api/v1/coding-plan/reset/status",
+      "use": "POST {base}/api/v1/coding-plan/reset/use  body {idempotency_key: str<=64, reset_type: \"FIVE_HOUR\"|\"WEEK\"} -> data {used: true}",
+      "opportunity": "POST {base}/api/v1/coding-plan/reset/opportunity body {idempotency_key} -> data {granted: true} | code 3301 {next_try_at}",
+      "history_read": "POST {base}/api/v1/coding-plan/reset/history/read"
+    },
+    "base_origin": "Client endpoint origin constant: VITE_ZCODE_ENDPOINT_ORIGIN = \"https://zcode.z.ai\" (also ZCODE_BASE_URL env override exists; FastPrompter refuses env overrides per _zcode_http policy)",
+    "headers_from_createCodingPlanResetHeaders": {
+      "Authorization": "Bearer <zcodejwttoken from ~/.zcode/v2/credentials.json; REQUIRED, client error coding_plan_reset_zcode_jwt_required when absent>",
+      "X-Bigmodel-Authorization": "<oauth:zai:access_token for z.ai plans / oauth:bigmodel:access_token for bigmodel plans; REQUIRED, coding_plan_reset_maas_jwt_required when absent; raw value in reset headers>",
+      "Bigmodel-Target-Type": "PERSONAL (or TEAM + Bigmodel-Organization/Bigmodel-Project)"
+    },
+    "timeout_ms": 15000,
+    "status_data_schema_zod": {
+      "available_five_hour_resets": "array of {expire_at: number (finite, epoch ms)}",
+      "available_week_resets": "array of {expire_at: number}",
+      "latest_five_hour_reset_history": "{used_at: number} | null",
+      "latest_week_reset_history": "{used_at: number} | null",
+      "has_unread_history": "boolean"
+    },
+    "envelope_schema": "{code: number, msg?: string, data?: unknown}; success = code === 0",
+    "client_filter_rule": "available resets are those with finite expire_at strictly greater than now, sorted by expire_at; history used_at is NOT availability"
+  },
+  "live_probes_sanitized": [
+    {"url": "https://api.z.ai/api/v1/coding-plan/reset/status", "result": "HTTP 200 transport, vendor envelope {code:500, msg:\"404 NOT_FOUND\"} with plan api-key, account jwt, and maas token variants"},
+    {"url": "https://open.bigmodel.cn/api/v1/coding-plan/reset/status", "result": "same envelope 404 NOT_FOUND"},
+    {"url": "https://bigmodel.cn/api/v1/coding-plan/reset/status", "result": "same envelope 404 NOT_FOUND"},
+    {"url": "https://api.chatglm.site/api/v1/coding-plan/reset/status", "result": "network timeout"},
+    {"url": "https://zcode.z.ai/api/v1/coding-plan/reset/status", "result": "HTTP 401 with file-held zcodejwttoken + oauth:zai:access_token (both header variants). Route EXISTS on this host (401, not 404). ZCode app not running at probe time; file-held tokens are likely stale. A live 200 payload was therefore NOT captured in this pass."}
+  ],
+  "conclusion": "Route, host, auth convention and full response schema are proven from the current vendor client bundle. Live 200 proof pending a fresh signed-in session. FastPrompter implements READ with this contract; on 401/expired token it reports the reset inventory as UNAVAILABLE from this auth mode (never as zero resets). Direct consumption (/use) is a paid-entitlement mutation and stays unwired until independently proven live; UI offers an Open ZCode / Coding Plan action instead."
+}

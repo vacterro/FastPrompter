@@ -1,0 +1,466 @@
+...FF.F..FF.F.F..FFF.FF.......FF....                                     [100%]
+================================== FAILURES ===================================
+_____________ test_image_copy_clears_all_wrapped_prose[240-160-8] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra3')
+points = 8, target_length = 160, width = 240
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(48, 24, 16, 16) covers prose PyQt6.QtCore.QRect(4, 19, 154, 13)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E175BF680>(PyQt6.QtCore.QRect(4, 19, 154, 13))
+E                +    where <built-in method intersects of QRect object at 0x0000019E175BF680> = PyQt6.QtCore.QRect(48, 24, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[240-160-9] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra4')
+points = 9, target_length = 160, width = 240
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(52, 25, 16, 16) covers prose PyQt6.QtCore.QRect(4, 20, 168, 14)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E17621380>(PyQt6.QtCore.QRect(4, 20, 168, 14))
+E                +    where <built-in method intersects of QRect object at 0x0000019E17621380> = PyQt6.QtCore.QRect(52, 25, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[240-240-8] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra6')
+points = 8, target_length = 240, width = 240
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(48, 24, 16, 16) covers prose PyQt6.QtCore.QRect(30, 19, 154, 13)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E174E5150>(PyQt6.QtCore.QRect(30, 19, 154, 13))
+E                +    where <built-in method intersects of QRect object at 0x0000019E174E5150> = PyQt6.QtCore.QRect(48, 24, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[280-80-8] ______________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra9')
+points = 8, target_length = 80, width = 280
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(236, 2, 16, 16) covers prose PyQt6.QtCore.QRect(100, 17, 154, 13)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E177C6B90>(PyQt6.QtCore.QRect(100, 17, 154, 13))
+E                +    where <built-in method intersects of QRect object at 0x0000019E177C6B90> = PyQt6.QtCore.QRect(236, 2, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[280-80-9] ______________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra10')
+points = 9, target_length = 80, width = 280
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(241, 3, 16, 16) covers prose PyQt6.QtCore.QRect(101, 18, 168, 14)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E174E5AF0>(PyQt6.QtCore.QRect(101, 18, 168, 14))
+E                +    where <built-in method intersects of QRect object at 0x0000019E174E5AF0> = PyQt6.QtCore.QRect(241, 3, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[280-160-8] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra12')
+points = 8, target_length = 160, width = 280
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(236, 2, 16, 16) covers prose PyQt6.QtCore.QRect(180, 17, 88, 13)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E17620F20>(PyQt6.QtCore.QRect(180, 17, 88, 13))
+E                +    where <built-in method intersects of QRect object at 0x0000019E17620F20> = PyQt6.QtCore.QRect(236, 2, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+____________ test_image_copy_clears_all_wrapped_prose[280-160-14] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra14')
+points = 14, target_length = 160, width = 280
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(80, 31, 20, 20) covers prose PyQt6.QtCore.QRect(4, 28, 266, 22)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E175BE570>(PyQt6.QtCore.QRect(4, 28, 266, 22))
+E                +    where <built-in method intersects of QRect object at 0x0000019E175BE570> = PyQt6.QtCore.QRect(80, 31, 20, 20).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+____________ test_image_copy_clears_all_wrapped_prose[280-240-14] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra17')
+points = 14, target_length = 240, width = 280
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(80, 31, 20, 20) covers prose PyQt6.QtCore.QRect(4, 28, 266, 22)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E177C7290>(PyQt6.QtCore.QRect(4, 28, 266, 22))
+E                +    where <built-in method intersects of QRect object at 0x0000019E177C7290> = PyQt6.QtCore.QRect(80, 31, 20, 20).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[320-80-8] ______________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra18')
+points = 8, target_length = 80, width = 320
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(236, 2, 16, 16) covers prose PyQt6.QtCore.QRect(100, 17, 154, 13)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E18A18A50>(PyQt6.QtCore.QRect(100, 17, 154, 13))
+E                +    where <built-in method intersects of QRect object at 0x0000019E18A18A50> = PyQt6.QtCore.QRect(236, 2, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[320-80-9] ______________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra19')
+points = 9, target_length = 80, width = 320
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(241, 3, 16, 16) covers prose PyQt6.QtCore.QRect(101, 18, 168, 14)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E175BC900>(PyQt6.QtCore.QRect(101, 18, 168, 14))
+E                +    where <built-in method intersects of QRect object at 0x0000019E175BC900> = PyQt6.QtCore.QRect(241, 3, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[320-160-8] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra21')
+points = 8, target_length = 160, width = 320
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(236, 2, 16, 16) covers prose PyQt6.QtCore.QRect(180, 17, 88, 13)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E17620820>(PyQt6.QtCore.QRect(180, 17, 88, 13))
+E                +    where <built-in method intersects of QRect object at 0x0000019E17620820> = PyQt6.QtCore.QRect(236, 2, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[320-160-9] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra22')
+points = 9, target_length = 160, width = 320
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(241, 3, 16, 16) covers prose PyQt6.QtCore.QRect(181, 18, 96, 14)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E174E7680>(PyQt6.QtCore.QRect(181, 18, 96, 14))
+E                +    where <built-in method intersects of QRect object at 0x0000019E174E7680> = PyQt6.QtCore.QRect(241, 3, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[400-160-8] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra30')
+points = 8, target_length = 160, width = 400
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(236, 2, 16, 16) covers prose PyQt6.QtCore.QRect(180, 17, 154, 13)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E189EF450>(PyQt6.QtCore.QRect(180, 17, 154, 13))
+E                +    where <built-in method intersects of QRect object at 0x0000019E189EF450> = PyQt6.QtCore.QRect(236, 2, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+_____________ test_image_copy_clears_all_wrapped_prose[400-160-9] _____________
+
+tmp_path = WindowsPath('V:/_TEMP_/fastprompter-tests-29288-rk6b13kg/pytest-of-vac34/pytest-0/test_image_copy_clears_all_wra31')
+points = 9, target_length = 160, width = 400
+
+    @pytest.mark.parametrize("points", [8, 9, 14])
+    @pytest.mark.parametrize("target_length", [80, 160, 240])
+    @pytest.mark.parametrize("width", [240, 280, 320, 400])
+    def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, width):
+        # Keep the token's length independent of the host's temporary directory.
+        target = "file:///C:/images/" + "x" * target_length + ".png"
+        ed, owner, hl = _editor_live(tmp_path, f"pre ![]({target}) trailing prose", width=width)
+        try:
+            ed.setFont(QFont("Verdana", points))
+            hl.rehighlight()
+            _flush()
+            ed._idle_timer.stop()
+            block = ed.document().firstBlock()
+            pill = ed._image_pill_rect(block, MD_IMAGE_RE.search(block.text()))
+            ed._update_inline_hover(pill.center())
+            copy = ed._hover_inline_copy_rect
+            assert copy is not None
+            assert ed.viewport().rect().contains(copy)
+            assert not copy.intersects(pill)
+            for prose in _prose_rects(ed, block, "trailing prose"):
+>               assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+E               AssertionError: Copy PyQt6.QtCore.QRect(241, 3, 16, 16) covers prose PyQt6.QtCore.QRect(181, 18, 168, 14)
+E               assert not True
+E                +  where True = <built-in method intersects of QRect object at 0x0000019E189D46D0>(PyQt6.QtCore.QRect(181, 18, 168, 14))
+E                +    where <built-in method intersects of QRect object at 0x0000019E189D46D0> = PyQt6.QtCore.QRect(241, 3, 16, 16).intersects
+
+tests\test_t1352_copy_row_collisions.py:36: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[240-160-8]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[240-160-9]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[240-240-8]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[280-80-8]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[280-80-9]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[280-160-8]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[280-160-14]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[280-240-14]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[320-80-8]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[320-80-9]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[320-160-8]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[320-160-9]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[400-160-8]
+FAILED tests/test_t1352_copy_row_collisions.py::test_image_copy_clears_all_wrapped_prose[400-160-9]
+14 failed, 22 passed, 3 deselected in 0.92s

@@ -1,0 +1,18 @@
+{
+  "operation": "read_only_receipt_negative_controls",
+  "exe": {
+    "path": "V:/___VAC/__K/__CODE/_PY/_FastPrompter/build/FastPrompter.exe",
+    "sha256": "fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59",
+    "size": 61958144,
+    "product_version": "0.8.69.0",
+    "mtime": "2026-09-30T08:32:24Z"
+  },
+  "actual_repo_version": "0.8.69",
+  "expected_fixture_version": "9.9.9",
+  "validator_errors": [],
+  "unexpected_wrong_version_acceptance": true,
+  "manual_acceptance_is_absent": true,
+  "source_fingerprint_is_absent": true,
+  "build_and_probe_evidence_is_absent": true,
+  "note": "Synthetic in-memory receipt only; no release receipt or operator acceptance was written and no remote was contacted."
+}

@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T22:38:23Z",
+  "evidence_class": "executed",
+  "findings_digest": "94551630e0ace63cb76cc5bbc7d0fef2dfae898617c72a9a9d9a8985f61371de",
+  "gate": "core",
+  "integrity_digest": "2976c97814cde0d0",
+  "journal_op_id": "reverify.5b62c70bc8f1",
+  "original_closure": {
+    "claim_time": "2026-09-06T13:01:49Z",
+    "last_ticket_event": "E-1916",
+    "owner": "codex"
+  },
+  "own_problem_keys": [
+    "28f3afc412b1074f"
+  ],
+  "problem_count": 1,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001218",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "fe167a74f8808e94228b2b590de3ff60b878ea70",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m compileall -q src tools && uv run ruff check src/fastprompter && uv run python -m pytest tests/ -q --deselect tests/test_t1358_cohort_publication.py::test_member_hash_matches_proven_text_normalization --deselect tests/test_t1358_cohort_publication.py::test_cohort_member_mismatches_respects_normalization",
+      "duration_ms": 846331,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 4718,
+      "output_digest": "ca57052429a64e00",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m compileall -q src tools && uv run ruff check src/fastprompter && uv run python -m pytest tests/ -q --deselect tests/test_t1358_cohort_publication.py::test_member_hash_matches_proven_text_normalization --deselect tests/test_t1358_cohort_publication.py::test_cohort_member_mismatches_respects_normalization"
+    ],
+    "findings_digest": "94551630e0ace63cb76cc5bbc7d0fef2dfae898617c72a9a9d9a8985f61371de",
+    "gate": "core"
+  },
+  "verification_contract_digest": "39138526b5241dff",
+  "verifier": "buffy",
+  "warning_count": 80,
+  "work": "T-1208"
+}

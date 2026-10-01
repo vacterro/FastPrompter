@@ -1,0 +1,21 @@
+{
+  "verifier": "7f122eb2063e5bef834accba818ea96cd00d4a3ef6f77f2fa9331f0d462da824",
+  "command": [
+    "uv",
+    "run",
+    "--no-sync",
+    "pytest",
+    "tests/test_t1355_locked_compiler.py",
+    "-q"
+  ],
+  "red": {
+    "subject": "90ebb4cf0182a18f3836147dddcc78dd8c806d2daa8d5b45decb0e1b7b7287c0",
+    "exit": 1,
+    "summary": "2 failed in 0.16s"
+  },
+  "green": {
+    "subject": "aea0a85bac5a0ad07ffb4c17b1b5c426edfa592048bf56812788de8407b28e1f",
+    "exit": 0,
+    "summary": "2 passed in 0.12s"
+  }
+}

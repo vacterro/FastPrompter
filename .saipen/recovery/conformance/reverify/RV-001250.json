@@ -1,0 +1,49 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-09-30T23:45:50Z",
+  "evidence_class": "executed",
+  "findings_digest": "872535104cffd3e10b522d7e77c79ed181eef5d3a67ce4d6b0ca5cc729ed94fd",
+  "gate": "core",
+  "integrity_digest": "170b0f7382acb3d3",
+  "journal_op_id": "reverify.b38e5b8206a0",
+  "original_closure": {
+    "claim_time": "2026-09-11T04:20:00Z",
+    "last_ticket_event": "E-1996",
+    "owner": "opencode"
+  },
+  "own_problem_keys": [
+    "ac8a91e17bc4b467"
+  ],
+  "problem_count": 20,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001250",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "6e640476b20b12fd4aca7a49f2dffbe7e07ff517",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_sound_ref_integrity.py -q",
+      "duration_ms": 875,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "859a214c2255e3be",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_sound_ref_integrity.py -q"
+    ],
+    "findings_digest": "872535104cffd3e10b522d7e77c79ed181eef5d3a67ce4d6b0ca5cc729ed94fd",
+    "gate": "core"
+  },
+  "verification_contract_digest": "138b208d980eb2cb",
+  "verifier": "saipen-cli",
+  "warning_count": 81,
+  "work": "T-1251"
+}

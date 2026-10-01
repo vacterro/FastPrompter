@@ -1,0 +1,50 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-09-30T23:56:32Z",
+  "evidence_class": "executed",
+  "findings_digest": "3b9fd0c776e03bb092a8f8ac561c1881df0f6be7c4543bb12fe4a61edd9697e6",
+  "gate": "core",
+  "integrity_digest": "4607d40b9c09c984",
+  "journal_op_id": "reverify.fdced06bcbae",
+  "original_closure": {
+    "claim_time": "2026-09-19T13:30:00Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-2273",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "460f7f34d94b4e92"
+  ],
+  "problem_count": 6,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001264",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "6e640476b20b12fd4aca7a49f2dffbe7e07ff517",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_app_filter_lifetime_t1296.py tests/test_clipboard_interop_t1269.py -q",
+      "duration_ms": 10627,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 111,
+      "output_digest": "4954f06d1a08d620",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_app_filter_lifetime_t1296.py tests/test_clipboard_interop_t1269.py -q"
+    ],
+    "findings_digest": "3b9fd0c776e03bb092a8f8ac561c1881df0f6be7c4543bb12fe4a61edd9697e6",
+    "gate": "core"
+  },
+  "verification_contract_digest": "e385a4523bb64943",
+  "verifier": "saipen-cli",
+  "warning_count": 81,
+  "work": "T-1296"
+}

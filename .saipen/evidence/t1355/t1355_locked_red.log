@@ -1,0 +1,1 @@
+Nuitka 4.1.2 != accepted pin 4.2.1. Use the locked environment, or pass --allow-any-toolchain to override (recorded in the build report).

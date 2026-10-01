@@ -1,0 +1,83 @@
+{
+  "commit": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "clone": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930",
+  "clean_before_and_after": true,
+  "source_fingerprint": "release-source-v1:9bd64715aad62584a76b141fef786d5b5bf7d24ce2fc96ae89eedc13b12a2bfe",
+  "summary": "5101 passed, 26 skipped in 1357.23s (0:22:37)",
+  "stages": [
+    {
+      "stage": "sync",
+      "command": [
+        "uv",
+        "sync",
+        "--locked",
+        "--python",
+        "3.11.9",
+        "--group",
+        "dev"
+      ],
+      "exit": 0,
+      "log": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930\\build\\t1351_ci_sync.log"
+    },
+    {
+      "stage": "compile",
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "compileall",
+        "-q",
+        "src",
+        "FastPrompter.pyw"
+      ],
+      "exit": 0,
+      "log": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930\\build\\t1351_ci_compile.log"
+    },
+    {
+      "stage": "lint",
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "ruff",
+        "check",
+        "src/",
+        "tests/",
+        "tests_smoke/"
+      ],
+      "exit": 0,
+      "log": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930\\build\\t1351_ci_lint.log"
+    },
+    {
+      "stage": "security",
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "bandit",
+        "-q",
+        "-r",
+        "src/fastprompter",
+        "-ll"
+      ],
+      "exit": 0,
+      "log": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930\\build\\t1351_ci_security.log"
+    },
+    {
+      "stage": "pytest",
+      "command": [
+        "uv",
+        "run",
+        "--no-sync",
+        "pytest",
+        "tests/",
+        "tests_smoke/",
+        "-q"
+      ],
+      "exit": 0,
+      "log": "V:\\_TEMP_\\fp_rc_0869_17cb793_20260930\\build\\t1351_ci_pytest.log"
+    }
+  ]
+}

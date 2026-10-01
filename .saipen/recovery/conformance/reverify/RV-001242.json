@@ -1,0 +1,49 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T23:39:49Z",
+  "evidence_class": "executed",
+  "findings_digest": "518ca71f724923393f6c0f7ac1be2940f5133d3c1e8e6e0f7371daa5fd894caa",
+  "gate": "core",
+  "integrity_digest": "e074246b52bb1953",
+  "journal_op_id": "reverify.4aef1fdb98a0",
+  "original_closure": {
+    "claim_time": "2026-09-11T04:21:00Z",
+    "last_ticket_event": "E-1874",
+    "owner": "claude-opus-5"
+  },
+  "own_problem_keys": [
+    "d7fa9943e34303f7"
+  ],
+  "problem_count": 26,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001242",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "6e640476b20b12fd4aca7a49f2dffbe7e07ff517",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_audio_engine_settings.py tests/test_audio_pcm_transport.py tests/test_audio_render_defaults.py tests/test_audit_core_tickets.py -q",
+      "duration_ms": 1792,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "708c95675a07bc7a",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_audio_engine_settings.py tests/test_audio_pcm_transport.py tests/test_audio_render_defaults.py tests/test_audit_core_tickets.py -q"
+    ],
+    "findings_digest": "518ca71f724923393f6c0f7ac1be2940f5133d3c1e8e6e0f7371daa5fd894caa",
+    "gate": "core"
+  },
+  "verification_contract_digest": "7152a2f288b1496d",
+  "verifier": "buffy",
+  "warning_count": 80,
+  "work": "T-1242"
+}

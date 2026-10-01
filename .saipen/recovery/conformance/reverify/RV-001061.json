@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-09-30T10:15:09Z",
+  "evidence_class": "executed",
+  "findings_digest": "015184e208d176411882b294d38c4f385472add987fbb55b18a8778095ed855a",
+  "gate": "core",
+  "integrity_digest": "59478874632758b4",
+  "journal_op_id": "reverify.14a84b172639",
+  "original_closure": {
+    "last_ticket_event": "E-1986",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "9e751aeb49c5306f"
+  ],
+  "problem_count": 7,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001061",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run --no-sync python -m pytest tests/test_t1268_claude_desktop_attribution.py -q",
+      "duration_ms": 443,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "d0d5fe161f7f6a5c",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run --no-sync python -m pytest tests/test_t1268_claude_desktop_attribution.py -q"
+    ],
+    "findings_digest": "015184e208d176411882b294d38c4f385472add987fbb55b18a8778095ed855a",
+    "gate": "core"
+  },
+  "verification_contract_digest": "30c9774a9c825887",
+  "verifier": "buffy",
+  "warning_count": 79,
+  "work": "T-1268"
+}

@@ -1,0 +1,194 @@
+{
+ "ar": {
+  "target": "العربية",
+  "count": 528,
+  "batch": ".saipen/saitranslate/batches/ar.json",
+  "out": ".saipen/saitranslate/batches/out/ar.json"
+ },
+ "bg": {
+  "target": "Български",
+  "count": 652,
+  "batch": ".saipen/saitranslate/batches/bg.json",
+  "out": ".saipen/saitranslate/batches/out/bg.json"
+ },
+ "cs": {
+  "target": "Čeština",
+  "count": 664,
+  "batch": ".saipen/saitranslate/batches/cs.json",
+  "out": ".saipen/saitranslate/batches/out/cs.json"
+ },
+ "da": {
+  "target": "Dansk",
+  "count": 546,
+  "batch": ".saipen/saitranslate/batches/da.json",
+  "out": ".saipen/saitranslate/batches/out/da.json"
+ },
+ "de": {
+  "target": "Deutsch",
+  "count": 546,
+  "batch": ".saipen/saitranslate/batches/de.json",
+  "out": ".saipen/saitranslate/batches/out/de.json"
+ },
+ "ded": {
+  "target": "«Дед»",
+  "count": 442,
+  "batch": ".saipen/saitranslate/batches/ded.json",
+  "out": ".saipen/saitranslate/batches/out/ded.json"
+ },
+ "el": {
+  "target": "Ελληνικά",
+  "count": 658,
+  "batch": ".saipen/saitranslate/batches/el.json",
+  "out": ".saipen/saitranslate/batches/out/el.json"
+ },
+ "est": {
+  "target": "Eesti",
+  "count": 213,
+  "batch": ".saipen/saitranslate/batches/est.json",
+  "out": ".saipen/saitranslate/batches/out/est.json"
+ },
+ "fi": {
+  "target": "Suomi",
+  "count": 534,
+  "batch": ".saipen/saitranslate/batches/fi.json",
+  "out": ".saipen/saitranslate/batches/out/fi.json"
+ },
+ "fra": {
+  "target": "Français",
+  "count": 604,
+  "batch": ".saipen/saitranslate/batches/fra.json",
+  "out": ".saipen/saitranslate/batches/out/fra.json"
+ },
+ "he": {
+  "target": "עברית",
+  "count": 596,
+  "batch": ".saipen/saitranslate/batches/he.json",
+  "out": ".saipen/saitranslate/batches/out/he.json"
+ },
+ "hi": {
+  "target": "हिन्दी",
+  "count": 646,
+  "batch": ".saipen/saitranslate/batches/hi.json",
+  "out": ".saipen/saitranslate/batches/out/hi.json"
+ },
+ "hr": {
+  "target": "Hrvatski",
+  "count": 660,
+  "batch": ".saipen/saitranslate/batches/hr.json",
+  "out": ".saipen/saitranslate/batches/out/hr.json"
+ },
+ "hu": {
+  "target": "Magyar",
+  "count": 667,
+  "batch": ".saipen/saitranslate/batches/hu.json",
+  "out": ".saipen/saitranslate/batches/out/hu.json"
+ },
+ "id": {
+  "target": "Bahasa Indonesia",
+  "count": 656,
+  "batch": ".saipen/saitranslate/batches/id.json",
+  "out": ".saipen/saitranslate/batches/out/id.json"
+ },
+ "it": {
+  "target": "Italiano",
+  "count": 602,
+  "batch": ".saipen/saitranslate/batches/it.json",
+  "out": ".saipen/saitranslate/batches/out/it.json"
+ },
+ "ja": {
+  "target": "日本語",
+  "count": 585,
+  "batch": ".saipen/saitranslate/batches/ja.json",
+  "out": ".saipen/saitranslate/batches/out/ja.json"
+ },
+ "ko": {
+  "target": "한국어",
+  "count": 596,
+  "batch": ".saipen/saitranslate/batches/ko.json",
+  "out": ".saipen/saitranslate/batches/out/ko.json"
+ },
+ "nl": {
+  "target": "Nederlands",
+  "count": 602,
+  "batch": ".saipen/saitranslate/batches/nl.json",
+  "out": ".saipen/saitranslate/batches/out/nl.json"
+ },
+ "no": {
+  "target": "Norsk",
+  "count": 606,
+  "batch": ".saipen/saitranslate/batches/no.json",
+  "out": ".saipen/saitranslate/batches/out/no.json"
+ },
+ "pl": {
+  "target": "Polski",
+  "count": 603,
+  "batch": ".saipen/saitranslate/batches/pl.json",
+  "out": ".saipen/saitranslate/batches/out/pl.json"
+ },
+ "pt": {
+  "target": "Português",
+  "count": 601,
+  "batch": ".saipen/saitranslate/batches/pt.json",
+  "out": ".saipen/saitranslate/batches/out/pt.json"
+ },
+ "ro": {
+  "target": "Română",
+  "count": 667,
+  "batch": ".saipen/saitranslate/batches/ro.json",
+  "out": ".saipen/saitranslate/batches/out/ro.json"
+ },
+ "ru": {
+  "target": "Русский",
+  "count": 205,
+  "batch": ".saipen/saitranslate/batches/ru.json",
+  "out": ".saipen/saitranslate/batches/out/ru.json"
+ },
+ "sk": {
+  "target": "Slovenčina",
+  "count": 665,
+  "batch": ".saipen/saitranslate/batches/sk.json",
+  "out": ".saipen/saitranslate/batches/out/sk.json"
+ },
+ "spa": {
+  "target": "Español",
+  "count": 601,
+  "batch": ".saipen/saitranslate/batches/spa.json",
+  "out": ".saipen/saitranslate/batches/out/spa.json"
+ },
+ "sv": {
+  "target": "Svenska",
+  "count": 611,
+  "batch": ".saipen/saitranslate/batches/sv.json",
+  "out": ".saipen/saitranslate/batches/out/sv.json"
+ },
+ "th": {
+  "target": "ไทย",
+  "count": 594,
+  "batch": ".saipen/saitranslate/batches/th.json",
+  "out": ".saipen/saitranslate/batches/out/th.json"
+ },
+ "tur": {
+  "target": "Türkçe",
+  "count": 651,
+  "batch": ".saipen/saitranslate/batches/tur.json",
+  "out": ".saipen/saitranslate/batches/out/tur.json"
+ },
+ "ukr": {
+  "target": "Українська",
+  "count": 599,
+  "batch": ".saipen/saitranslate/batches/ukr.json",
+  "out": ".saipen/saitranslate/batches/out/ukr.json"
+ },
+ "vi": {
+  "target": "Tiếng Việt",
+  "count": 644,
+  "batch": ".saipen/saitranslate/batches/vi.json",
+  "out": ".saipen/saitranslate/batches/out/vi.json"
+ },
+ "zh": {
+  "target": "中文",
+  "count": 594,
+  "batch": ".saipen/saitranslate/batches/zh.json",
+  "out": ".saipen/saitranslate/batches/out/zh.json"
+ }
+}

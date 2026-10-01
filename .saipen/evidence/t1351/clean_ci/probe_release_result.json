@@ -1,0 +1,75 @@
+{
+  "ok": true,
+  "exe": "V:\\_TEMP_\\fp_rc_0869_t1351_20260930\\build\\FastPrompter.exe",
+  "exe_sha256": "fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59",
+  "marker": "FP-RELEASE-PROBE-dd5b653e144b4c92",
+  "temp_dir": "V:\\_TEMP_\\fastprompter-probe-vt3p9ens",
+  "checks": [
+    {
+      "name": "mutex free before start",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "starts and stays alive",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "app owns the writer mutex",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "second instance hands off and exits",
+      "status": "PASS",
+      "detail": "exit code 0"
+    },
+    {
+      "name": "portable data root + database created",
+      "status": "PASS",
+      "detail": "V:\\_TEMP_\\fastprompter-probe-vt3p9ens\\data\\local_data_v15.db"
+    },
+    {
+      "name": "database opens at the current schema",
+      "status": "PASS",
+      "detail": "v1 != v1"
+    },
+    {
+      "name": "graceful shutdown releases the process",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "mutex released after graceful close",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "marker persisted through graceful close",
+      "status": "PASS",
+      "detail": "stored marker 'FP-RELEASE-PROBE-dd5b653e144b4c92'"
+    },
+    {
+      "name": "relaunch acquires the mutex",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "second graceful shutdown",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "mutex released after relaunch close",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "name": "persisted marker survives restart",
+      "status": "PASS",
+      "detail": ""
+    }
+  ],
+  "recorded_at": "2026-09-30T08:36:30Z"
+}

@@ -1,0 +1,51 @@
+{
+  "R001": {
+    "ok": true,
+    "code": "COVERAGE_UPDATED",
+    "receipt": "SRC-070",
+    "rid": "SRC-070:R001",
+    "disposition": "VERIFIED"
+  },
+  "R002": {
+    "ok": true,
+    "code": "COVERAGE_UPDATED",
+    "receipt": "SRC-070",
+    "rid": "SRC-070:R002",
+    "disposition": "VERIFIED"
+  },
+  "R003": {
+    "ok": true,
+    "code": "COVERAGE_UPDATED",
+    "receipt": "SRC-070",
+    "rid": "SRC-070:R003",
+    "disposition": "VERIFIED"
+  },
+  "R004": {
+    "ok": true,
+    "code": "COVERAGE_UPDATED",
+    "receipt": "SRC-070",
+    "rid": "SRC-070:R004",
+    "disposition": "VERIFIED"
+  },
+  "R005": {
+    "ok": true,
+    "code": "COVERAGE_UPDATED",
+    "receipt": "SRC-070",
+    "rid": "SRC-070:R005",
+    "disposition": "VERIFIED"
+  },
+  "R006": {
+    "ok": true,
+    "code": "COVERAGE_UPDATED",
+    "receipt": "SRC-070",
+    "rid": "SRC-070:R006",
+    "disposition": "VERIFIED"
+  },
+  "R007": {
+    "ok": true,
+    "code": "COVERAGE_UPDATED",
+    "receipt": "SRC-070",
+    "rid": "SRC-070:R007",
+    "disposition": "VERIFIED"
+  }
+}

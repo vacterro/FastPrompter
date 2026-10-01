@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-10-01T00:52:03Z",
+  "evidence_class": "executed",
+  "findings_digest": "b07b86cb8817758036faebc7272120427dcd95cc8c16d74869184e0c0bb20247",
+  "gate": "core",
+  "integrity_digest": "094ead36be392aed",
+  "journal_op_id": "reverify.2200301e1fdf",
+  "original_closure": {
+    "last_ticket_event": "E-1988",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [
+    "e383bb7770569846"
+  ],
+  "problem_count": 11,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001307",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "10da652cec0142f36f112c835dc8921a4ccb1f94",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_t1265_interval_clock.py tests/test_t1265_ambience_persistence.py -q",
+      "duration_ms": 1508,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "46a3149848bab130",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_t1265_interval_clock.py tests/test_t1265_ambience_persistence.py -q"
+    ],
+    "findings_digest": "b07b86cb8817758036faebc7272120427dcd95cc8c16d74869184e0c0bb20247",
+    "gate": "core"
+  },
+  "verification_contract_digest": "c7e57ea5ea8b2d83",
+  "verifier": "buffy",
+  "warning_count": 80,
+  "work": "T-1265"
+}

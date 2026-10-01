@@ -1,0 +1,51 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-10-01T01:01:24Z",
+  "evidence_class": "executed",
+  "findings_digest": "7322116d17c2c2bb9b630f06787486fb8ed1ebdda083dca3a0c8db43b5e371e3",
+  "gate": "core",
+  "integrity_digest": "5eacde35e38d2784",
+  "journal_op_id": "reverify.213ab3a21c6a",
+  "original_closure": {
+    "claim_time": "2026-09-29T16:31:44Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-3494",
+    "owner": "buffy",
+    "source_receipts": "SRC-069"
+  },
+  "own_problem_keys": [
+    "da8111511f4c830a"
+  ],
+  "problem_count": 2,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001316",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "10da652cec0142f36f112c835dc8921a4ccb1f94",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "uv run python -m pytest tests/test_t1349_hover_grace.py tests/test_t1352_copy_row_collisions.py -q",
+      "duration_ms": 2838,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 99,
+      "output_digest": "c9566ef5f2c4d9f4",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "uv run python -m pytest tests/test_t1349_hover_grace.py tests/test_t1352_copy_row_collisions.py -q"
+    ],
+    "findings_digest": "7322116d17c2c2bb9b630f06787486fb8ed1ebdda083dca3a0c8db43b5e371e3",
+    "gate": "core"
+  },
+  "verification_contract_digest": "2f36fa7dd7970c0c",
+  "verifier": "buffy",
+  "warning_count": 80,
+  "work": "T-1349"
+}
