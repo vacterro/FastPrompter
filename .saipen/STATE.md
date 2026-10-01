@@ -1,7 +1,7 @@
 ---
 phase: SCOUT
 task: T-1379
-next_action: "PHASE SCOUT T-1379 -- close the CODE half: wrap the 118 non-HTML prose literals measured in .saipen/evidence/t1379/limit_ui_translation_gap.txt (the 40 HTML fragments in limit_gauges.py:807-1071 are a separate template refactor), add each key through .saipen/saitranslate/locales/en.json, regenerate with tools/inject_translations.py, then run the Limit-UI + i18n tests. The TRANSLATION half (141 new keys x 32 locale packs) belongs to the saitranslate producer. T-1383 is analysed and REJECTED at .saipen/evidence/t1383/hunt_001_disposition.txt -- run its VERIFY->REVIEW->DONE once the DOING slot frees."
+next_action: "PHASE SCOUT T-1379 [CODE half: wrap the 118 prose literals measured in evidence/t1379/limit_ui_translation_gap.txt, keys via saitranslate/locales/en.json + tools/inject_translations.py; TRANSLATION half and T-1383 close are queued behind it]"
 blocker: none
 agent: buffy
 saipen_version: 7
