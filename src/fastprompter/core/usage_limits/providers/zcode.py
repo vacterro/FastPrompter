@@ -37,6 +37,7 @@ from fastprompter.core.usage_limits.model import (
     UNAVAILABLE,
     WEEKLY,
     AccountRef,
+    ResetOffer,
     UsageSnapshot,
     UsageWindow,
     canonical_path,
@@ -60,12 +61,16 @@ class ZCodeProvider(UsageProvider):
     provider_id = "zcode"
 
     def __init__(self, enabled: bool = False, config_path: str = "",
-                 reader=None):
+                 reader=None, reset_reader=None):
         self._enabled = bool(enabled)
         self._config_path = config_path or ""
         # Injection seam for tests: a real HTTPS call in the suite would assert
         # on this machine's live quota (and spend a credential doing it).
         self._reader = reader or _zcode_http.read_quota
+        # Separate seam for the Coding Plan reset-card inventory (T-1360):
+        # different endpoint, different credential (signed-in account tokens,
+        # not the plan API key), same opt-in gate as the quota read.
+        self._reset_reader = reset_reader or _zcode_http.read_reset_cards
 
     # -- discovery ---------------------------------------------------------
     def config_path(self) -> str:
@@ -120,12 +125,13 @@ class ZCodeProvider(UsageProvider):
                                 "this ZCode plan is no longer in ZCode's "
                                 "config, or its API key was removed")
         reading = self._reader(entry, deadline)
+        reset_reading = self._read_reset_cards(entry, deadline)
         if "error" in reading:
             code, summary = reading["error"]
             # A plan the account simply does not hold is not a fault: ZCode
             # itself renders "no active Coding Plan" and there is nothing to
             # fix, so it must not light the header's error marker.
-            return _unavailable(account, code, summary)
+            return _unavailable(account, code, summary, reset_reading)
         windows = [
             UsageWindow(
                 key=row["key"],
@@ -147,8 +153,30 @@ class ZCodeProvider(UsageProvider):
                 "strategy": "https-monitor-usage-quota-limit",
                 "plan_id": plan_id,
                 "plan_name": str(account.metadata.get("plan_name") or ""),
+                "reset_cards": _reset_cards_state(reset_reading),
             },
+            reset_offers=_reset_offers(account, reset_reading),
         )
+
+    def _read_reset_cards(self, entry: dict, deadline: float) -> dict:
+        """One bounded read of the Coding Plan reset inventory.
+
+        The reset route is account-scoped (signed-in ZCode session), while
+        the quota route is plan-key-scoped, so a quota failure does not
+        preempt it: an account whose key was rotated can still own cards.
+        Never raises; a failed read is recorded as an honest UNAVAILABLE
+        state, never as "zero resets".
+        """
+        if not self._enabled or time.monotonic() >= deadline:
+            return {"error": ("disabled",
+                              "ZCode limits are off") if not self._enabled else
+                    ("deadline_exceeded",
+                     "no time left in this sweep to read ZCode reset cards")}
+        try:
+            return self._reset_reader(entry, deadline)
+        except Exception:
+            return {"error": ("reset_read_failed",
+                              "reading the ZCode reset inventory failed")}
 
     def _entry_for(self, plan_id: str) -> dict | None:
         """Re-read the key from disk for exactly this plan, or None."""
@@ -160,7 +188,8 @@ class ZCodeProvider(UsageProvider):
         return None
 
 
-def _unavailable(account: AccountRef, code: str, summary: str) -> UsageSnapshot:
+def _unavailable(account: AccountRef, code: str, summary: str,
+                 reset_reading: dict | None = None) -> UsageSnapshot:
     return UsageSnapshot(
         account=account,
         status=UNAVAILABLE,
@@ -169,8 +198,73 @@ def _unavailable(account: AccountRef, code: str, summary: str) -> UsageSnapshot:
         error_code=code,
         error_summary=summary,
         provider_metadata={"capability": "zcode-monitor-quota",
-                           "strategy": "https-monitor-usage-quota-limit"},
+                           "strategy": "https-monitor-usage-quota-limit",
+                           "reset_cards": _reset_cards_state(reset_reading)},
     )
+
+
+# Vendor card kind -> provider-neutral target. Already neutral here; the
+# map exists so a future vendor vocabulary change is a one-line repair.
+_CARD_TARGETS = {"five_hour": FIVE_HOUR, "weekly": WEEKLY}
+
+_CARD_TITLES = {FIVE_HOUR: "5h reset", WEEKLY: "Weekly reset",
+                "": "reset"}
+
+
+def _reset_offers(account: AccountRef, reset_reading: dict) -> tuple:
+    """Coding Plan reset cards as provider-neutral offers (T-1360).
+
+    Only cards the vendor lists as AVAILABLE arrive here at all; an expired
+    card is kept with ``status="expired"`` so presentation can say why it
+    vanished. Redemption is NOT wired — POSTing a paid-entitlement mutation
+    is out until an official route is independently proven — so the offers
+    carry ``redeemable_in_fastprompter=False`` and the UI opens ZCode
+    instead of faking an Activate button.
+    """
+    if not isinstance(reset_reading, dict) or "cards" not in reset_reading:
+        return ()
+    now = time.time()
+    offers = []
+    for index, card in enumerate(reset_reading.get("cards") or ()):
+        if not isinstance(card, dict):
+            continue
+        target = _CARD_TARGETS.get(str(card.get("kind") or ""), "")
+        expires = card.get("expire_at")
+        expires = expires if isinstance(expires, (int, float)) else None
+        status = ("available"
+                  if expires is None or expires > now else "expired")
+        offers.append(ResetOffer(
+            offer_id=str(card.get("id") or f"zcode_{target}_{index}"),
+            provider_id=account.provider_id,
+            account_key=account.key,
+            target_kind=target,
+            status=status,
+            title=_CARD_TITLES.get(target, _CARD_TITLES[""]),
+            expires_at_epoch=expires,
+            redeemable=status == "available",
+            redeemable_in_fastprompter=False,
+            source="zcode-coding-plan-reset"))
+    return tuple(offers)
+
+
+def _reset_cards_state(reset_reading: dict | None) -> dict:
+    """Honest inventory state for the settings UI: ok / unavailable / error.
+
+    "unavailable" is the truth when the signed-in session (or the route) is
+    missing — FastPrompter cannot see the inventory and MUST NOT render that
+    as "no resets".
+    """
+    if not isinstance(reset_reading, dict):
+        return {"state": "unavailable",
+                "summary": "reset inventory not read in this sweep"}
+    if "cards" in reset_reading:
+        return {"state": "ok",
+                "count": len(reset_reading.get("cards") or [])}
+    code, summary = reset_reading.get("error", ("unknown", "unknown"))
+    state = "unavailable" if code in (
+        "disabled", "reset_auth_unavailable", "reset_auth_failed",
+        "reset_route_unavailable", "deadline_exceeded") else "error"
+    return {"state": state, "code": code, "summary": summary}
 
 
 def candidate_config_paths() -> list[str]:

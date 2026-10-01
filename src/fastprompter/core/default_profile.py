@@ -13,6 +13,16 @@ it is the reason no key with user CONTENT in it may ever be added: silos,
 timers, window geometry and the editor text are excluded on purpose.
 """
 
+import copy
+
+from fastprompter.core.interval_presets import DAYPART_CHIME_RULES
+
+# The fresh-profile interval default is the canonical 24h Chime preset
+# (T-1359) — the same list the timer dialog offers as a preset, imported
+# from core so the two can never drift. A private copy, because consumers
+# mutate profile values in place after deepcopying the whole map.
+_INTERVAL_NOTIFS_DEFAULT = copy.deepcopy(DAYPART_CHIME_RULES)
+
 DEFAULT_PROFILE = {
     "altw_blanks_after": '1',
     "altw_blanks_before": '0',
@@ -157,20 +167,7 @@ DEFAULT_PROFILE = {
     "hr_visual_line": 'True',
     "image_viewer_mode": 'system',
     "image_viewer_path": '',
-    "interval_notifs": [   {   'align_mode': 'clock',
-            'all_day': True,
-            'enabled': True,
-            'end_minute': 1439,
-            'id': 'interval_default_1',
-            'last_fired': 0.0,
-            'last_fired_minute': '',
-            'minutes': 60,
-            'name': 'Hourly Reminder',
-            'show_in_top_bar': False,
-            'show_notification': False,
-            'sound': 'file:NEWDAY.wav',
-            'start_minute': 0,
-            'volume': 1.0}],
+    "interval_notifs": _INTERVAL_NOTIFS_DEFAULT,
     "language": 'EN',
     "last_save_format": 'md',
     "limit_colors": {'reset_antigravity': '#8e6ae8', 'reset_codex': '#4bc0ff', 'reset_zcode': '#cfcfcf'},

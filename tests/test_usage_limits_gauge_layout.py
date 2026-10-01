@@ -624,18 +624,38 @@ class TestTooltipNameClearsTheBars:
 
 
 class TestCodexBankedResetsTooltip:
-    def test_tooltip_shows_banked_resets_badge_and_footnote(self, qapp):
+    """T-1360 shape: the provider ships reset_offers beside the legacy count.
+
+    The hover renders a "[N reset]" pill on the account row AND a distinct
+    "Resets" section with the shared "expires ..." wording; the old
+    Codex-only "/usage to redeem" footnote is gone — redemption now happens
+    through FastPrompter's own Activate action.
+    """
+
+    @staticmethod
+    def _offer(account, title, quantity=1):
+        from fastprompter.core.usage_limits.model import ResetOffer
+        return (ResetOffer(provider_id="codex", account_key=account.key,
+                           status="available", title=title, quantity=quantity,
+                           redeemable=True,
+                           redeemable_in_fastprompter=True,
+                           source="test"),)
+
+    def test_tooltip_shows_banked_resets_badge_and_section(self, qapp):
         account = _account("codex", "c_banked")
         snap = UsageSnapshot(
             account=account, status=OK, fetched_at=time.time(),
             windows=[UsageWindow("five_hour", 300, True, 50, 50, None)],
             banked_resets=1,
+            reset_offers=self._offer(account, "1 reset available"),
         )
         gauges = _build(qapp, [account], {account.key: snap})
         tt = gauges._build_tooltip()
-        assert "[1 banked reset]" in tt
-        assert "★ 1 usage limit reset available" in tt
-        assert "run <code>/usage</code> in CLI to redeem" in tt
+        assert "[1 reset]" in tt
+        assert "Resets" in tt
+        assert "1 reset available" in tt
+        assert "/usage" not in tt
+        assert gauges._reset_badge_text() == "★ 1"
 
     def test_tooltip_shows_plural_banked_resets(self, qapp):
         account = _account("codex", "c_banked_multi")
@@ -643,11 +663,12 @@ class TestCodexBankedResetsTooltip:
             account=account, status=OK, fetched_at=time.time(),
             windows=[UsageWindow("five_hour", 300, True, 50, 50, None)],
             banked_resets=3,
+            reset_offers=self._offer(account, "3 resets available", quantity=3),
         )
         gauges = _build(qapp, [account], {account.key: snap})
         tt = gauges._build_tooltip()
-        assert "[3 banked resets]" in tt
-        assert "★ 3 usage limit resets available" in tt
+        assert "[3 resets]" in tt
+        assert "3 resets available" in tt
 
     def test_context_menu_has_activate_reset_action(self, qapp, monkeypatch):
         from PyQt6.QtCore import QPoint
@@ -657,6 +678,7 @@ class TestCodexBankedResetsTooltip:
             account=account, status=OK, fetched_at=time.time(),
             windows=[UsageWindow("five_hour", 300, True, 50, 50, None)],
             banked_resets=1,
+            reset_offers=self._offer(account, "1 reset available"),
         )
         gauges = _build(qapp, [account], {account.key: snap})
 

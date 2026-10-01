@@ -6,6 +6,7 @@
 
 ## DONE
 
+- [x] HUNT-014 (P1, failing-tests + orphan-artifacts) six-signal sweep @ dc9589d; delivered ready evidence in kitchen/OUTBOX.md | verify: pytest tests/test_t1358_cohort_publication.py -> 2 failed | next: saitest independent reproduction
 - [x] HUNT-008 (P1, collection-blocker) reproduce root `test_timers_patch.py:32` syntax error under current source @3d0d79e; delivered ready evidence in kitchen/OUTBOX.md | verify: `python -m py_compile test_timers_patch.py` -> SyntaxError | next: saitest independent reproduction
 - [x] HUNT-009 (P2, orphan-artifacts) reproduce 18 unreferenced root `patch*.py` scripts @3d0d79e; delivered ready evidence in kitchen/OUTBOX.md | verify: zero repository references, all ignored/untracked, no execution | next: Core disposition
 - [x] HUNT-010 (P2, sweep-close) remaining four signals NOT_REPRODUCED in bounded pass @3d0d79e; delivered ready evidence in kitchen/OUTBOX.md | verify: source identity stable, focused feature tests previously green | next: downstream crew roles

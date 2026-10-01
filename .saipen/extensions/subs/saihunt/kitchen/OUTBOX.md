@@ -1,7 +1,34 @@
 # OUTBOX
 
-## HUNT-013: crew SC-2 sweep @ 551ac7c (31.08.26) - crew epoch
+## HUNT-014: crew SC-2 six-signal sweep @ dc9589d (01.10.26)
 - **status:** ready
+- **summary:** Six-signal sweep at HEAD dc9589d: 2 signals REPRODUCED (tests/test_t1358_cohort_publication.py:74/117 fails on pyproject.toml & README.md C-069 cohort mismatches; orphan untracked test artifact); 4 signals NOT_REPRODUCED.
+- **main_project_refs:** [tests/test_t1358_cohort_publication.py:74, tests/test_t1358_cohort_publication.py:117, .saipen/kitchen/cohort_registry.json, pyproject.toml, README.md]
+- **critical:** true
+- **severity:** P1
+- **producer:** saihunt
+- **source_head:** dc9589d89fb77890a7917cdb372a5ec5fea2f9da
+- **source_tree_fingerprint:** git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** all six HUNT signals at dc9589d: tests (pytest), commit verification, stale markers, silent failure, symmetry, orphan artifacts
+- **payload:** []
+- **verified:** PASS -- pytest tests/test_t1358_cohort_publication.py reproduces 2 failures (test_member_hash_matches_proven_text_normalization line 74 and test_cohort_member_mismatches_respects_normalization line 117); full tests/ collection clean (4167 tests collected); ruff check src/ tests/ clean; compileall clean; rg TODO/FIXME/HACK in src clean
+- **instructions:** Evidence for SC-2 at dc9589d. saitest independently reproduce test_t1358_cohort_publication failure; Core reconcile C-069 cohort_registry member hashes or test assertions with post-T-1358 commits (README gallery rebuild ccdbeb3 & pyproject.toml freeze a655fdd), and commit or dispose untracked test.
+- **details:**
+  1. Signal 1 (failing tests): REPRODUCED.
+     `tests/test_t1358_cohort_publication.py` fails on lines 74 and 117.
+     - Line 74: `assert closure.member_hash_matches(pyproject_bytes, recorded_crlf_hash)` fails because live `pyproject.toml` (hash `3eedf7cf1da61657` LF / `386fd37a1d0a7b39` CRLF) does not match recorded hash `2bf394ee164bf134`.
+     - Line 117: `closure.cohort_member_mismatches(ROOT, c069)` returns 2 mismatches for C-069:
+       * T-1354 `README.md`: recorded `fe4fa171993ba340`, live `fbcfb394cc49fa69` (modified by commit `ccdbeb3`).
+       * T-1355 `pyproject.toml`: recorded `2bf394ee164bf134`, live `3eedf7cf1da61657`.
+  2. Signal 2 (commits unverified in LOG): NOT_REPRODUCED. All commits dc9589d..693587d tracked in LOG E-3703..E-3727.
+  3. Signal 3 (stale TODO/FIXME/HACK): NOT_REPRODUCED. Zero markers in src/.
+  4. Signal 4 (silent failures): NOT_REPRODUCED. ruff clean, compileall clean, exception handlers verified.
+  5. Signal 5 (symmetry gaps): NOT_REPRODUCED. interval_notifs and timer_dialog bind identically to DAYPART_CHIME_RULES.
+  6. Signal 6 (dead code, orphan files): REPRODUCED. `tests/test_t1358_cohort_publication.py` is untracked in git despite T-1358 marked DONE on BOARD.
+
+## HUNT-013: crew SC-2 sweep @ 551ac7c (31.08.26) - crew epoch
+- **status:** stale
 - **summary:** Current-source six-signal sweep at HEAD 551ac7c (crew epoch with v0.8.66 closure: Wave-6 persistence T-1166/T-1168, Alt+F T-1167, launcher T-1161). All six signals clean: unit suite green (1748 passed 1 skipped), zero TODO/FIXME/HACK in persistence scope, no unverified commits, no new silent-failure or symmetry candidates, no orphan files, no failing tests.
 - **main_project_refs:** [src/fastprompter/core/state.py, src/fastprompter/main.py, tests/test_wave6_coordinator.py, tests/test_launcher_reliability.py]
 - **critical:** false

@@ -138,6 +138,11 @@ class UsageSnapshot:
     error_summary: str = ""   # sanitized, no secrets
     provider_metadata: dict = dataclasses.field(default_factory=dict)
     banked_resets: int | None = None
+    # Manual/redeemable reset offers (T-1360). Conceptually separate from
+    # automatic window resets (UsageWindow.resets_at_epoch), from quota
+    # capacity and from wallet credit: owning a reset card never makes an
+    # exhausted account usable and never enters the soonest-reset queue.
+    reset_offers: tuple = ()
 
     def window(self, key: str) -> UsageWindow | None:
         for w in self.windows:
@@ -368,6 +373,166 @@ def soonest_reset(snapshots, hidden_keys=frozenset()):
         return None, None
     first = candidates[0]
     return first.provider_id, first.resets_at_epoch
+
+
+# -- manual / redeemable reset offers (T-1360) ------------------------------
+# A MANUAL reset offer is a redeemable card the vendor granted (Codex reset
+# credits, ZCode Coding Plan reset cards, a future Claude campaign). It is
+# NOT the automatic window refill (``UsageWindow.resets_at_epoch``): the two
+# must never share a queue, a label or a formatter, and owning an offer says
+# NOTHING about whether the account can do work right now.
+
+@dataclasses.dataclass(frozen=True)
+class ResetOffer:
+    """One manual reset the vendor says this account owns.
+
+    Fields stay optional where the provider does not prove them: an
+    aggregate count (Codex ``availableCount`` without individual credits)
+    yields ONE offer with an empty ``offer_id`` and a count title — never a
+    fabricated per-card identity.
+    """
+
+    offer_id: str = ""               # vendor card id, "" when only a count
+    provider_id: str = ""
+    account_key: str = ""            # "provider:stable_id"
+    target_kind: str = ""            # five_hour / weekly / vendor word
+    status: str = "available"        # available / expired / consumed / unknown
+    title: str = ""                  # human name, adapter-provided
+    granted_at_epoch: float | None = None
+    expires_at_epoch: float | None = None
+    redeemable: bool = True          # the offer can be redeemed at the vendor
+    # Whether FASTPROMPTER can redeem it directly (Codex: yes; Claude and
+    # ZCode: not until an official route is proven — their UI action opens
+    # the vendor's own usage page instead).
+    redeemable_in_fastprompter: bool = False
+    # How many credits this one offer stands for. 1 for an identified card;
+    # N only for an honest vendor-side aggregate count (Codex
+    # ``availableCount`` with no per-credit list), where one offer object
+    # legitimately represents several identical credits.
+    quantity: int = 1
+    source: str = ""                 # provenance tag, never a secret
+
+
+def offer_is_current(offer, now: float | None = None) -> bool:
+    """True when this offer can be redeemed right now.
+
+    Requires the vendor to have marked it available AND, when an expiry is
+    known, the expiry to still be in the future. An unknown status is not
+    availability: ``null != available reset``.
+    """
+    if offer is None or offer.status != "available":
+        return False
+    if not getattr(offer, "redeemable", True):
+        return False
+    expires = offer.expires_at_epoch
+    if expires is None:
+        return True
+    if now is None:
+        import time as _time
+        now = _time.time()
+    return isinstance(expires, (int, float)) and expires > now
+
+
+def current_reset_offers(snapshot, now: float | None = None) -> list:
+    """This snapshot's redeemable-now offers.
+
+    Only an OK/STALE snapshot may state offers: an ERROR / AUTH_REQUIRED /
+    UNAVAILABLE answer proves nothing about what the account still owns
+    (a STALE answer keeps showing the last known offers, as with windows).
+    """
+    if snapshot is None or getattr(snapshot, "status", None) not in (OK, STALE):
+        return []
+    return [o for o in (getattr(snapshot, "reset_offers", ()) or ())
+            if offer_is_current(o, now=now)]
+
+
+def banked_reset_count(snapshot, now: float | None = None) -> int:
+    """Redeemable-now offer count, falling back to the legacy Codex count.
+
+    The legacy ``banked_resets`` integer stays for compatibility with
+    snapshots built before offers existed; where offers ARE present they are
+    the truth (they know about expiry and consumption).
+    """
+    offers = list(getattr(snapshot, "reset_offers", ()) or ())
+    if offers:
+        return sum(max(1, int(getattr(o, "quantity", 1) or 1))
+                   for o in current_reset_offers(snapshot, now=now))
+    value = getattr(snapshot, "banked_resets", None)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, value)
+
+
+@dataclasses.dataclass(frozen=True)
+class ResetOfferRow:
+    """One account's current offers, bundled for presentation."""
+
+    account: AccountRef
+    snapshot: UsageSnapshot
+    offers: list
+
+
+def reset_offer_rows(snapshots, hidden_keys=frozenset(),
+                     now: float | None = None) -> list:
+    """Per-account current manual reset offers, for EVERY discovered account.
+
+    The presentation source behind the topbar aggregate, the hover "Resets"
+    section, the context menu and the settings overview. Deliberately
+    independent of the ordinary hide-zero / hide-unusable gauge filters: an
+    exhausted account is exactly the one holding a reset the user could
+    redeem. Accounts the user explicitly hid in settings are excluded — that
+    is a statement about the account, not a transient filter.
+    """
+    rows: list[ResetOfferRow] = []
+    for key, snap in dict(snapshots or {}).items():
+        if key in (hidden_keys or frozenset()):
+            continue
+        account = getattr(snap, "account", None)
+        if account is None:
+            continue
+        offers = current_reset_offers(snap, now=now)
+        if offers:
+            rows.append(ResetOfferRow(account=account, snapshot=snap,
+                                      offers=offers))
+    return rows
+
+
+def manual_reset_count(snapshots, hidden_keys=frozenset(),
+                       now: float | None = None) -> int:
+    """How many manual reset offers are redeemable right now (the ★ number)."""
+    return sum(max(1, int(getattr(o, "quantity", 1) or 1))
+               for row in reset_offer_rows(snapshots, hidden_keys, now=now)
+               for o in row.offers)
+
+
+def format_offer_expiry(epoch, now: float | None = None) -> str:
+    """One shared formatter for MANUAL offer expiry.
+
+    ``expires in 12m`` / ``expires in 4h 44m`` / ``expires Tue 18:00`` /
+    ``expired``. The wording is "expires", never "resets in": that phrase
+    belongs to the automatic window refill, and mixing the two is exactly
+    the confusion the split exists to prevent.
+    """
+    if not isinstance(epoch, (int, float)) or epoch <= 0:
+        return ""
+    if now is None:
+        import time as _time
+        now = _time.time()
+    remaining = float(epoch) - float(now)
+    if remaining <= 0:
+        return "expired"
+    if remaining < 3600:
+        return f"expires in {int(remaining // 60) or 1}m"
+    if remaining < 86400:
+        hours = int(remaining // 3600)
+        minutes = int((remaining % 3600) // 60)
+        return (f"expires in {hours}h" + (f" {minutes}m" if minutes else ""))
+    import datetime as _dt
+    try:
+        moment = _dt.datetime.fromtimestamp(float(epoch))
+    except (OverflowError, OSError, ValueError):
+        return ""
+    return f"expires {moment.strftime('%a %H:%M')}"
 
 
 def window_usable(window) -> bool:

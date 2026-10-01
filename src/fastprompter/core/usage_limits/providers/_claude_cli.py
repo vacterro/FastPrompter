@@ -227,4 +227,8 @@ def read_usage(deadline: float, *, binary: str = "",
         "windows": windows,
         "captured_at": time.time() if now is None else now,
         "source": "claude-cli-usage",
+        # The full first-party envelope, so the provider's defensive
+        # campaign scan (T-1360) can see vendor metadata beyond the parsed
+        # windows without this module guessing at schemas.
+        "raw": payload,
     }

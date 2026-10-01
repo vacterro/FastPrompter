@@ -2,7 +2,7 @@
 phase: DONE
 task: none
 next_action: "saipen status"
-blocker: "none. T-1362 is RESOLVED and DONE: the HEAD-equality binding was made ancestor-tolerant (DEC E-3717) and a fresh clone of origin/main now reports zero problems with exit 0. T-1363 is RESOLVED and DONE: the card was attributed protocol output per t1370_cohort_manifest.json and LOG E-3605, not unattributed user data. OPEN ITEM FOR THE OPERATOR: the engine fix lives in C:/Users/vac34/.agents/skills/saipen/tools/saipen_engine/debt.py, which is NOT under version control anywhere, so every SAIPEN project depends on an unversioned local edit. The pre-fix backup is at build/_debt.py.backup-E3717 (sha256 26835b39fbbffd853518de994d1baf74186bd70060de07d2c8e126344e5f0c98). It needs upstreaming to the saipen repo or it is lost on reinstall."
+blocker: none
 agent: buffy
 saipen_version: 7
 saipen_home: "C:/Users/vac34/.agents/skills/saipen"
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3726
+last_event: 3727
 style_contract: ded-6b950e75
-updated: "2026-10-01T01:34:50Z"
+updated: "2026-10-01T06:22:38Z"
 transition_from: SHIP
 execution_intent: goal
 goal_waves: 0

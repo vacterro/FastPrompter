@@ -559,6 +559,7 @@ class UsageLimitService:
                         stale_since=now,
                         banked_resets=prev.banked_resets,
                         provider_metadata=dict(prev.provider_metadata),
+                        reset_offers=prev.reset_offers,
                     )
                 else:
                     self._state.snapshots[key] = s

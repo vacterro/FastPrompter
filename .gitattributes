@@ -13,3 +13,7 @@ uv.lock text eol=lf
 .saipen/archive/translation_backups/backup_*/** -text -diff
 .saipen/recovery/log-detail/** -text
 .saipen/recovery/board-compaction/** -text
+
+# SAIPEN byte-bound evidence (digest-verified; never convert line endings) -- T-1508.
+.saipen/recovery/log-normalize/** -text
+.saipen/recovery/log-foreign-tail/** -text

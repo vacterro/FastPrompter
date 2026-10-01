@@ -135,92 +135,14 @@ def _set_combo_sound(combo: QComboBox, ref, lang="EN") -> None:
     combo.setCurrentIndex(combo.count() - 1)
 
 
-DEFAULT_INTERVAL_RULES = [
-    {
-        "id": "interval_default_1",
-        "name": "Hourly Reminder",
-        "minutes": 60,
-        "enabled": True,
-        "sound": "file:NEWDAY.wav",
-        "volume": 1.0,
-        "show_notification": False,
-        "show_in_top_bar": False,
-        "align_mode": "clock",
-        "all_day": True,
-        "start_minute": 0,
-        "end_minute": 1439,
-        "last_fired": 0.0,
-        "last_fired_minute": "",
-    },
-]
+# The canonical 24h Chime preset lives in core (T-1359): default_profile
+# bakes the SAME list into a fresh profile, so a second literal here would
+# be a copy that can drift from what new users actually get.
+from fastprompter.core.interval_presets import (  # noqa: E402
+    DAYPART_CHIME_RULES,
+)
 
-
-DAYPART_CHIME_RULES = [
-    {
-        "id": "interval_default_noon",
-        "name": "Noon (12:00)",
-        "minutes": 60,
-        "enabled": True,
-        "sound": "file:GENIE.wav",
-        "volume": 0.05,
-        "show_notification": True,
-        "show_in_top_bar": False,
-        "align_mode": "clock",
-        "all_day": False,
-        "start_minute": 720,
-        "end_minute": 779,
-        "last_fired": 0.0,
-        "last_fired_minute": "",
-    },
-    {
-        "id": "interval_default_morning",
-        "name": "Morning (07:00 - 11:00)",
-        "minutes": 60,
-        "enabled": True,
-        "sound": "file:NEWDAY.wav",
-        "volume": 0.05,
-        "show_notification": True,
-        "show_in_top_bar": False,
-        "align_mode": "clock",
-        "all_day": False,
-        "start_minute": 420,
-        "end_minute": 719,
-        "last_fired": 0.0,
-        "last_fired_minute": "",
-    },
-    {
-        "id": "interval_default_day",
-        "name": "Day & Evening (13:00 - 21:00)",
-        "minutes": 60,
-        "enabled": True,
-        "sound": "file:NEWDAY.wav",
-        "volume": 0.05,
-        "show_notification": True,
-        "show_in_top_bar": False,
-        "align_mode": "clock",
-        "all_day": False,
-        "start_minute": 780,
-        "end_minute": 1319,
-        "last_fired": 0.0,
-        "last_fired_minute": "",
-    },
-    {
-        "id": "interval_default_night",
-        "name": "Night (22:00 - 06:00)",
-        "minutes": 60,
-        "enabled": True,
-        "sound": "file:alert_owl2.wav",
-        "volume": 0.05,
-        "show_notification": True,
-        "show_in_top_bar": False,
-        "align_mode": "clock",
-        "all_day": False,
-        "start_minute": 1320,
-        "end_minute": 419,
-        "last_fired": 0.0,
-        "last_fired_minute": "",
-    },
-]
+DEFAULT_INTERVAL_RULES = DAYPART_CHIME_RULES
 
 
 # ---------------------------------------------------------------------------
@@ -2457,7 +2379,7 @@ class TimerDialog(QDialog):
         list_btns.addWidget(self.interval_btn_delete)
 
         self.interval_btn_defaults = QPushButton(tr("Defaults", self.lang))
-        self.interval_btn_defaults.setToolTip(tr("Reset to hourly NewDay reminder (volume 1.00, no popup)", self.lang))
+        self.interval_btn_defaults.setToolTip(tr("Reset to the default 24h Chime preset (four daypart chimes, volume 0.05)", self.lang))
         self.interval_btn_defaults.clicked.connect(self._interval_reset_defaults)
         list_btns.addWidget(self.interval_btn_defaults)
 

@@ -26,6 +26,7 @@ from fastprompter.core.usage_limits.model import (
     OK,
     WEEKLY,
     AccountRef,
+    ResetOffer,
     UsageSnapshot,
     UsageWindow,
     canonical_path,
@@ -154,6 +155,8 @@ class CodexProvider(UsageProvider):
             fetched_at=result.get("fetched_at"),
             provider_metadata=meta,
             banked_resets=banked,
+            reset_offers=_reset_offers_from(account, banked,
+                                            result.get("reset_credits")),
         )
 
     def consume_reset(self, account: AccountRef, credit_id: str | None = None) -> dict:
@@ -168,6 +171,78 @@ class CodexProvider(UsageProvider):
 # Keys in a probe payload that are NOT quota windows.
 _NON_WINDOW_KEYS = frozenset({"ok", "error", "plan_type", "fetched_at",
                              "banked_resets", "reset_credits"})
+
+
+# Codex ``resetType`` values -> provider-neutral target kinds. Anything
+# else is kept verbatim: an unknown vendor target is still real, it is just
+# not one of the two windows FastPrompter already names.
+_RESET_TARGETS = {"FULL": "", "WEEK": WEEKLY, "WEEKLY": WEEKLY,
+                  "FIVE_HOUR": FIVE_HOUR, "5H": FIVE_HOUR}
+
+
+def _epoch_or_none(value):
+    """Vendor epoch (seconds or milliseconds) -> epoch seconds or None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if number <= 0:
+        return None
+    if number > 1e11:            # milliseconds
+        number /= 1000.0
+    return number if 1e9 < number < 1e11 else None
+
+
+def _reset_offers_from(account: AccountRef, banked, credits) -> tuple:
+    """Codex reset credits as provider-neutral :class:`ResetOffer` entries.
+
+    Rules (T-1360): individual credits are mapped verbatim when the vendor
+    identifies them; a bare ``availableCount`` with no per-credit list yields
+    ONE aggregate offer with an empty ``offer_id`` — an honest count, never
+    a fabricated card identity. Malformed entries are dropped, not guessed
+    at. Codex is the one provider whose redemption route FastPrompter has
+    proven, so its offers are directly activatable.
+    """
+    offers: list[ResetOffer] = []
+    if isinstance(credits, list):
+        for credit in credits:
+            if not isinstance(credit, dict):
+                continue
+            status_raw = str(credit.get("status") or "").strip().lower()
+            if status_raw not in ("available", "expired", "consumed"):
+                continue
+            offer_id = str(credit.get("id") or "").strip()
+            if status_raw == "available" and not offer_id:
+                continue      # an unidentifiable credit is not a card
+            reset_type = str(credit.get("reset_type") or "").strip().upper()
+            title = str(credit.get("title") or "").strip()
+            if not title:
+                title = str(credit.get("description") or "").strip()
+            offers.append(ResetOffer(
+                offer_id=offer_id,
+                provider_id=account.provider_id,
+                account_key=account.key,
+                target_kind=_RESET_TARGETS.get(reset_type, reset_type.lower()),
+                status=status_raw,
+                title=title,
+                granted_at_epoch=_epoch_or_none(credit.get("granted_at")),
+                expires_at_epoch=_epoch_or_none(credit.get("expires_at")),
+                redeemable=status_raw == "available",
+                redeemable_in_fastprompter=status_raw == "available",
+                source="codex-rateLimitResetCredits"))
+    if offers:
+        return tuple(offers)
+    if isinstance(banked, int) and not isinstance(banked, bool) and banked > 0:
+        word = "reset" if banked == 1 else "resets"
+        return (ResetOffer(
+            provider_id=account.provider_id,
+            account_key=account.key,
+            status="available",
+            title=f"{banked} {word} available",
+            quantity=banked,
+            redeemable=True,
+            redeemable_in_fastprompter=True,
+            source="codex-rateLimitResetCredits-count"),)
+    return ()
 
 
 def _windows_from(result: dict) -> list:

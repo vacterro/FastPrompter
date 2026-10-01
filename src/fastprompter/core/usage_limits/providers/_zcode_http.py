@@ -275,6 +275,177 @@ class _NoQuotaRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("quota redirects are not accepted")
 
 
+# -- Coding Plan reset cards (T-1360) ----------------------------------------
+# A SECOND, deliberately separate read path. The quota endpoint above takes
+# the PLAN API key; the reset-card inventory is account-scoped and is proven
+# from the installed ZCode client (evidence
+# .saipen/evidence/t1360/zcode_reset_route_discovery.json):
+#
+#   GET https://zcode.z.ai/api/v1/coding-plan/reset/status
+#   Authorization: Bearer <zcodejwttoken>          (from credentials.json)
+#   X-Bigmodel-Authorization: <oauth:zai/bigmodel access_token>
+#   Bigmodel-Target-Type: PERSONAL
+#   -> {"code": 0, "data": {
+#        "available_five_hour_resets": [{"expire_at": <epoch ms>}],
+#        "available_week_resets": [{"expire_at": <epoch ms>}],
+#        "latest_five_hour_reset_history": {"used_at": ms} | null,
+#        "latest_week_reset_history": {"used_at": ms} | null,
+#        "has_unread_history": bool}}
+#
+# The client's own rule for availability is expire_at strictly in the
+# future; history used_at times are NOT availability. Consumption
+# (POST .../use) is a paid-entitlement mutation and is NOT wired here.
+
+_RESET_STATUS_PATH = "/api/v1/coding-plan/reset/status"
+_RESET_ALLOWED_HOSTS = frozenset({"zcode.z.ai"})
+_RESET_TIMEOUT_CAP_S = 15.0
+_RESET_MAX_BODY_BYTES = 512 * 1024
+# Keys of the vendor payload that are NOT card arrays.
+_RESET_META_KEYS = frozenset({"has_unread_history"})
+
+
+def default_credentials_path() -> str:
+    """ZCode's own credential store, where the signed-in account tokens live."""
+    home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
+    if not home:
+        return ""
+    return str(Path(home) / ".zcode" / "v2" / "credentials.json")
+
+
+def _maas_token_key(plan_id: str) -> str:
+    """The vendor OAuth token key for one plan family (from the client)."""
+    return ("oauth:bigmodel:access_token"
+            if "bigmodel" in str(plan_id or "") else "oauth:zai:access_token")
+
+
+def reset_cards_url() -> str:
+    """The reset-status URL. FIXED host and path, env overrides refused.
+
+    ``ZCODE_BASE_URL`` is the vendor client's own redirection primitive; for
+    a process holding account tokens it is exactly what must NOT move this
+    endpoint, so the URL is derived from nothing but the vendor constants.
+    """
+    return f"https://zcode.z.ai{_RESET_STATUS_PATH}"
+
+
+def _reset_request(request, timeout: float):
+    """One authenticated GET of the reset inventory. Seams: tests replace it."""
+    endpoint = urlsplit(request.full_url)
+    if endpoint.scheme != "https" or endpoint.hostname not in _RESET_ALLOWED_HOSTS:
+        raise ValueError("unrecognized reset endpoint")
+    context = ssl.create_default_context()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=context), _NoQuotaRedirect())
+    return opener.open(request, timeout=timeout)  # nosec B310 - fixed vendor host
+
+
+def read_reset_cards(entry: dict, deadline: float, *,
+                     creds_path: str = "") -> dict:
+    """Fetch one plan's Coding Plan reset cards. Never raises, never leaks.
+
+    Returns ``{"cards": [{"kind", "expire_at"}], "history": {...}}`` (the
+    provider maps these to provider-neutral offers) or ``{"error": (code,
+    summary)}``. Error summaries are built from HTTP status, the vendor's
+    own message or an exception TYPE name — never from the request, so the
+    account tokens cannot reach a log, tooltip or snapshot.
+
+    An auth failure or a missing signed-in session is reported as an ERROR,
+    not as "zero cards": an inventory FastPrompter cannot read is
+    unavailable, not empty.
+    """
+    creds = {}
+    try:
+        with open(creds_path or default_credentials_path(),
+                  encoding="utf-8") as handle:
+            creds = json.load(handle)
+        if not isinstance(creds, dict):
+            creds = {}
+    except (OSError, ValueError):
+        creds = {}
+    jwt = str(creds.get("zcodejwttoken") or "").strip()
+    maas = str(creds.get(_maas_token_key(str(entry.get("id") or ""))) or "").strip()
+    if not jwt or not maas:
+        return {"error": ("reset_auth_unavailable",
+                          "signed-in Coding Plan session required — no ZCode "
+                          "account credentials on disk (an API key alone "
+                          "cannot read the reset inventory)")}
+    remaining = deadline - time.monotonic()
+    if remaining <= 0.1:
+        return {"error": ("deadline_exceeded",
+                          "no time left in this sweep to read ZCode reset "
+                          "cards")}
+    request = urllib.request.Request(reset_cards_url(), method="GET")
+    request.add_header("Authorization", f"Bearer {jwt}")
+    request.add_header("X-Bigmodel-Authorization", maas)
+    request.add_header("Bigmodel-Target-Type", "PERSONAL")
+    request.add_header("Accept", "application/json")
+    try:
+        response = _reset_request(request, min(remaining, _RESET_TIMEOUT_CAP_S))
+        with response:
+            raw = response.read(_RESET_MAX_BODY_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        code = "reset_auth_failed" if exc.code in (401, 403) else "http_error"
+        return {"error": (code, f"ZCode reset endpoint returned HTTP {exc.code}")}
+    except urllib.error.URLError as exc:
+        return {"error": ("network_error",
+                          f"could not reach the ZCode reset endpoint "
+                          f"({type(exc.reason).__name__ if exc.reason else 'URLError'})")}
+    except (ValueError, ssl.SSLError, OSError) as exc:
+        return {"error": ("reset_bad_response",
+                          f"ZCode reset endpoint: {type(exc).__name__}")}
+    if len(raw) > _RESET_MAX_BODY_BYTES:
+        return {"error": ("reset_bad_response",
+                          "ZCode reset response too large")}
+    try:
+        envelope = json.loads(raw.decode("utf-8", "replace"))
+    except (ValueError, TypeError):
+        return {"error": ("reset_bad_response",
+                          "ZCode reset endpoint did not return JSON")}
+    if not isinstance(envelope, dict) or not _is_success(envelope):
+        message = _envelope_message(envelope)
+        lowered = message.lower()
+        if "404" in lowered or "not_found" in lowered:
+            return {"error": ("reset_route_unavailable",
+                              "ZCode reset endpoint is not available for this "
+                              "account/deployment")}
+        return {"error": ("vendor_error",
+                          f"ZCode reset endpoint refused: {message[:120]}"
+                          if message else "ZCode reset endpoint refused")}
+    data = envelope.get("data")
+    if not isinstance(data, dict):
+        return {"error": ("reset_bad_response",
+                          "ZCode reset endpoint returned no data object")}
+    cards: list[dict] = []
+    for source_key, kind in (("available_five_hour_resets", "five_hour"),
+                             ("available_week_resets", "weekly")):
+        rows = data.get(source_key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            expire = _epoch(row.get("expire_at"))
+            if expire is None:
+                continue          # the client's own rule: no finite expiry, no card
+            cards.append({"kind": kind, "expire_at": expire})
+    cards.sort(key=lambda card: card["expire_at"])
+    history = {key: data.get(key) for key in data if key not in _RESET_META_KEYS
+               and key not in ("available_five_hour_resets",
+                               "available_week_resets")}
+    # Normalise the two known history rows to epoch seconds, so a consumer
+    # never has to know which fields the vendor still sends in milliseconds.
+    for key in ("latest_five_hour_reset_history",
+                "latest_week_reset_history"):
+        row = history.get(key)
+        if isinstance(row, dict) and "used_at" in row:
+            row = dict(row)
+            used = _epoch(row.get("used_at"))
+            if used is not None:
+                row["used_at"] = used
+            history[key] = row
+    return {"cards": cards, "history": history}
+
+
 def _request(url: str, api_key: str, timeout: float) -> dict:
     """One authenticated GET. Returns the decoded envelope or raises."""
     endpoint = urlsplit(url)

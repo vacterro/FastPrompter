@@ -33,7 +33,10 @@ from fastprompter.core.usage_limits.model import (
     UsageWindow,
     account_has_usage,
     account_usable_now,
+    banked_reset_count,
+    current_reset_offers,
     display_windows,
+    format_offer_expiry,
     reserve_advice,
     resolved_windows,
 )
@@ -151,12 +154,19 @@ class LimitOverview(QWidget):
                 # user to infer it from a second 0%/100% bar pair.
                 for advice in reserve_advice(shot):
                     rows.append(("advice", advice, shot))
-            if getattr(shot, "banked_resets", None):
-                b_count = shot.banked_resets
-                res_suffix = "s" if b_count != 1 else ""
-                rows.append(("banked_resets",
-                             f"★ {b_count} usage limit reset{res_suffix} available (/usage to redeem)",
-                             shot))
+            # Manual reset offers (T-1360): one row per CURRENT offer, with
+            # the shared "expires ..." formatter. The vendor capability, not
+            # the vendor NAME, decides the button: Codex offers carry a
+            # proven direct redemption; Claude / ZCode offers open the
+            # vendor's own usage page instead of a fake Activate.
+            import time as _time
+            for offer in current_reset_offers(shot, now=_time.time()):
+                expiry = format_offer_expiry(offer.expires_at_epoch,
+                                             now=_time.time())
+                text = f"★ {offer.title or 'reset'}"
+                if expiry:
+                    text += f" · {expiry}"
+                rows.append(("reset_offer", (text, offer), shot))
         if not rows:
             hiding = (str(self.main_win.data.get(
                 "limit_gauges_hide_zero_usage", "False")) == "True"
@@ -167,29 +177,54 @@ class LimitOverview(QWidget):
         self._rows = rows
         self.setFixedHeight(self._content_height())
 
-        # Create interactive buttons for any banked_resets rows
+        # Create interactive buttons for reset-offer rows: Activate only
+        # where the provider's redemption is proven, otherwise the vendor's
+        # own usage page (T-1360 capability rule).
         y = self.PAD
-        for index, (kind, _payload, shot) in enumerate(self._rows):
+        for index, (kind, payload, shot) in enumerate(self._rows):
             if kind == "account":
                 if index:
                     y += self.GROUP_GAP
                 y += self.HEADER_H
             elif kind == "pool":
                 y += self.POOL_H
-            elif kind == "banked_resets":
-                btn = QPushButton("Activate reset", self)
+            elif kind == "reset_offer":
+                text, offer = payload
+                direct = bool(offer.redeemable_in_fastprompter)
+                if direct:
+                    btn = QPushButton("Activate reset", self)
+                    btn.setToolTip(
+                        "Consume 1 banked reset credit to refill quota "
+                        "immediately")
+                    btn.clicked.connect(
+                        lambda checked=False, s=shot:
+                        self._prompt_activate_reset(s))
+                else:
+                    from fastprompter.ui.limit_gauges import _RESET_OPEN_URLS
+                    url = _RESET_OPEN_URLS.get(shot.account.provider_id, "")
+                    btn = QPushButton("Open Usage", self)
+                    btn.setToolTip(
+                        f"{shot.account.display_name} resets are redeemed at "
+                        f"the vendor — open its usage page")
+                    btn.clicked.connect(
+                        lambda checked=False, u=url: self._open_usage_page(u))
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                btn.setToolTip("Consume 1 banked reset credit to refill quota immediately")
                 btn.setStyleSheet(
                     "QPushButton { font-size: 10px; font-weight: bold; padding: 1px 6px; }"
                 )
-                btn.clicked.connect(lambda checked=False, s=shot: self._prompt_activate_reset(s))
                 self._buttons.append((btn, y))
                 y += self.ROW_H
             else:
                 y += self.ROW_H
         self._layout_buttons()
         self.update()
+
+    def _open_usage_page(self, url: str):
+        if not url:
+            return
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(url))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -209,7 +244,8 @@ class LimitOverview(QWidget):
         if shot is None or not getattr(shot, "account", None):
             return
         account = shot.account
-        banked = getattr(shot, "banked_resets", 0) or 0
+        import time as _t
+        banked = banked_reset_count(shot, now=_t.time())
         res_word = "reset" if banked == 1 else "resets"
         ans = QMessageBox.question(
             self,
@@ -261,7 +297,7 @@ class LimitOverview(QWidget):
                 height += self.HEADER_H + (self.GROUP_GAP if index else 0)
             elif kind == "pool":
                 height += self.POOL_H
-            elif kind == "banked_resets":
+            elif kind == "reset_offer":
                 height += self.ROW_H
             else:
                 height += self.ROW_H
@@ -317,8 +353,8 @@ class LimitOverview(QWidget):
                 elif kind == "advice":
                     self._paint_advice(painter, pal, y, width, payload)
                     y += self.ROW_H
-                elif kind == "banked_resets":
-                    self._paint_banked(painter, pal, y, width, payload)
+                elif kind == "reset_offer":
+                    self._paint_banked(painter, pal, y, width, payload[0])
                     y += self.ROW_H
                 else:
                     self._paint_window(painter, pal, y, width, payload, shot)
@@ -345,10 +381,12 @@ class LimitOverview(QWidget):
         plan = getattr(shot, "plan_type", None) if shot is not None else None
         if plan:
             title = f"{title} ({plan})"
-        banked = getattr(shot, "banked_resets", None) if shot is not None else None
+        import time as _t
+        banked = (banked_reset_count(shot, now=_t.time())
+                  if shot is not None else None)
         if banked:
             res_suffix = "s" if banked != 1 else ""
-            title = f"{title} [{banked} banked reset{res_suffix}]"
+            title = f"{title} [{banked} reset{res_suffix}]"
         v_color = reset_color(self.main_win, getattr(account, "provider_id", ""))
         pen_col = QColor(v_color) if v_color else pal["good"]
         painter.setPen(QPen(pen_col, 1))

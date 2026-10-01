@@ -69,7 +69,10 @@ from fastprompter.core.usage_limits.model import (
     account_usable_now,
     base_key,
     display_windows,
+    format_offer_expiry,
+    manual_reset_count,
     reserve_advice,
+    reset_offer_rows,
     resolved_windows,
 )
 from fastprompter.core.usage_limits.service import UsageLimitService
@@ -83,6 +86,14 @@ from fastprompter.ui.limit_colors import limit_palette, reset_color
 from fastprompter.ui.qt_lifetime import weak_qt_callback
 
 _KNOWN_WINDOW_MIN = {FIVE_HOUR: 300, WEEKLY: 10080, MONTHLY: 43200}
+
+# Where a non-activatable manual reset offer sends the user (T-1360): the
+# vendor's own usage surface, never an invented deep link. Codex is absent
+# because its redemption IS proven and gets a real Activate button.
+_RESET_OPEN_URLS = {
+    "claude": "https://claude.ai/settings/usage",
+    "zcode": "https://zcode.z.ai",
+}
 
 # Bars per account cluster — see LimitGauges.MIN_BARS/MAX_BARS.
 _MIN_BARS = 2
@@ -312,20 +323,31 @@ class LimitGauges(QWidget):
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
 
-        snap = self._service.state_copy
-        banked_accounts = []
-        for a in self._visible_accounts():
-            s = snap.snapshots.get(a.key)
-            if s and getattr(s, "banked_resets", 0):
-                banked_accounts.append((a, s))
-
-        for a, s in banked_accounts:
-            cnt = s.banked_resets
-            res_word = "reset" if cnt == 1 else "resets"
-            act = menu.addAction(f"★ Activate {a.display_name} Reset ({cnt} {res_word})...")
-            act.triggered.connect(lambda checked=False, acc=a, shot=s: self._prompt_activate_reset(acc, shot))
-
-        if banked_accounts:
+        # Reset actions come from DISCOVERED SNAPSHOTS with current offers,
+        # not from _visible_accounts(): an exhausted account hidden by the
+        # ordinary filters must still expose its reset (T-1360). Only an
+        # explicit settings-hide removes an account's actions.
+        for action in self._reset_menu_actions():
+            if action.activate:
+                from fastprompter.core.usage_limits.model import (
+                    banked_reset_count as _count,
+                )
+                cnt = _count(action.snapshot)
+                res_word = "reset" if cnt == 1 else "resets"
+                act = menu.addAction(
+                    f"★ Activate {action.account.display_name} Reset "
+                    f"({cnt} {res_word})...")
+                act.triggered.connect(
+                    lambda checked=False, acc=action.account,
+                    shot=action.snapshot: self._prompt_activate_reset(acc, shot))
+            else:
+                act = menu.addAction(
+                    f"★ {action.account.display_name} — "
+                    f"{action.offers[0].title} · Open {action.account.provider_id.title()} Usage...")
+                act.triggered.connect(
+                    lambda checked=False, url=action.open_url:
+                    self._open_reset_page(url))
+        if self._reset_menu_actions():
             menu.addSeparator()
 
         act_refresh = menu.addAction("Refresh Limits Now")
@@ -338,6 +360,39 @@ class LimitGauges(QWidget):
             act_settings.triggered.connect(self.main_win.open_limit_settings_dialog)
 
         menu.exec(event.globalPos())
+
+    # Where a non-activatable offer sends the user: the vendor's own usage
+    # surface. Codex never uses this (its redemption is proven); Claude's
+    # page is its documented usage view; ZCode's is its client home, because
+    # no deep link into the app's reset dialog is proven from the client.
+    _RESET_OPEN_URLS = _RESET_OPEN_URLS
+
+    def _open_reset_page(self, url: str):
+        if not url:
+            return
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(url))
+
+    def _reset_menu_actions(self):
+        """Menu-worthy reset state per account, from snapshots not filters.
+
+        ``activate`` is True only when the provider's offers are directly
+        redeemable in FastPrompter (Codex). Otherwise the single action opens
+        the vendor's usage page — never a fake Activate button.
+        """
+        import collections
+
+        rows = self._reset_rows()
+        action = collections.namedtuple(
+            "ResetMenuAction", "account snapshot offers activate open_url")
+        out = []
+        for row in rows:
+            activate = any(o.redeemable_in_fastprompter for o in row.offers)
+            out.append(action(row.account, row.snapshot, row.offers, activate,
+                              self._RESET_OPEN_URLS.get(
+                                  row.account.provider_id, "")))
+        return out
 
     def _prompt_activate_reset(self, account, shot):
         from PyQt6.QtWidgets import QMessageBox
@@ -421,6 +476,26 @@ class LimitGauges(QWidget):
                 continue
             shown.append(a)
         return ordered_accounts(shown, self.main_win.data)
+
+    # -- manual reset offers (T-1360) --------------------------------------
+    # Reset offers are exceptional state the user can ACT on: they stay
+    # visible even when every usage account is hidden by the ordinary
+    # hide-zero / hide-unusable filters (an exhausted account is exactly the
+    # one holding a reset). Only the explicit settings-hide excludes an
+    # account, and no Shift is required to see them.
+
+    def _reset_rows(self, now: float | None = None):
+        """Current offers per account, independent of the bar filters."""
+        snap = self._service.state_copy
+        hidden = hidden_account_keys(self.main_win.data)
+        return reset_offer_rows(snap.snapshots, hidden_keys=hidden, now=now)
+
+    def _reset_badge_text(self) -> str:
+        """Compact topbar aggregate, e.g. ``★ 3``; empty when none."""
+        snap = self._service.state_copy
+        hidden = hidden_account_keys(self.main_win.data)
+        count = manual_reset_count(snap.snapshots, hidden_keys=hidden)
+        return f"★ {count}" if count else ""
 
     def _status_marker(self, accounts=None, snap=None) -> str:
         """Only exceptional state earns header space; counts are redundant.
@@ -617,6 +692,13 @@ class LimitGauges(QWidget):
             count_fit += 1
         return False, plain, min(account_count, count_fit)
 
+    def _reset_badge_width(self) -> int:
+        """Pixels the ★ aggregate needs; 0 when there is nothing to show."""
+        text = self._reset_badge_text()
+        if not text:
+            return 0
+        return self.fontMetrics().horizontalAdvance(text) + self.GAP_ACC
+
     def _update_width(self):
         """Size the widget to the ink, so no dead strip trails the gauge.
 
@@ -631,7 +713,8 @@ class LimitGauges(QWidget):
             clusters = self._placeholder_width()
         else:
             clusters = self._clusters_width(accounts, self._last_prefer_labels)
-        w = (self.PAD * 2 + self._status_width(accounts) + clusters)
+        w = (self.PAD * 2 + self._status_width(accounts) + clusters
+             + self._reset_badge_width())
         w = min(w, self.MAX_WIDGET_W)
         target = w if not accounts and self._has_any_accounts() else max(self.PAD * 2 + 14, w)
         if self.width() != target:
@@ -759,6 +842,44 @@ class LimitGauges(QWidget):
                 return f"updated {int(age // 3600)}h ago"
             return f"updated {int(age // 86400)}d ago"
 
+        def _resets_section() -> str:
+            """The manual-reset panel — independent of the bar filters.
+
+            Rendered exactly once per tooltip, with or without Shift: the
+            section is exceptional state, not extra detail. Not named "Next
+            reset" on purpose: that phrase is the automatic refill timing.
+            """
+            rows = self._reset_rows(now=tooltip_now)
+            if not rows:
+                return ""
+            chunk = [
+                "<div style='font-weight:bold; font-size:12px; color:#ffd700; "
+                "border-bottom:1px solid #5a4f32; padding-bottom:2px; "
+                "margin-top:6px; margin-bottom:3px;'>Resets</div>",
+            ]
+            for row in rows:
+                name = html.escape(self._elide(
+                    account_display_name(row.account, self.main_win.data),
+                    self.NAME_CHARS))
+                v_color = reset_color(
+                    self.main_win, getattr(row.account, "provider_id", ""))
+                name_style = (f" style='color:{v_color};'"
+                              if v_color else "")
+                for offer in row.offers:
+                    title = html.escape(self._elide(
+                        offer.title or "reset", self.LABEL_CHARS))
+                    chunk.append(
+                        f"<div style='padding-top:2px;'>"
+                        f"<span style='color:#4FB6A8; font-weight:bold;'>★</span> "
+                        f"<b{name_style}>{name}</b> — {title}</div>")
+                    expiry = format_offer_expiry(
+                        offer.expires_at_epoch, now=tooltip_now)
+                    if expiry:
+                        chunk.append(
+                            f"<div style='color:#77705d; font-size:10px; "
+                            f"padding-left:14px;'>{expiry}</div>")
+            return "".join(chunk)
+
         if ignore_filters:
             accounts = ordered_accounts(list(snap.accounts), self.main_win.data)
             hidden = []
@@ -788,6 +909,7 @@ class LimitGauges(QWidget):
                     parts.append(f"<div style='color:#666666; font-size:10px;'>hidden in settings: {len(manually_hidden)}</div>")
             else:
                 parts.append("<div style='color:#888888; font-style:italic;'>no accounts selected</div>")
+            parts.append(_resets_section())
             parts.append("</body></html>")
             return "".join(parts)
 
@@ -817,9 +939,11 @@ class LimitGauges(QWidget):
             freshness = (f" <span style='color:#77705d; font-size:9px;'>"
                          f"[{age}]</span>" if age else "")
             banked = ""
-            if getattr(s, "banked_resets", None):
-                res_word = "reset" if s.banked_resets == 1 else "resets"
-                banked = f" <span style='color:#4FB6A8; font-size:10px; font-weight:bold;'>[{s.banked_resets} banked {res_word}]</span>"
+            from fastprompter.core.usage_limits.model import banked_reset_count
+            reset_count = banked_reset_count(s, now=tooltip_now)
+            if reset_count:
+                res_word = "reset" if reset_count == 1 else "resets"
+                banked = f" <span style='color:#4FB6A8; font-size:10px; font-weight:bold;'>[{reset_count} {res_word}]</span>"
 
             # Freebuff total spendable (daily + wallet) as one amount pill, the
             # vendor's own quick-glance number; the detail rows below explain
@@ -883,13 +1007,8 @@ class LimitGauges(QWidget):
                         f"<td width='99%' style='white-space:nowrap;'>{reset_str}</td>"
                         f"</tr>"
                     )
-                if getattr(s, "banked_resets", None):
-                    res_word = "reset" if s.banked_resets == 1 else "resets"
-                    parts.append(
-                        f"<tr><td colspan='4' style='color:#4FB6A8; padding-left:4px; font-size:10px; padding-top:2px; padding-bottom:3px;'>"
-                        f"★ {s.banked_resets} usage limit {res_word} available<br>"
-                        f"run <code>/usage</code> in CLI to redeem</td></tr>"
-                    )
+                if not readable and not banked_reset_count(s, now=tooltip_now):
+                    parts.append("<tr><td colspan='4' style='color:#777777; font-style:italic; padding-left:6px;'>no readable quota window</td></tr>")
                 meta = getattr(s, "provider_metadata", None) or {}
                 wallet = meta.get("wallet_balance")
                 if isinstance(wallet, (int, float)) and wallet > 0:
@@ -935,6 +1054,8 @@ class LimitGauges(QWidget):
 
         parts.append("</table>")
 
+        parts.append(_resets_section())
+
         if hidden:
             h_names = html.escape(self._elide(
                 ", ".join(account_display_name(a, self.main_win.data)
@@ -977,6 +1098,7 @@ class LimitGauges(QWidget):
             if not accounts:
                 if self._has_any_accounts():
                     self._paint_all_filtered(p, x, 2, bar_h, pal)
+                self._paint_reset_badge(p, pal)
                 return
             avail_w = max(0, w - x - self.PAD)
             show_labels, _per_cluster, n_fit = self._fit_layout(
@@ -1012,8 +1134,24 @@ class LimitGauges(QWidget):
                 p.setPen(QPen(pal["dim"], 1))
                 p.drawText(x + 1, 2, w - x - 2, bar_h,
                            Qt.AlignmentFlag.AlignVCenter, f"+{omitted}")
+            self._paint_reset_badge(p, pal)
         finally:
             p.end()
+
+    def _paint_reset_badge(self, p, pal):
+        """The ★ N manual-reset aggregate, right of the quota marks.
+
+        Painted in BOTH states — accounts visible or all filtered — because
+        reset offers are independent of the usage filters (T-1360)."""
+        text = self._reset_badge_text()
+        if not text:
+            return
+        width = self.fontMetrics().horizontalAdvance(text)
+        x = max(self.PAD, self.width() - self.PAD - width)
+        p.setFont(self.font())
+        p.setPen(QPen(QColor("#4FB6A8"), 1))
+        p.drawText(x, 2, width, self.height() - 4,
+                   Qt.AlignmentFlag.AlignVCenter, text)
 
     def _draw_bar(self, p, x, y, h, rem, pal, mode, account=None):
         edge = pal["edge"] if mode == "live" else pal["dim"]

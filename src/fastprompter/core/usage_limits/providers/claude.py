@@ -48,6 +48,7 @@ from fastprompter.core.usage_limits.model import (
     UNAVAILABLE,
     WEEKLY,
     AccountRef,
+    ResetOffer,
     UsageSnapshot,
     UsageWindow,
     canonical_path,
@@ -314,6 +315,7 @@ class ClaudeProvider(UsageProvider):
             "windows": reading["windows"],
             "captured_at": reading["captured_at"],
             "cache": reading["source"],
+            "raw": reading.get("raw"),
         }
 
     # -- source 1: Claude Code status-line cache --------------------------
@@ -368,6 +370,8 @@ class ClaudeProvider(UsageProvider):
             "captured_at": (float(captured_at)
                             if isinstance(captured_at, (int, float)) else None),
             "cache": str(cache_path),
+            # Full cache payload for the defensive campaign scan (T-1360).
+            "raw": payload,
         }
 
     # -- source 2: Claude Desktop usage sampler ---------------------------
@@ -513,6 +517,22 @@ class ClaudeProvider(UsageProvider):
             status = OK
         sources = sorted({str(slot.get("source") or "") for slot in merged.values()
                           if slot.get("source")})
+        # Defensive campaign scan (T-1360): run over the FIRST-PARTY payloads
+        # this probe actually read. Today's CLI/statusline payloads carry no
+        # campaign metadata, so this is normally empty — the point is that a
+        # future payload that does carry offers needs no schema change here
+        # and can never be misread (availability must be explicit).
+        campaign_offers: list[ResetOffer] = []
+        seen_campaigns: set[tuple] = set()
+        for reading in (cli, bridge, desktop):
+            raw = reading.get("raw") if isinstance(reading, dict) else None
+            for offer in _campaign_offers(raw, account, now):
+                signature = (offer.source, offer.title,
+                             offer.target_kind, offer.expires_at_epoch)
+                if signature in seen_campaigns:
+                    continue
+                seen_campaigns.add(signature)
+                campaign_offers.append(offer)
         return UsageSnapshot(
             account=account, status=status, windows=windows,
             fetched_at=fetched_at,
@@ -524,7 +544,112 @@ class ClaudeProvider(UsageProvider):
                 "sources": sources,
                 "blocked_windows": sorted(blocks),
             },
+            reset_offers=tuple(campaign_offers),
         )
+
+
+# -- manual reset offers: defensive campaign parsing (T-1360) ----------------
+# No first-party Claude payload FastPrompter reads today carries reset-offer
+# metadata (evidence .saipen/evidence/t1360/claude_reset_source_discovery.json),
+# and the CLI is not logged in on this machine to fetch one that might. So
+# NOTHING is hard-coded about a vendor campaign schema: this parser recognises
+# a generic campaign SHAPE wherever it appears in the payloads the provider
+# already reads (the CLI /usage JSON envelope, the status-line cache), and
+# only when the vendor states availability EXPLICITLY. null/absent metadata
+# is never "available". Redemption is not proven anywhere, so Claude offers
+# are never directly activatable — the UI opens Claude's usage page instead.
+
+# Explicit vendor statements that a campaign entry is available. Anything
+# else — including null, false, or a missing key — is NOT availability.
+_AVAILABLE_STATUSES = frozenset({"available", "active", "granted"})
+# Keys whose value may carry the explicit availability marker.
+_AVAILABILITY_KEYS = ("available", "redeemable")
+# Known non-campaign containers of the two first-party payloads: their
+# contents are quota windows and envelopes, never offers.
+_KNOWN_NON_CAMPAIGN_KEYS = frozenset({
+    "rate_limits", "captured_at", "schema_version", "source", "result",
+    "windows", "is_error", "subtype", "type", "session_id", "usage",
+    "duration_ms", "duration_api_ms", "total_cost_usd", "num_turns",
+    "modelUsage", "permission_denials", "fast_mode_state", "uuid",
+})
+
+
+def _campaign_target_kind(raw) -> str:
+    text = str(raw or "").strip().lower()
+    if "week" in text:
+        return WEEKLY
+    if "session" in text or "five" in text or text in ("5h", "5_hour"):
+        return FIVE_HOUR
+    return text
+
+
+def _campaign_expiry(raw) -> float | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        value = float(raw)
+        if value <= 0:
+            return None
+        if value > 1e11:
+            value /= 1000.0
+        return value if 1e9 < value < 1e11 else None
+    if isinstance(raw, str):
+        return _parse_reset(raw)
+    return None
+
+
+def _campaign_entry_is_available(entry: dict) -> bool:
+    for key in _AVAILABILITY_KEYS:
+        if entry.get(key) is True:
+            return True
+    status = entry.get("status")
+    return (isinstance(status, str)
+            and status.strip().lower() in _AVAILABLE_STATUSES)
+
+
+def _campaign_offers(payload, account: AccountRef | None = None,
+                     now: float | None = None) -> tuple:
+    """Campaign-shaped reset offers in a first-party payload, or ``()``.
+
+    Deliberately conservative: a payload names an offer only through an
+    explicit availability statement; titles/targets/expiries are read from
+    well-known key spellings and DROPPED when malformed. Only the four
+    vendor-visible fields ever reach the ResetOffer — no payload passthrough,
+    so no credential can ride along even if a future payload embeds one.
+    """
+    if not isinstance(payload, dict):
+        return ()
+    offers = []
+    for key, value in payload.items():
+        if key in _KNOWN_NON_CAMPAIGN_KEYS:
+            continue
+        entries = value if isinstance(value, list) else [value]
+        if not isinstance(value, (list, dict)):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if not _campaign_entry_is_available(entry):
+                continue
+            target_raw = (entry.get("target") or entry.get("reset_type")
+                          or entry.get("resetType") or entry.get("window"))
+            expires = _campaign_expiry(
+                entry.get("expires_at") or entry.get("expiresAt")
+                or entry.get("expire_at") or entry.get("expireAt")
+                or entry.get("valid_until"))
+            title = str(entry.get("title") or entry.get("name")
+                        or entry.get("description") or "").strip()
+            offers.append(ResetOffer(
+                provider_id="claude",
+                account_key=account.key if account is not None else "",
+                target_kind=_campaign_target_kind(target_raw),
+                status="available",
+                title=title or "reset",
+                expires_at_epoch=expires,
+                redeemable=True,
+                redeemable_in_fastprompter=False,
+                source=f"claude-campaign:{key}"))
+    return tuple(offers)
 
 
 def _claude_ran_recently(account: AccountRef, now: float,

@@ -77,6 +77,7 @@ src/fastprompter/_extract.txt
 !.saipen/kitchen/release_scope/
 !.saipen/kitchen/digest.md
 !.saipen/kitchen/release_receipt.json
+!.saipen/kitchen/cohort_registry.json
 
 # agent runtime dir (workbuddy skill host)
 .workbuddy-ai/
@@ -107,4 +108,3 @@ src/fastprompter/_extract.txt
 .saipen/saitranslate/kitchen/*.py
 
 /_RECOVERY_*/
-db_dump.json

@@ -106,38 +106,68 @@ class TestLimitOverview(unittest.TestCase):
         assert view.height() == expected
         assert view.minimumHeight() == view.maximumHeight()  # setFixedHeight
         retire(view)
-    def test_banked_resets_row_and_header_rendered(self):
+    @staticmethod
+    def _offers(account, title, activatable=True):
+        from fastprompter.core.usage_limits.model import ResetOffer
+        return (ResetOffer(provider_id=account.provider_id,
+                           account_key=account.key, status="available",
+                           title=title, redeemable=True,
+                           redeemable_in_fastprompter=activatable,
+                           source="test"),)
+
+    def test_reset_offer_row_and_header_rendered(self):
         codex = _account("codex", "c_banked", "Codex Banked")
         snapshot = UsageSnapshot(
             codex, OK,
             [UsageWindow(FIVE_HOUR, 300, True, 40, 60, None)],
             banked_resets=2,
+            reset_offers=self._offers(codex, "2 resets available"),
         )
         view = self._overview(_Service([codex], {codex.key: snapshot}))
         kinds = [kind for kind, _p, _s in view._rows]
-        assert "banked_resets" in kinds
-        banked_row = next(payload for kind, payload, _s in view._rows if kind == "banked_resets")
-        assert "★ 2 usage limit resets available" in banked_row
-        expected = (view.PAD * 2 + view.HEADER_H + view.ROW_H * 2)  # 1 window + 1 banked row
+        assert "reset_offer" in kinds
+        offer_row = next(payload for kind, payload, _s in view._rows
+                         if kind == "reset_offer")
+        assert "★ 2 resets available" in offer_row[0]
+        expected = (view.PAD * 2 + view.HEADER_H + view.ROW_H * 2)  # 1 window + 1 offer row
         assert view.height() == expected
         retire(view)
-    def test_banked_resets_singular_word(self):
+
+    def test_reset_offer_header_pill_singular_word(self):
         codex = _account("codex", "c_banked_one", "Codex One")
         snapshot = UsageSnapshot(
             codex, OK,
             [UsageWindow(FIVE_HOUR, 300, True, 40, 60, None)],
             banked_resets=1,
+            reset_offers=self._offers(codex, "1 reset available"),
         )
         view = self._overview(_Service([codex], {codex.key: snapshot}))
-        banked_row = next(payload for kind, payload, _s in view._rows if kind == "banked_resets")
-        assert "★ 1 usage limit reset available" in banked_row
+        offer_row = next(payload for kind, payload, _s in view._rows
+                         if kind == "reset_offer")
+        assert "★ 1 reset available" in offer_row[0]
         retire(view)
+
+    def test_non_activatable_offer_gets_open_usage_button(self):
+        codex = _account("claude", "c_open", "Claude Open")
+        snapshot = UsageSnapshot(
+            codex, OK,
+            [UsageWindow(FIVE_HOUR, 300, True, 40, 60, None)],
+            reset_offers=self._offers(codex, "Weekly reset",
+                                      activatable=False),
+        )
+        view = self._overview(_Service([codex], {codex.key: snapshot}))
+        assert len(view._buttons) == 1
+        btn, _y = view._buttons[0]
+        assert btn.text() == "Open Usage"
+        retire(view)
+
     def test_banked_resets_creates_activate_button(self):
         codex = _account("codex", "c_btn", "Codex Button")
         snapshot = UsageSnapshot(
             codex, OK,
             [UsageWindow(FIVE_HOUR, 300, True, 40, 60, None)],
             banked_resets=2,
+            reset_offers=self._offers(codex, "2 resets available"),
         )
         view = self._overview(_Service([codex], {codex.key: snapshot}))
         assert len(view._buttons) == 1
@@ -424,10 +454,16 @@ class TestLimitSettingsOverviewTab(unittest.TestCase):
         from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
 
         codex = _account()
+        from fastprompter.core.usage_limits.model import ResetOffer
         snapshots = {codex.key: UsageSnapshot(
             codex, OK,
             [UsageWindow(FIVE_HOUR, 300, True, 40, 60, None)],
             banked_resets=2,
+            reset_offers=(ResetOffer(
+                provider_id="codex", account_key=codex.key,
+                status="available", title="2 resets available", quantity=2,
+                redeemable=True, redeemable_in_fastprompter=True,
+                source="test"),),
         )}
         win = _MainWin()
         win.limit_service = _Service([codex], snapshots)
@@ -451,7 +487,8 @@ class TestLimitSettingsOverviewTab(unittest.TestCase):
         dialog = LimitSettingsDialog(win)
         try:
             assert not dialog.btn_activate_reset.isHidden()
-            assert "2 banked resets" in dialog.btn_activate_reset.text()
+            assert "Activate reset" in dialog.btn_activate_reset.text()
+            assert "2 resets" in dialog.btn_activate_reset.text()
         finally:
             dialog.close()
             retire(dialog)

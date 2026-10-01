@@ -402,14 +402,34 @@ class LimitSettingsDialog(QDialog):
         self.tabs.addTab(page, "Limits")
 
     def _activate_first_banked_reset(self):
+        """One button, dispatched by PROVIDER CAPABILITY (T-1360).
+
+        The first account whose offers FastPrompter can redeem directly gets
+        the real Activate flow; an offer that must be redeemed at the vendor
+        (Claude, ZCode until a route is proven) opens the vendor's usage page
+        instead of faking an activation.
+        """
+        from fastprompter.core.usage_limits.model import reset_offer_rows
+        from fastprompter.ui.limit_account_selector import hidden_account_keys
         snap = self.service.state_copy
-        for a in snap.accounts:
-            s = snap.snapshots.get(a.key)
-            if s and getattr(s, "banked_resets", 0):
-                overview = getattr(self, "overview", None)
-                if overview is not None:
-                    overview._prompt_activate_reset(s)
-                return
+        rows = reset_offer_rows(snap.snapshots,
+                                hidden_keys=hidden_account_keys(self.data))
+        if not rows:
+            return
+        direct = next((r for r in rows
+                       if any(o.redeemable_in_fastprompter for o in r.offers)),
+                      None)
+        if direct is not None:
+            overview = getattr(self, "overview", None)
+            if overview is not None:
+                overview._prompt_activate_reset(direct.snapshot)
+            return
+        from fastprompter.ui.limit_gauges import _RESET_OPEN_URLS
+        url = _RESET_OPEN_URLS.get(rows[0].account.provider_id, "")
+        if url:
+            from PyQt6.QtCore import QUrl
+            from PyQt6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(url))
 
     def _set_fill_mode(self, _index):
         """One setting for both the overview bars and the header gauge."""
@@ -445,13 +465,30 @@ class LimitSettingsDialog(QDialog):
                  if getattr(s, "status", None) == "OK")
         stale = sum(1 for s in snap.snapshots.values()
                     if getattr(s, "status", None) == "STALE")
-        banked_total = sum(getattr(s, "banked_resets", 0) or 0
-                           for s in snap.snapshots.values())
+        # Manual reset offers, provider-agnostic (T-1360): the button label
+        # and its very action derive from CAPABILITY — a proven direct
+        # redemption ("Activate") versus a vendor-page hop ("Open Usage").
+        from fastprompter.core.usage_limits.model import (
+            banked_reset_count,
+            reset_offer_rows,
+        )
+        from fastprompter.ui.limit_account_selector import (
+            hidden_account_keys as _hidden_keys,
+        )
+        offer_rows = reset_offer_rows(snap.snapshots,
+                                      hidden_keys=_hidden_keys(self.data))
+        banked_total = sum(banked_reset_count(r.snapshot) for r in offer_rows)
+        can_activate = any(o.redeemable_in_fastprompter
+                           for r in offer_rows for o in r.offers)
         btn = getattr(self, "btn_activate_reset", None)
         if btn is not None:
-            if banked_total > 0:
+            if banked_total > 0 and can_activate:
                 res_suffix = "s" if banked_total != 1 else ""
-                btn.setText(f"Activate reset ({banked_total} banked reset{res_suffix})")
+                btn.setText(f"Activate reset ({banked_total} reset{res_suffix})")
+                btn.show()
+            elif banked_total > 0:
+                res_suffix = "s" if banked_total != 1 else ""
+                btn.setText(f"Open Usage ({banked_total} reset{res_suffix})")
                 btn.show()
             else:
                 btn.hide()
@@ -495,11 +532,14 @@ class LimitSettingsDialog(QDialog):
                 if not is_hidden:
                     continue
                 s = snap.snapshots.get(a.key)
-                br = getattr(s, "banked_resets", 0) or 0
+                from fastprompter.core.usage_limits.model import (
+                    banked_reset_count,
+                )
+                br = banked_reset_count(s)
                 if br > 0:
                     name = account_display_name(a, self.data)
                     res_w = "reset" if br == 1 else "resets"
-                    hidden_banked.append(f"{name} ({br} banked {res_w})")
+                    hidden_banked.append(f"{name} ({br} {res_w})")
             if hidden_banked:
                 hb_label.setText(
                     "⚠ Hidden: " + ", ".join(hidden_banked)

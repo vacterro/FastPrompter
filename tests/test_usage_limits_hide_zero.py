@@ -544,15 +544,35 @@ def test_hidden_accounts_with_banked_resets_are_announced(win):
     acc_unticked = AccountRef("codex", "codex_off", "Codex Off", "auto_default")
     acc_visible = AccountRef("claude", "claude_on", "Claude On", "auto_default")
 
+    from fastprompter.core.usage_limits.model import ResetOffer
+
+    def _offers(account, count):
+        # Producer shape since T-1360: banked count rides beside generic
+        # offers (an aggregate for a bare vendor count, one per identified
+        # card otherwise).
+        if not count:
+            return ()
+        word = "reset" if count == 1 else "resets"
+        return (ResetOffer(
+            provider_id=account.provider_id, account_key=account.key,
+            status="available", title=f"{count} {word} available",
+            quantity=count,
+            redeemable=True,
+            redeemable_in_fastprompter=account.provider_id == "codex",
+            source="test"),)
+
     snap_zero = _make_snapshot("codex", five_h_used=100.0, weekly_used=100.0)
     snap_zero = dataclasses.replace(snap_zero, account=acc_zero,
-                                    banked_resets=2)
+                                    banked_resets=2,
+                                    reset_offers=_offers(acc_zero, 2))
     snap_unticked = _make_snapshot("codex", five_h_used=80.0, weekly_used=10.0)
     snap_unticked = dataclasses.replace(snap_unticked, account=acc_unticked,
-                                        banked_resets=1)
+                                        banked_resets=1,
+                                        reset_offers=_offers(acc_unticked, 1))
     snap_visible = _make_snapshot("claude", five_h_used=50.0, weekly_used=5.0)
     snap_visible = dataclasses.replace(snap_visible, account=acc_visible,
-                                       banked_resets=3)
+                                       banked_resets=3,
+                                       reset_offers=_offers(acc_visible, 3))
 
     with win.limit_service._lock:
         win.limit_service._state.accounts = [acc_zero, acc_unticked,
@@ -570,20 +590,26 @@ def test_hidden_accounts_with_banked_resets_are_announced(win):
         dialog._refresh_overview_status()
         text = dialog.lbl_hidden_banked.text()
         assert dialog.lbl_hidden_banked.isVisibleTo(dialog)
-        assert "Codex Zero (2 banked resets)" in text
-        assert "Codex Off (1 banked reset)" in text
+        assert "Codex Zero (2 resets)" in text
+        assert "Codex Off (1 reset)" in text
         assert "Claude On" not in text
 
-        # The visible account's credits are already on screen, and its 3 are
-        # counted by the activation button, not by this warning.
-        assert "banked reset" in dialog.btn_activate_reset.text()
+        # The visible account's offers are already on screen. The capability
+        # button counts every NON-unticked offer (filtered accounts included:
+        # their resets are exactly the point) — here Codex Zero's 2 plus
+        # Claude's 3 — and says Activate because Codex is directly
+        # redeemable.
+        assert "Activate reset" in dialog.btn_activate_reset.text()
+        assert "5 resets" in dialog.btn_activate_reset.text()
 
         # No hidden credits left -> the warning disappears instead of lying.
         with win.limit_service._lock:
             win.limit_service._state.snapshots[acc_zero.key] = \
-                dataclasses.replace(snap_zero, banked_resets=0)
+                dataclasses.replace(snap_zero, banked_resets=0,
+                                    reset_offers=())
             win.limit_service._state.snapshots[acc_unticked.key] = \
-                dataclasses.replace(snap_unticked, banked_resets=None)
+                dataclasses.replace(snap_unticked, banked_resets=None,
+                                    reset_offers=())
         dialog._refresh_overview_status()
         assert not dialog.lbl_hidden_banked.isVisibleTo(dialog)
     finally:
