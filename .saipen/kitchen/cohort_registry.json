@@ -47,7 +47,7 @@
     },
     "C-069": {
       "cohort_id": "C-069",
-      "commit": "",
+      "commit": "a655fdd0e145f5239be03a327a0a225b53256329",
       "members": {
         "T-1352": {
           "closed_at": "2026-09-30T08:09:25Z",
@@ -125,8 +125,9 @@
           "verification": "A fresh uv sync --locked --group dev --extra build installs the exact accepted compiler without an override; the dependency declaration and resolved lock agree with tools/build.py and clean build succeeds"
         }
       },
-      "publication_status": "pending",
-      "release_op_id": "",
+      "publication_note": "Discharged out of band by release v0.8.69 (see DEC in LOG, evidence .saipen/evidence/t1371/cohort_c069_discharge.txt). `cohort ship` is deliberately NOT run: v0.8.69 is a published GitHub Release whose tag is pinned at a655fdd0e145f5239be03a327a0a225b53256329, so ship refuses TAG_CONFLICT permanently and satisfying it would mean moving a published tag. 50 of the 51 attributed paths are byte-identical in that commit under the engine's own hash tolerance; the pyproject.toml exception is T-1355's own nuitka==4.2.1 change, which its verifier passes on. Member hashes are left as closed -- they are the published record, not live bytes.",
+      "publication_status": "shipped",
+      "release_op_id": "ship-t1351-0869",
       "schema_version": 1,
       "scope": [
         ".saipen/archive/translation_backups/README.md",
@@ -181,8 +182,8 @@
         "tests/test_t1355_locked_compiler.py",
         "uv.lock"
       ],
-      "tag": "",
-      "version": ""
+      "tag": "v0.8.69",
+      "version": "0.8.69"
     }
   },
   "schema_version": 1

@@ -1,0 +1,255 @@
+T-1371 -- C-069 PUBLICATION DISCHARGE
+recorded 2026-10-01, agent buffy, ticket T-1371
+
+=====================================================================
+1. THE TICKET'S PREMISE WAS WRONG
+=====================================================================
+
+The board line read: "Cohort C-069 was closed but never published:
+.saipen/kitchen/cohort_registry.json still carries publication_status
+'pending' with empty commit and release_op_id, so its..."
+
+The first half is true. The conclusion drawn from it -- that the cohort's
+publication obligation is still owed -- is false. C-069's work was
+published, as release v0.8.69, and independently verified by download
+from the GitHub Release. What is stale is the cohort's own ledger row,
+not the release.
+
+This is the third time in this consolidation that a recorded figure was
+accepted without being measured (T-1382: "2x over" was 1.41x; T-1379:
+"219 literals" was 193; now T-1371: "never published" was published).
+The pattern is the defect, not the instances.
+
+=====================================================================
+2. CONTAINMENT, MEASURED AGAINST THE ORIGINAL RECORDED HASHES
+=====================================================================
+
+Method note, because my first measurement was wrong in two separate ways.
+
+(a) The first containment run compared the published tag against the
+    registry AFTER I had already re-attributed two hashes to live bytes.
+    That measured my edit, not the publication. It had to be redone
+    against .saipen/kitchen/cohort_registry.json as committed
+    (backup kept at V:/_TEMP_/cohort_registry.before.json).
+
+(b) The second run used raw sha256 equality. That is STRICTER than the
+    check being answered. closure.cohort_member_mismatches uses
+    closure.member_hash_matches, which tolerates proven line-ending
+    normalization, and release.py uses it as its own fallback after
+    _quick_hash fails. Measuring with a stricter rule than the rule
+    invents drift that does not exist. Redone with the engine's own
+    tolerance.
+
+Corrected measurement, engine tolerance, ORIGINAL recorded hashes,
+against tag v0.8.69 at a655fdd0e145f5239be03a327a0a225b53256329:
+
+  C-069: 50 of 51 attributed paths present and matching
+  C-001:  8 of 12 attributed paths present and matching
+
+The single C-069 exception:
+
+  pyproject.toml   tag/live 3eedf7cf1da61657   attributed 2bf394ee164bf134
+
+=====================================================================
+3. THE ONE EXCEPTION IS NOT UNPUBLISHED WORK -- IT IS T-1355's CHANGE
+=====================================================================
+
+T-1355's clause: "A fresh uv sync --locked --group dev --extra build
+installs the exact accepted compiler without an override; the dependency
+declaration and resolved lock agree with tools/build.py".
+
+`git show a655fdd -- pyproject.toml` is one line:
+
+  -build = ["nuitka>=4.1.2"]
+  +build = ["nuitka==4.2.1"]
+
+That IS T-1355's work, committed by the release-freeze commit itself.
+Re-ran the member's own verifier against the current bytes:
+
+  $ python -m pytest tests/test_t1355_locked_compiler.py -q
+  2 passed in 0.11s
+
+  pyproject.toml:14   build = ["nuitka==4.2.1"]
+  uv.lock:292         specifier = "==4.2.1"
+  uv.lock:505         version = "4.2.1"
+
+So the published pyproject.toml satisfies T-1355's clause. The
+attributed hash 2bf394ee164bf134 was a worktree-only identity; walking
+that path's history (71 revisions) finds no blob hashing to it, because
+it was never committed -- the equivalent change landed inside the
+release commit instead.
+
+Same for C-001's four exceptions, which are all T-1269 and belong to
+T-1375, not this ticket.
+
+=====================================================================
+4. THE PUBLICATION IS ON THE RECORD, WITH AN ARTIFACT HASH
+=====================================================================
+
+.saipen/logs/LOG-005.md (the active LOG was rotated into LOG-005):
+
+E-3665 [op: ship-t1351-0869] RUN: BUILD/SHIP: 0.8.69 published.
+  Receipt generated from the accepted cohort and verified by BOTH
+  validators ... Published and independently verified by download:
+  https://github.com/vacterro/FastPrompter/releases/download/v0.8.69/
+  FastPrompter.exe, 61958144 bytes, sha256
+  fe6a1f1bf218d55c3c7ec85ab7ca1d0aefbd96a4bbb1621165561121709b1d59,
+  identical to the accepted artefact
+
+E-3669  transition to SHIP -- 0.8.69 already published at a655fdd
+E-3670  transition to DONE -- 0.8.69 shipped and published at a655fdd
+E-3681  v0.8.69 tag and commit a655fdd untouched, not modified,
+        retagged, rebuilt or republished by this work
+E-3728  launcher push refused TAG_CONFLICT (v0.8.69 pinned at a655fdd,
+        a published GitHub Release, HEAD 21 ahead)
+
+And the drift was known at the time. .saipen/evidence/
+post_0869_pre_0870_baseline.json records the 0.8.69 suite as
+"2 failed, 4146 passed, 20 skipped" with failed_are_known = true and
+the failures named as the C-069 cohort tests.
+
+So: the cohort's content shipped, the release was published, the
+artifact was downloaded and hash-verified by a party other than the
+one that built it, and the known drift was recorded rather than hidden.
+
+=====================================================================
+5. WHY `cohort ship` MUST NOT BE FORCED
+=====================================================================
+
+  $ saipen cohort ship C-069 --dry-run
+  ok     = False
+  code   = TAG_CONFLICT
+  message= local tag v0.8.69 exists at a655fdd0e145, not HEAD
+           64661de170f4; resolve before releasing
+
+This refusal is CORRECT and PERMANENT. v0.8.69 is a live GitHub
+Release. Its tag is pinned to a655fdd, and HEAD is permanently ahead of
+any published release by design. Satisfying this check would require
+moving or retagging a published release -- destructive, outward-facing,
+and exactly what the engine is built to prevent.
+
+Forcing the check the other way (rewriting the recorded hashes to live
+bytes) is the failure mode this board line itself names as
+weak_model: "Would rewrite the recorded hashes to the live values to
+silence the two failing tests, which hides the real defect."
+
+There is a third option the engine does not have, and it is the one
+taken here: record the discharge with its true identity.
+
+=====================================================================
+6. CORRECTION TO MY OWN PRIOR FORENSICS
+=====================================================================
+
+Earlier in this ticket I reported that 6 of the drifted recorded hashes
+were "NOT FOUND" in `git cat-file --batch-all-objects`, and concluded the
+original bytes were unrecoverable, inheriting T-1351's claim.
+
+That conclusion was wrong and the method was the error. sha256[:16] is
+not a git object id -- git objects are sha1. Searching the object store
+for a sha256 prefix proves nothing. The correct test is to hash the
+candidate blob's bytes with the engine's own hash_bytes, which is what
+section 2 does. Under that test:
+
+  - C-069 README.md: the tag holds it at fe4fa171993ba340, which is
+    exactly the recorded value. The original bytes were never lost.
+  - C-069 pyproject.toml: attributed 2bf394ee164bf134 genuinely has no
+    committed blob (71 revisions scanned). That part of the earlier
+    claim was right, for the wrong reason.
+
+README.md now differs live (a18b8d05cb22b684) because of MY OWN badge
+fix, committed 64661de earlier in this ticket. Before that commit,
+live == recorded == tag. The current drift in README.md is this
+ticket's own work, not pre-existing damage.
+
+=====================================================================
+7. WHAT WAS DONE
+=====================================================================
+
+DEC: C-069's publication obligation is DISCHARGED by release v0.8.69
+(a655fdd0e145f5239be03a327a0a225b53256329). `cohort ship` is NOT run and
+the published tag is NOT moved. The registry row is stamped with the
+verified publication identity so the engine's own verdict agrees with
+reality.
+
+The recorded member hashes are left EXACTLY as the members closed them,
+because those hashes are what the published tag was built from -- 50 of
+51 of them prove out byte-for-byte. Rewriting them to live bytes would
+falsify the release record, which is the mirror image of the error this
+ticket exists to catch.
+
+The engine gap this exposes, filed as follow-on rather than fixed here:
+cohort_registry.json has exactly one writer (release.py:3095, inside
+`cohort ship`), so a cohort whose work is published by an ORDINARY
+release leaves its ledger row stale forever, and no engine path can
+record the discharge. That is why 0.8.69 shipped C-069's content while
+the row still reads "pending".
+
+Files changed by this ticket:
+  .saipen/kitchen/cohort_registry.json   C-069 row stamped (5 fields +
+                                        1 added key), 2 hashes restored
+  .saipen/BOARD.md                       T-1371 done, verify clause amended
+  .saipen/STATE.md                        next_action, blocker
+  this evidence file
+
+=====================================================================
+8. VERIFY CLAUSE AMENDMENT
+=====================================================================
+
+The clause as written cannot be satisfied and should not have been:
+
+  "cohort_member_mismatches(ROOT, C-069) returns [] ... the registry
+   entry carries a publication_status of published with its commit and
+   release_op_id populated"
+
+The first half presupposes the cohort still has something to ship. It
+does not: the cohort is published, and 2 of its 51 member hashes
+legitimately differ from the live tree because the release commit
+carried T-1355's pyproject.toml change and this ticket's own README
+badge fix post-dates the tag. Requiring [] would force either a falsified
+registry or a moved published tag.
+
+Amended to what is actually true and checkable:
+  - C-069 carries publication_status "shipped" with release_op_id
+    ship-t1351-0869, version 0.8.69, tag v0.8.69 and commit
+    a655fdd0e145f5239be03a327a0a225b53256329;
+  - at least 50 of the 51 attributed paths are byte-identical in that
+    commit under the engine's own hash tolerance;
+  - T-1355's clause passes on the published pyproject.toml and uv.lock;
+  - no published tag was moved, and `cohort ship C-069` still refuses
+    (TAG_CONFLICT) rather than having been forced.
+
+tests/test_t1371_cohort_discharge.py is the executable form of the
+amended clause. It is not satisfied by a falsified registry, and the
+negative control proves it.
+
+  $ python -m pytest tests/test_t1371_cohort_discharge.py -q
+  4 passed in 0.86s
+
+It began life as build/check_t1371_discharge.py, which was the wrong
+home: build/ is gitignored (.gitignore:20), so a check living there
+cannot be replayed from a recorded reverify command by a cold agent.
+The tracked pytest form is the durable one; the build/ copy was removed
+rather than left as a second, drifting definition of the same check.
+
+Control, rebinding both drifted paths to live bytes -- exactly the
+weak_model this board line names:
+
+  honest    : 50/51  drifted = [(T-1355, pyproject.toml)]
+  falsified : 50/51  drifted = [(T-1354, README.md)]
+
+The COUNT does not discriminate, and my first control asserted that it
+did, so it correctly reported "control fires = False". That assertion was
+wrong, not the finding. Falsifying both paths moves one out and one in:
+README's TAG bytes are the recorded ones, while pyproject's LIVE bytes
+are the tag bytes, so 50 -> 50.
+
+The discriminator is the IDENTITY of the drifted set, which is what the
+check asserts:
+
+  assert drifted == [("T-1355", "pyproject.toml", ...)]
+
+Under falsification the exception moves to T-1354/README.md and the
+check aborts. So the amended clause does not need the count to separate
+the two cases, and the falsification buys nothing anyway: it makes
+`cohort_member_mismatches == []` true while `cohort ship` still refuses
+TAG_CONFLICT, which is the empty win the original clause invited.
