@@ -37,10 +37,38 @@ import subprocess
 import sys
 from pathlib import Path
 
-_HOME = Path(os.environ.get("SAIPEN_HOME", "")).resolve() if os.environ.get("SAIPEN_HOME") else None
-if _HOME is None:
-    _HOME = Path(r"C:\Users\vac34\.agents\skills\saipen").resolve()
+_LAUNCHER_HOME = Path(r"C:\Users\vac34\.agents\skills\saipen").resolve()
+# T-1373: the conformance gate must answer from the SAME engine the launcher
+# runs, or its verdict is about a different program than the one driving the
+# project. `saipen status --json` publishes that home as `cold_route.saipen_home`;
+# it is the default here.
+#
+# `SAIPEN_HOME` used to win this lookup. It is an ambient process variable --
+# absent from HKCU and HKLM, from every shell profile, from git config and from
+# the ZAICODE instance config -- so nothing in this project ever chose it, and on
+# this machine it names a pre-T-1238 copy (98 modules, no cohort API) that
+# answers "closure provenance does not resolve" for receipts the real engine
+# accepts. That is a silent divergence: the same tree scored 52 problems through
+# it and 48 through the launcher's engine, differing only in four FAIL lines
+# about a receipt that was never wrong.
+#
+# The knob still exists, under a name that cannot be set by accident, for
+# deliberately validating against another engine generation.
+_HOME = Path(os.environ["SAIPEN_VALIDATE_HOME"]).resolve() if os.environ.get(
+    "SAIPEN_VALIDATE_HOME"
+) else _LAUNCHER_HOME
 _CANONICAL = _HOME / "tools" / "validate.py"
+
+_stale = os.environ.get("SAIPEN_HOME")
+if _stale and Path(_stale).resolve() != _HOME:
+    print(
+        f"WARN [engine-home-ignored]: SAIPEN_HOME={Path(_stale).resolve()} is set "
+        f"but this gate answers from {_HOME}, the engine the launcher runs "
+        "(`saipen status --json` -> cold_route.saipen_home). SAIPEN_HOME no "
+        "longer binds the conformance gate (T-1373); set SAIPEN_VALIDATE_HOME "
+        "to override deliberately.",
+        file=sys.stderr,
+    )
 
 if not _CANONICAL.is_file():
     print(f"FAIL: canonical SAIPEN validator not found at {_CANONICAL}", file=sys.stderr)

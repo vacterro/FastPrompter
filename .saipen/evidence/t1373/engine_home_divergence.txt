@@ -1,0 +1,125 @@
+T-1373 -- the conformance gate was answering from the wrong engine
+==============================================================
+
+Ticket as filed claimed the cause was host config and not agent-actionable.
+Both halves were wrong. The cause is a repo defect, and it is fixed here.
+
+
+1. The ticket's premise about the predicate was already wrong
+--------------------------------------------------------------
+The ticket text says the publication predicate "only accepts 'commit'". In the
+engine the launcher actually runs it already accepts `release_commit` as a
+fallback (`closure._is_published`). The four FAIL lines were real; the stated
+reason for them was not.
+
+
+2. What was really happening: three engine copies, one ambient variable
+-------------------------------------------------------------------------
+Three copies of the SAIPEN engine exist on this machine:
+
+  V:\___\VAC\__K\__CODE\_AI_STUFF_AGENTIC\_SAIPEN
+      109 modules, cohort API, closure.py 28929 B
+      This is what bin\saipen.cmd actually executes -- the launcher is one line:
+      "<python>" "V:\...\_SAIPEN\tools\saipen.py" %*
+
+  C:\Users\vac34\.agents\skills\saipen
+      101 modules, cohort API, closure.py 28929 B
+      Reported by `saipen status --json` as cold_route.saipen_home
+
+  C:\Users\vac34\AppData\Local\saipen\scheduled-source
+      98 modules, NO cohort API, closure.py 25237 B -- pre-T-1238
+      Named by the ambient process variable SAIPEN_HOME
+
+The project's tools/validate.py looked up the canonical validator as:
+
+    _HOME = os.environ.get("SAIPEN_HOME") or C:\Users\vac34\.agents\skills\saipen
+
+so the ambient variable silently won. On any process where SAIPEN_HOME was
+exported, the gate answered from the pre-T-1238 copy while the project was
+being driven by a completely different program. That is the defect: a
+conformance verdict about a program that is not the one running the project.
+
+
+3. SAIPEN_HOME cannot be durably removed from this machine
+-----------------------------------------------------------
+Measured, not assumed:
+
+  ambient SAIPEN_HOME = C:\Users\vac34\AppData\Local\saipen\scheduled-source
+  USER registry SAIPEN* = none
+  MACHINE registry SAIPEN* = none
+  shell profiles (PowerShell profile, bashrc, profile) = no assignment
+  git config --show-origin --get-regexp SAIPEN = none
+  ZAICODE instance configs = no assignment
+
+So it is not "host config" that an operator set once; it is inherited drift in
+a launcher chain, and nothing in this project ever chose it. A repo-side fix is
+the only place the divergence can actually be removed.
+
+
+4. The measurement that proves the divergence
+-----------------------------------------------
+Same tree, same arguments, same CWD, two engines:
+
+  SAIPEN_HOME=...scheduled-source  -> 52 problems, exit 1
+  env -u SAIPEN_HOME              -> 51 problems, exit 1
+  closure-provenance FAIL lines:      5  vs  0
+
+The five FAIL lines -- T-803, T-1159, T-1207, T-1223, T-1238 -- name
+'release:0.8.68'. The receipt that resolves them is
+.saipen/kitchen/release_receipt.json (3553 B, tracked, version 0.8.68, carries
+release_commit). The current engine resolves it; the stale engine does not
+recognize the release_commit key. The receipt was never wrong.
+
+
+5. The decision
+----------------
+A conformance gate must answer from the same engine the launcher runs. The
+launcher ignores SAIPEN_HOME -- it hardcodes the _SAIPEN path -- so the gate
+must not bind to it either.
+
+DEC (see LOG):
+  * tools/validate.py defaults to cold_route.saipen_home as published by
+    `saipen status --json`, i.e. C:\Users\vac34\.agents\skills\saipen.
+  * SAIPEN_HOME no longer binds the gate.
+  * The deliberate override is renamed SAIPEN_VALIDATE_HOME, a name nothing
+    else uses, so it cannot be set by accident.
+  * Whenever SAIPEN_HOME disagrees with the home in use, the shim prints one
+    WARN [engine-home-ignored] line naming BOTH paths. The divergence becomes
+    loud instead of silent.
+
+
+6. Result, with a negative control that discriminates
+------------------------------------------------------
+  python tools/validate.py --gate core
+      exit 1, 51 problems, 0 closure-provenance FAIL,
+      1 WARN [engine-home-ignored] on stderr
+      the single non-closure-evidence FAIL is T-1374's style_contract
+      mismatch -- a different ticket, same divergent-homes family.
+
+  SAIPEN_VALIDATE_HOME=...scheduled-source python tools/validate.py --gate core
+      exit 1, 52 problems, the 5 provenance FAIL lines return.
+
+The control fires. The knob still works for validating against another engine
+generation; it simply is not reachable by accident any more. This is the
+ticket's verify clause, satisfied:
+
+  "tools/validate.py --gate core reports no closure-provenance FAIL naming
+   T-803/T-1159/T-1207/T-1223/T-1238 for 'release:0.8.68'; after the fix the
+   same gate resolves 0.8.68 via .saipen/kitchen/release_receipt.json"
+
+  ruff check tools/validate.py -> All checks passed!
+
+
+7. What was NOT done, and why
+------------------------------
+The three engine copies were not reconciled. Deleting or updating a copy under
+C:\Users\vac34\AppData\Local\saipen or C:\Users\vac34\.agents is outside this
+repository and outside this ticket: other projects and the launcher read those
+trees, and the stale copy is the one the launcher's own chain still points at
+via the ambient variable. Removing it is an operator action on the host, and it
+is no longer required for this project's gate to be correct.
+
+Left open: T-1374. Its `STATE.md style_contract 'ded-71fc58de' does not match
+the installed STYLE.md marker 'ded-6b950e75'` is the last remaining blocking
+FAIL from the gate, and it is the same root cause -- three STYLE.md files, three
+marker digests.
