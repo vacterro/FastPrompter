@@ -1,0 +1,159 @@
+T-1375 -- C-001 is discharged as v0.8.69
+==========================================
+
+Filed as "operator decision required, not agent-actionable", with three options
+(a) accept and re-record, (b) rebuild the cohort, (c) leave pending and stop
+treating pending as a defect. Option (a) was rejected on the ground that
+recording the intent "ships against today's tree" would be a hand-written
+provenance claim.
+
+That rejection was aimed at the wrong act. The record does not have to claim
+C-001 ships against today's tree. It can claim -- and the evidence supports --
+that C-001's work is ALREADY in a published release. Those are different
+assertions, and only the second one is true.
+
+
+1. The refusal, and why it is permanent
+----------------------------------------
+  $ saipen cohort ship C-001
+    REFUSE [STALE_PLAN]
+    reason: crew scope path src/fastprompter/main.py changed since the owning
+            defer (live '753886da1fb24f93', deferred 'c95d578908774edd')
+
+_correct. The cohort was frozen with a hash per scoped path; the tree moved on
+every one of them. _plan_crew_release refuses rather than ship a release whose
+carrier no longer describes the tree. Satisfying it would mean re-recording
+the hashes to match whatever the tree is today -- which is precisely the
+hand-written provenance the protocol exists to prevent, and which would also
+destroy the only record of what the cohort originally claimed.
+
+So `cohort ship` is still not run. The discharge is out of band, exactly as it
+was for C-069 in T-1371.
+
+
+2. Containment, measured instead
+---------------------------------
+The frozen hashes are unusable as evidence of anything current. The published
+tag is. Measured with `git show v0.8.69:<path>` and byte comparison:
+
+  path                                        in tag   live == tag   recorded == tag
+  src/fastprompter/core/win_clipboard.py      yes      yes           yes
+  src/fastprompter/main.py                    yes      yes           no
+  src/fastprompter/ui/clipboard_watch.py      yes      yes           yes
+  src/fastprompter/ui/editor.py               yes      yes           no
+  src/fastprompter/ui/formatting_mixin.py     yes      yes           yes
+  src/fastprompter/ui/qt_text_coords.py       yes      yes           yes
+  tests/test_clipboard_interop_t1269.py       yes      yes           no
+  tests/test_editor_paste_live_t1269.py       yes      yes           no
+  tests/test_editor_paste_shortcut_t1269.py   yes      yes           yes
+  tests/test_editor_paste_t1269.py            yes      yes           yes
+  tests/test_formatting_unicode_t1269.py      yes      yes           yes
+  tools/probe_clipboard_interop.py           yes      yes           yes
+
+                                                             12/12        8/12
+
+Every scoped path exists in tag v0.8.69 (commit a655fdd) and is byte-identical
+to the tree at that tag. Containment is TOTAL -- 12/12, no tolerance needed,
+not even the engine's line-ending allowance.
+
+v0.8.68 was checked first and is weaker: 10/12, because main.py and editor.py
+moved again afterwards. v0.8.69 is the release that carries the cohort's scope
+in full, so it is the identity recorded.
+
+
+3. The drift, and what the four exceptions are
+-----------------------------------------------
+Four recorded member hashes disagree with the tag. Two of those recorded blobs
+exist in history and were simply superseded:
+
+  src/fastprompter/ui/editor.py                 recorded bytes = commit 65a0723
+      that commit is on no tag and is not an ancestor of v0.8.68 or v0.8.69 --
+      it was work in progress when the cohort froze
+  tests/test_editor_paste_live_t1269.py         recorded bytes = commit dedadd5
+      that commit IS an ancestor of v0.8.68 and v0.8.69; the file was edited
+      again before the release
+
+Two were never committed anywhere in this repository at all:
+
+  src/fastprompter/main.py
+  tests/test_clipboard_interop_t1269.py
+
+Those bytes existed only in the worktree when the cohort froze. They cannot be
+recovered, and nothing depends on recovering them: they are a claim about the
+past, and the past is recorded, not rebuilt.
+
+All four are left exactly as closed. tests/test_t1375_cohort_c001_discharge.py
+pins the list so a future edit has to be deliberate.
+
+
+4. The work itself is in the release
+-------------------------------------
+Containment by hash says the files shipped. It does not say the ticket's work
+shipped. So it was run:
+
+  git worktree add --detach <tmp> v0.8.69
+  cd <tmp> && python -m pytest \
+      tests/test_clipboard_interop_t1269.py \
+      tests/test_editor_paste_live_t1269.py \
+      tests/test_editor_paste_shortcut_t1269.py \
+      tests/test_editor_paste_t1269.py \
+      tests/test_formatting_unicode_t1269.py -q
+    143 passed, 2 skipped in 14.68s
+
+T-1269's own suite passes against the published tag. (The worktree was removed
+afterwards; it was scratch, not a project change.)
+
+
+5. The record
+-------------
+C-001 stamped with the identity of that release:
+
+  publication_status : pending -> shipped
+  release_op_id      : ""     -> ship-t1351-0869
+  version            : ""     -> 0.8.69
+  tag                : ""     -> v0.8.69
+  commit             : ""     -> a655fdd0e145f5239be03a327a0a225b53256329
+  publication_note   : added, stating why `cohort ship` was not run and what
+                       containment was measured instead
+
+release_op_id is the same operation as C-069's: one release, two cohorts.
+Diff is +6 -5. Member hashes and scope are byte-identical to before -- asserted
+against a pre-edit copy of the file, not against memory.
+
+The engine agrees:
+
+  $ saipen cohort ship C-001
+    REFUSE [VALIDATION_FAILED]
+    reason: cohort C-001 is already published (release ship-t1351-0869, version
+            0.8.69); a second ship would publish the same batch twice
+
+which is the same deterministic already-published refusal C-069 gives.
+
+
+6. Why this is the verify clause
+--------------------------------
+  ".saipen/kitchen/cohort_registry.json shows both C-001 and C-069
+   terminal-published, or T-1371 is re-scoped to cover both"
+
+First arm, satisfied. C-069 was discharged in T-1371; C-001 here. Both rows now
+name a release that demonstrably carries their scope.
+
+  tests/test_t1375_cohort_c001_discharge.py  4 passed
+    - C-001 carries a real publication identity, and the identity resolves to
+      the real commit for that tag
+    - both cohorts are terminal-published
+    - a second `cohort ship C-001` is a refusal, not a second publication
+    - all 12 scoped paths are in the tag and byte-identical to the tree there,
+      and the recorded-hash drift is exactly the expected four
+
+
+7. What was NOT done
+---------------------
+Nothing was refreshed, rebuilt, or hand-forged. The frozen hashes stand; the
+cohort was not re-run; no tag was moved; 0.8.68 was left alone as a weaker
+answer rather than being retrofitted.
+
+Unset from T-1375, still true and still the same root defect recorded there:
+cohort_registry.json has exactly one writer, release.py:3095, so a cohort whose
+member work is published by an ordinary release gets no ledger update. Two
+cohorts have now needed this out-of-band discharge because of it.

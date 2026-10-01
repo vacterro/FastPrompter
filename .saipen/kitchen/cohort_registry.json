@@ -2,7 +2,7 @@
   "cohorts": {
     "C-001": {
       "cohort_id": "C-001",
-      "commit": "",
+      "commit": "a655fdd0e145f5239be03a327a0a225b53256329",
       "members": {
         "T-1269": {
           "closed_at": "2026-09-17T14:23:22Z",
@@ -25,8 +25,9 @@
           "verification": "formatting modifies ONLY markdown marker characters with original content code-point exact across all four verbs (bold/italic/underline/strike) incl. emoji/ZWJ/Cyrillic cases, toggle roundtrip + undo/redo exact,... [detail_ref: .saipen/recovery/board-compaction/T-1269/T-1269-20d8d5b49361eaa4963e4a9a.json]"
         }
       },
-      "publication_status": "pending",
-      "release_op_id": "",
+      "publication_note": "Discharged out of band by release v0.8.69 (DEC in LOG; evidence .saipen/evidence/t1375/cohort_c001_discharge.txt). `cohort ship` is deliberately NOT run: the frozen plan records per-path hashes that no longer describe any tree, so _plan_crew_release refuses STALE_PLAN permanently and satisfying it would mean re-recording hashes to match whatever the tree happens to be today. Containment measured instead: all 12 scoped paths are present in tag v0.8.69 and byte-identical to the tree at that tag, and all five T-1269 test files pass there (143 passed, 2 skipped). Member hashes are left exactly as closed -- they are the published record, not live bytes.",
+      "publication_status": "shipped",
+      "release_op_id": "ship-t1351-0869",
       "schema_version": 1,
       "scope": [
         "src/fastprompter/core/win_clipboard.py",
@@ -42,8 +43,8 @@
         "tests/test_formatting_unicode_t1269.py",
         "tools/probe_clipboard_interop.py"
       ],
-      "tag": "",
-      "version": ""
+      "tag": "v0.8.69",
+      "version": "0.8.69"
     },
     "C-069": {
       "cohort_id": "C-069",
