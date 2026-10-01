@@ -1,3 +1,34 @@
+T-1376 -- the deadlock was real; the missing lever was a STATUS, not a verb
+==========================================================================
+SUPERSEDED 2026-10-01. This file previously concluded "There is no in-repo
+verb that opens the cycle" (line 29, retained below verbatim). That
+conclusion was WRONG. The resolution is in `sub_drain_resolution.txt`.
+
+THE ERROR, RECORDED SO IT IS NOT REPEATED
+-----------------------------------------
+Every verb tried returned a refusal, and five refusals in a row were read as
+proof the cycle was unopenable. They were proof about the five verbs tried.
+The engine encodes the whole disposition policy in one place and that place
+was never read:
+
+  saipen_engine/sub_clean.py, OUTBOX status gate:
+      allowed = {"ready", "draft", "blocked", "reviewed", "stale"}
+      only ready / draft / blocked block a clean
+  saipen_engine/subs.py:139
+      OUTBOX_STATUSES = ("ready", "draft", "blocked", "reviewed", "stale")
+
+`stale` is the engine's own sanctioned marker for "this package's freshness
+keys have moved; it is not collectable and must not block cleanup" -- which is
+exactly the condition this ticket describes. Its absence from the tried-verb
+set is the whole reason the ticket looked blocked.
+
+A refusal is evidence about the verb that refused, not about the verb space.
+Before declaring a protocol cycle unopenable, read the policy that encodes the
+decision (the enum, the gate table, the status set), rather than enumerating
+verbs until the answers stop coming.
+
+ORIGINAL RECORD (verbatim, lines 1-30, retained as the record of the mistake)
+---------------------------------------------------------------------------
 T-1376 -- every subSaipen drain path is refused, and the chain is now enumerated
 ===========================================================================
 
@@ -27,72 +58,3 @@ reinforcing: you cannot spawn because it exists, cannot clean because it has
 a ready package, cannot collect or dispose because the package is stale, and
 cannot even pause it because its recorded voice contract is from a different
 engine install. There is no in-repo verb that opens the cycle.
-
-FINDING 1 -- the third engine divergence, inside the sub-instance
------------------------------------------------------------------
-T-1374 established that three SAIPEN installs exist on this machine and that
-`bin/saipen.cmd` runs the `_SAIPEN` one, whose STYLE.md marker is
-`ded-71fc58de`. The saihunt sub-agent recorded `ded-6b950e75` -- the marker
-of `C:\Users\vac34\.agents\skills\saipen`, the 101-module install. So the
-instance was produced by an agent that read a voice contract the launcher
-does not use, and the engine now refuses to act on its STATE at all.
-
-This is T-1374's defect, one level down, and it is not repairable from here:
-the fix would be to rewrite the recorded `style_contract` to the marker the
-instance never read, which is asserting a provenance that did not happen.
-
-FINDING 2 -- two parsers disagree about what a sub board looks like
-------------------------------------------------------------------
-`sub clean` (tools/sub_clean.py `_open_board_items`) accepts only the four
-`## DOING|TODO|DONE|BLOCKED` headings, so it rejects the five `### HUNT-NNN:`
-headings in `.saipen/extensions/subs/saihunt/BOARD.md`. The gate's own
-sub-board validator accepts that file as it stands.
-
-Converting the five headings to the canonical `- [ ] HUNT-NNN title` form was
-tried, measured, and reverted. It does clear the first `sub clean` refusal,
-but it makes the gate's validator see the tickets for the first time and then
-correctly report a second, deeper incoherence:
-
-  FAIL: .saipen/extensions/subs/saihunt/STATE.md state/board lifecycle is
-        incoherent: phase DONE but the board still holds open work
-        (TODO/BLOCKED)
-  FAIL: .saipen/extensions/subs/saihunt/BOARD.md is phase DONE but its board
-        still holds open work (TODO/DOING/BLOCKED)
-
-That is a true statement about this repository -- the saihunt instance
-finished while five of its findings are still listed as open BLOCKED work --
-and it is not a formatting problem. Trading a `sub clean` refusal for two
-gate FAILs is a net loss, so the conversion stays unlanded and is recorded
-here instead. The five tickets are real unresolved work; resolving or
-re-validating them is the actual subject of the sub-agent's next run, which
-is the thing that cannot start.
-
-saitranslate and saiwiki
-------------------------
-Untouched. Both OUTBOX files fail strict parsing (invalid source_head,
-invalid source_tree_fingerprint, and a `verified` field carrying prose where
-a closed verdict is required), and both are EXPLICIT_POLICY-owned by their
-SC-8/SC-9 integrations. Re-running them here would overwrite another
-integration's evidence with a re-derivation of it, which is the failure mode
-those entries exist to prevent.
-
-WHAT IS LEFT FOR A HUMAN, PRECISELY
------------------------------------
-One of:
-
-  (a) an engine change in `saipen_engine/subs/` that lets a stale instance be
-      replaced -- e.g. `sub clean --force` past a ready package, or
-      `sub spawn --replace` that does not require a clean first. The
-      mutual-refusal cycle is engine behaviour, not project state.
-  (b) an engine change accepting a STATE whose style_contract names a
-      non-installed install, by re-reading STYLE.md rather than refusing.
-  (c) a decision on the five open saihunt BLOCKED tickets -- are they still
-      real? If yes, the instance is not DONE and its STATE is wrong. If no,
-      they need cited evidence before they leave the board, which is
-      clean.md step 1 and not a formatting pass.
-
-(a) and (b) are code changes in a repository this project does not own.
-(c) is a judgement about five findings this project did not produce.
-
-Until one of those happens, `WARN [subsaipen-uncollected]` stays, and it is a
-true reading: two subSaipen packages have been produced and never consumed.

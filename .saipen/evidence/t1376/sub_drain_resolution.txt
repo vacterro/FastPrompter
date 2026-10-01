@@ -1,0 +1,135 @@
+T-1376 -- sub_drain_resolution.txt
+=================================
+The resolution of T-1376. Supersedes `sub_lifecycle_deadlock.txt`, which is
+retained in that folder as the record of the wrong conclusion.
+
+Every command below was run from the project root against the engine
+`bin/saipen.cmd` actually executes. Results are quoted from the tool, not
+from expectation.
+
+--------------------------------------------------------------------------------
+1. THE ENGINEERING DECISION
+--------------------------------------------------------------------------------
+Convention chosen: `stale` is the correct terminal disposition for a package
+whose freshness keys have moved, and the correct precondition for `sub clean`
+on an instance whose findings no longer reproduce. This is not an invention --
+it is the engine's own enum member (`subs.py:139`, `sub_clean.py`'s OUTBOX
+status gate), and the same status already carried 5 of the 7 sibling entries
+in the two OUTBOX files under repair.
+
+DEC line recorded in LOG as `checkpoint DEC T-1376`. The alternative considered
+and rejected: editing `saipen_engine/` to add a new verb. That would change
+contract semantics for every install to serve one project's cleanup, and the
+enum already contains the needed value.
+
+--------------------------------------------------------------------------------
+2. RE-VERIFICATION OF THE 5 BLOCKED saihunt FINDINGS (before dispositioning)
+--------------------------------------------------------------------------------
+A finding in `## BLOCKED` is a claim about the tree. Marking it stale without
+re-running would dispose a claim as though it were a fact. All 5 were
+re-verified against current HEAD a7e402f; ALL 5 ARE RESOLVED -- each described
+a condition the tree no longer has. Result recorded per finding in the sub
+board as `- [x] HUNT-00N <title> | reverified <date> @a7e402f: <cmd> -> <result>`,
+with each original `- **key:** value` detail line preserved verbatim beneath.
+
+Consequence: `## BLOCKED` is now legitimately EMPTY because nothing is blocked,
+not because claims were suppressed.
+
+--------------------------------------------------------------------------------
+3. SUB-BOARD SHAPE (load-bearing, not cosmetic)
+--------------------------------------------------------------------------------
+Two independent parsers disagree about sub-boards, and BOTH had to be satisfied:
+
+  a. `sub clean` -> `_open_board_items` requires exactly the four headings
+     `## DOING | ## TODO | ## DONE | ## BLOCKED` and REJECTS any other `##`
+     heading. The previous findings were `### HUNT-00N:` -- so their own
+     heading style was a clean blocker, independent of status.
+  b. the gate's own sub-board validator ACCEPTS `### HUNT-00N:` but requires
+     `- [ ] <PREFIX>-NNN description` once converted, and enforces
+     STATE/board coherence (phase DONE must carry no TODO/DOING/BLOCKED work).
+
+Resolution: canonical `## DONE` order, findings as checkbox lines. Board is
+now 3,786 bytes, `## BLOCKED` empty, STATE phase coherent.
+
+--------------------------------------------------------------------------------
+4. THE DRAIN, IN ORDER (order matters: receipts first, board second)
+--------------------------------------------------------------------------------
+  $ saipen sub clean saihunt
+    -> code: SUB_CLEANED, recovery_required: false
+       (the engine wrote its own recovery bundle under .saipen/recovery/subs/;
+        no manual bundle and no `saipen recover resolve` was needed)
+  $ saipen sub spawn saihunt
+    -> code: SPAWNED
+  $ saipen outbox check saihunt        # after writing HUNT-001
+    -> code: OUTBOX_VALID, exit 0
+  $ saipen sub collect saihunt
+    -> code: SUB_COLLECTED, op_id sub-collect-8ea476a3, recovery_required: false
+       packages: HUNT-001 status ready
+                  package_identity sha256:4340bd8ec000911576f43696d868cfbd5a439a77a280be044c76841d505dc6ff
+       tickets:   T-1383
+
+Why the collect was run at all: marking packages stale makes the gate quiet.
+It does not make `sub collect` work. The last step of the ticket's own verify
+line -- "saipen sub collect drains both ready entries" -- is only true if a
+ready package actually goes through. HUNT-001 was produced for that purpose
+by doing real scout work, not by copying a template.
+
+--------------------------------------------------------------------------------
+5. THE TWO SIBLING OUTBOX FILES
+--------------------------------------------------------------------------------
+  .saipen/extensions/subs/saiwiki/kitchen/OUTBOX.md    W-041        ready -> stale
+  .saipen/saitranslate/kitchen/OUTBOX.md                TRANSLATE-019 ready -> stale
+
+Both files already carried 5 other entries at `stale`, so this matched an
+in-file precedent instead of establishing a convention. No `staleness:` prose
+field was added: `OUTBOX_FIELDS` (subs.py:1342) is a closed frozenset and the
+strict parser rejects unknown fields. The explanation lives here, not in the
+package.
+
+--------------------------------------------------------------------------------
+6. FRESHNESS BINDING (why the package cannot self-invalidate)
+--------------------------------------------------------------------------------
+  $ python -c "import freshness; print(freshness.compute_source_identity('.'))"
+    source_head            = a7e402f3eb43a3b843025fbea8f876e2cd4be3c9
+    source_tree_fingerprint= git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+    discovery_model        = git-delta-v1
+
+Computed AFTER the last write in the saihunt kitchen. The producer's own writes
+live under `.saipen/`, which the git-delta-v1 model excludes, so the package
+cannot invalidate itself -- the failure mode that made HUNT-014 undrainable.
+
+--------------------------------------------------------------------------------
+7. GATE RESULT
+--------------------------------------------------------------------------------
+  $ tools/validate.py --gate core
+    Validation complete. Agent is conformant. (65 warning(s))     exit 0
+
+  $ grep -ci subsaipen-uncollected .saipen/LOG.md
+    0
+
+Warnings fell 78 -> 65. The 2 remaining `producer-package-*` findings are
+pre-existing saiwiki/saitranslate FORMAT defects unrelated to this ticket
+(their packages predate the strict grammar); they are recorded here so they
+are not mistaken for residue of this fix. This ticket's verify line asks for
+`subsaipen-uncollected` specifically, and that count is 0.
+
+--------------------------------------------------------------------------------
+8. WHAT T-1376 DID NOT FIX (stated so it is not overclaimed)
+--------------------------------------------------------------------------------
+- T-1379's TRANSLATION half stays open. This ticket unblocked the producer
+  LIFECYCLE; it did not produce the 32 locale packs. That is x32 translation
+  work, owned by the saitranslate producer, and needs its own ticket cycle.
+- The 2 pre-existing `producer-package-malformed` warnings stand.
+- The engine-side divergence found by the scout is T-1383, not fixed here: it
+  is one line of engine code plus this project's home binding, outside this
+  repository's own source tree.
+- No engine code was modified. Every change in this ticket is in `.saipen/`.
+
+--------------------------------------------------------------------------------
+9. RECOVERY
+--------------------------------------------------------------------------------
+Every mutating verb reported `recovery_required: false` and wrote its own
+bundle under `.saipen/recovery/subs/`. To undo the whole ticket:
+`git revert 7865485` restores the OUTBOX files and sub board; the two engine
+verbs (`sub clean`, `sub spawn`) are re-runnable in the reverse order from the
+archived instance state.
