@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from fastprompter.core.translations import tr
 from fastprompter.core.usage_limits.cli_tools import (
     INSTALLERS,
     install_status,
@@ -133,7 +134,7 @@ class LimitSettingsDialog(QDialog):
         self.data = main_win.data
         self.service = main_win.limit_service
         self._suppress_preview = True
-        self.setWindowTitle("AI Limit Settings")
+        self.setWindowTitle(tr('AI Limit Settings'))
         self.setWindowFlags(
             self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
         )
@@ -167,13 +168,13 @@ class LimitSettingsDialog(QDialog):
         bottom_bar.setContentsMargins(4, 2, 14, 2)
         bottom_bar.setSpacing(6)
 
-        self.btn_refresh = QPushButton("Refresh limits now")
-        self.btn_refresh.setToolTip("Probe every account again (same as a sweep)")
+        self.btn_refresh = QPushButton(tr('Refresh limits now'))
+        self.btn_refresh.setToolTip(tr('Probe every account again (same as a sweep)'))
         self.btn_refresh.clicked.connect(self._refresh_now)
         bottom_bar.addWidget(self.btn_refresh)
 
-        self.btn_activate_reset = QPushButton("Activate reset")
-        self.btn_activate_reset.setToolTip("Consume 1 banked reset credit to refill quota")
+        self.btn_activate_reset = QPushButton(tr('Activate reset'))
+        self.btn_activate_reset.setToolTip(tr('Consume 1 banked reset credit to refill quota'))
         self.btn_activate_reset.clicked.connect(self._activate_first_banked_reset)
         self.btn_activate_reset.hide()
         bottom_bar.addWidget(self.btn_activate_reset)
@@ -191,7 +192,7 @@ class LimitSettingsDialog(QDialog):
 
         bottom_bar.addStretch(1)
 
-        self.btn_close = QPushButton("Close")
+        self.btn_close = QPushButton(tr('Close'))
         self.btn_close.setFixedWidth(70)
         self.btn_close.clicked.connect(self.reject)
         bottom_bar.addWidget(self.btn_close)
@@ -247,7 +248,7 @@ class LimitSettingsDialog(QDialog):
         self._refresh_overview_status()
         if hasattr(self, "btn_refresh"):
             self.btn_refresh.setEnabled(True)
-            self.btn_refresh.setText("Refresh limits now")
+            self.btn_refresh.setText(tr('Refresh limits now'))
 
     def _save_geometry(self):
         try:
@@ -305,43 +306,35 @@ class LimitSettingsDialog(QDialog):
         fill_row = FlowLayout(h_spacing=8, v_spacing=4)
         fill_row.setContentsMargins(0, 0, 0, 0)
         fill_row.setSpacing(6)
-        fill_row.addWidget(QLabel("Bars show"))
+        fill_row.addWidget(QLabel(tr('Bars show')))
         self.cmb_fill = QComboBox()
-        self.cmb_fill.addItem("Remaining left (drains like fuel)", "remaining")
-        self.cmb_fill.addItem("Used up (grows like progress)", "used")
+        self.cmb_fill.addItem(tr('Remaining left (drains like fuel)'), tr('remaining'))
+        self.cmb_fill.addItem(tr('Used up (grows like progress)'), tr('used'))
         fill_index = self.cmb_fill.findData(
             str(self.data.get("limit_gauges_fill", "remaining")))
         self.cmb_fill.setCurrentIndex(max(0, fill_index))
         self.cmb_fill.setToolTip(
-            "Remaining: a full bar means quota is available, the bar empties "
-            "as you spend it, and the caption reads \"24% left\".\n"
-            "Used: an empty bar means nothing is spent, the bar fills up, and "
-            "the same window reads \"76% used\".\n"
-            "Applies to these bars, their captions, and the header gauge.")
+            tr('Remaining: a full bar means quota is available, the bar empties as you spend it, and the caption reads "24% left".\nUsed: an empty bar means nothing is spent, the bar fills up, and the same window reads "76% used".\nApplies to these bars, their captions, and the header gauge.'))
         self.cmb_fill.currentIndexChanged.connect(self._set_fill_mode)
         fill_row.addWidget(self.cmb_fill)
-        self.cb_overview_hide_zero = QCheckBox("Hide 0% usage accounts")
+        self.cb_overview_hide_zero = QCheckBox(tr('Hide 0% usage accounts'))
         self.cb_overview_hide_zero.setChecked(
             self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
         self.cb_overview_hide_zero.setToolTip(
-            "Completely hide accounts that have 0% usage across both 5h and weekly windows.\n"
-            "They will appear only when they actually have usage (> 0%).")
+            tr('Completely hide accounts that have 0% usage across both 5h and weekly windows.\nThey will appear only when they actually have usage (> 0%).'))
         self.cb_overview_hide_zero.toggled.connect(self._set_hide_zero_usage)
         fill_row.addWidget(self.cb_overview_hide_zero)
         self.cb_overview_hide_unusable = QCheckBox(
-            "Only available 5h windows")
+            tr('Only available 5h windows'))
         self.cb_overview_hide_unusable.setChecked(
             self.data.get("limit_gauges_hide_unusable_5h", "False") == "True")
         self.cb_overview_hide_unusable.setToolTip(
-            "Hide accounts whose 5-hour window is exhausted, even when the "
-            "weekly pool still has quota — they cannot do work right now.\n"
-            "For Antigravity: a quota pool whose windows are all spent is "
-            "hidden; only pools that still have quota are shown.")
+            tr('Hide accounts whose 5-hour window is exhausted, even when the weekly pool still has quota — they cannot do work right now.\nFor Antigravity: a quota pool whose windows are all spent is hidden; only pools that still have quota are shown.'))
         self.cb_overview_hide_unusable.toggled.connect(
             self._set_hide_unusable_5h)
         fill_row.addWidget(self.cb_overview_hide_unusable)
         intro = QLabel(
-            "Gold healthy, olive < 50%, red < 20%. Numbers reported by providers.")
+            tr('Gold healthy, olive < 50%, red < 20%. Numbers reported by providers.'))
         self._hint_style(intro)
         fill_row.addWidget(intro)
         lay.addLayout(fill_row)
@@ -359,21 +352,19 @@ class LimitSettingsDialog(QDialog):
         card_lay.setContentsMargins(10, 8, 10, 8)
         card_lay.setSpacing(4)
 
-        title_lbl = QLabel("Connect AI Limit Metrics")
+        title_lbl = QLabel(tr('Connect AI Limit Metrics'))
         title_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
         card_lay.addWidget(title_lbl)
 
         desc_lbl = QLabel(
-            "FastPrompter monitors live quota and reset countdowns for Codex (OpenAI), "
-            "Claude Code, Antigravity (Google), and ZCode (GLM Coding Plan). "
-            "Click below to automatically diagnose, repair, and connect your AI limits."
+            tr('FastPrompter monitors live quota and reset countdowns for Codex (OpenAI), Claude Code, Antigravity (Google), and ZCode (GLM Coding Plan). Click below to automatically diagnose, repair, and connect your AI limits.')
         )
         desc_lbl.setWordWrap(True)
         self._hint_style(desc_lbl)
         card_lay.addWidget(desc_lbl)
 
         btn_row = QHBoxLayout()
-        self.btn_auto_connect = QPushButton("⚡ Auto-Detect & Connect All AI Limits")
+        self.btn_auto_connect = QPushButton(tr('⚡ Auto-Detect & Connect All AI Limits'))
         self.btn_auto_connect.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_auto_connect.setStyleSheet(
             "QPushButton { font-weight: bold; padding: 4px 10px; }"
@@ -381,7 +372,7 @@ class LimitSettingsDialog(QDialog):
         self.btn_auto_connect.clicked.connect(self._run_auto_troubleshoot)
         btn_row.addWidget(self.btn_auto_connect)
 
-        self.btn_open_sources = QPushButton("Configure Sources…")
+        self.btn_open_sources = QPushButton(tr('Configure Sources…'))
         self.btn_open_sources.clicked.connect(
             lambda: self.tabs.setCurrentIndex(
                 self.tabs.indexOf(getattr(self, "sources_page", None))
@@ -399,7 +390,7 @@ class LimitSettingsDialog(QDialog):
 
         lay.addWidget(self.card_onboarding)
 
-        self.tabs.addTab(page, "Limits")
+        self.tabs.addTab(page, tr('Limits'))
 
     def _activate_first_banked_reset(self):
         """One button, dispatched by PROVIDER CAPABILITY (T-1360).
@@ -498,7 +489,7 @@ class LimitSettingsDialog(QDialog):
                 self._update_onboarding_status()
             if hasattr(self, "overview_scroll"):
                 self.overview_scroll.hide()
-            label.setText("no accounts discovered · click Auto-Detect above")
+            label.setText(tr('no accounts discovered · click Auto-Detect above'))
             return
         else:
             if hasattr(self, "card_onboarding"):
@@ -559,7 +550,7 @@ class LimitSettingsDialog(QDialog):
         options_v.setSpacing(3)
 
         row1 = QHBoxLayout()
-        self.cb_enabled = QCheckBox("Show AI limit gauges in the header")
+        self.cb_enabled = QCheckBox(tr('Show AI limit gauges in the header'))
         self.cb_enabled.setChecked(
             self.data.get("limit_gauges", "False") == "True")
         self.cb_enabled.toggled.connect(self._set_master_enabled)
@@ -569,38 +560,32 @@ class LimitSettingsDialog(QDialog):
 
         row2 = QHBoxLayout()
         row2.setSpacing(6)
-        row2.addWidget(QLabel("Style"))
+        row2.addWidget(QLabel(tr('Style')))
         self.cmb_style = QComboBox()
-        self.cmb_style.addItem("Bars", "bars")
-        self.cmb_style.addItem("Dots", "dots")
-        self.cmb_style.addItem("Stacked", "stack")
+        self.cmb_style.addItem(tr('Bars'), tr('bars'))
+        self.cmb_style.addItem(tr('Dots'), tr('dots'))
+        self.cmb_style.addItem(tr('Stacked'), tr('stack'))
         self.cmb_style.setToolTip(
-            "Bars: one thin vertical bar per quota window, side by side.\n"
-            "Dots: the same windows as pie-filled dots.\n"
-            "Stacked: one horizontal bar per window, stacked bottom-up in a "
-            "single column (up to 4 tall), so an account takes one bar of "
-            "width however many windows it reports.")
+            tr('Bars: one thin vertical bar per quota window, side by side.\nDots: the same windows as pie-filled dots.\nStacked: one horizontal bar per window, stacked bottom-up in a single column (up to 4 tall), so an account takes one bar of width however many windows it reports.'))
         index = self.cmb_style.findData(
             str(self.data.get("limit_gauges_style", "bars")))
         self.cmb_style.setCurrentIndex(max(0, index))
         self.cmb_style.currentIndexChanged.connect(self._set_style)
         row2.addWidget(self.cmb_style)
 
-        self.cb_vendor_tint = QCheckBox("Vendor tint")
+        self.cb_vendor_tint = QCheckBox(tr('Vendor tint'))
         self.cb_vendor_tint.setChecked(
             self.data.get("limit_gauges_vendor_tint", "True") == "True")
         self.cb_vendor_tint.setToolTip(
-            "Nudge each bar towards its vendor's own colour — the same hue the "
-            "reset countdown uses (Claude terracotta, Codex blue, Antigravity "
-            "violet), muted so the quota level still reads first.")
+            tr("Nudge each bar towards its vendor's own colour — the same hue the reset countdown uses (Claude terracotta, Codex blue, Antigravity violet), muted so the quota level still reads first."))
         self.cb_vendor_tint.toggled.connect(self._set_vendor_tint)
         row2.addWidget(self.cb_vendor_tint)
 
-        self.cb_labels = QCheckBox("Show account badges in header")
+        self.cb_labels = QCheckBox(tr('Show account badges in header'))
         self.cb_labels.setChecked(
             self.data.get("limit_gauges_show_labels", "False") == "True")
         self.cb_labels.setToolTip(
-            "Badges still disappear automatically in ultra-narrow windows")
+            tr('Badges still disappear automatically in ultra-narrow windows'))
         self.cb_labels.toggled.connect(self._set_show_labels)
         row2.addWidget(self.cb_labels)
         row2.addStretch(1)
@@ -608,12 +593,11 @@ class LimitSettingsDialog(QDialog):
 
         row3 = QHBoxLayout()
         self.cb_hide_zero = QCheckBox(
-            "Hide accounts with 0% usage (5h & weekly)")
+            tr('Hide accounts with 0% usage (5h & weekly)'))
         self.cb_hide_zero.setChecked(
             self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
         self.cb_hide_zero.setToolTip(
-            "Completely hide accounts that have 0% usage across both 5h and weekly windows.\n"
-            "They will appear only when they actually have usage (> 0%).")
+            tr('Completely hide accounts that have 0% usage across both 5h and weekly windows.\nThey will appear only when they actually have usage (> 0%).'))
         self.cb_hide_zero.toggled.connect(self._set_hide_zero_usage)
         row3.addWidget(self.cb_hide_zero)
         row3.addStretch(1)
@@ -621,14 +605,11 @@ class LimitSettingsDialog(QDialog):
 
         row3b = QHBoxLayout()
         self.cb_hide_unusable = QCheckBox(
-            "Only available 5h windows")
+            tr('Only available 5h windows'))
         self.cb_hide_unusable.setChecked(
             self.data.get("limit_gauges_hide_unusable_5h", "False") == "True")
         self.cb_hide_unusable.setToolTip(
-            "Hide accounts whose 5-hour window is exhausted, even when the "
-            "weekly pool still has quota — they cannot do work right now.\n"
-            "For Antigravity: a quota pool whose windows are all spent is "
-            "hidden; only pools that still have quota are shown.")
+            tr('Hide accounts whose 5-hour window is exhausted, even when the weekly pool still has quota — they cannot do work right now.\nFor Antigravity: a quota pool whose windows are all spent is hidden; only pools that still have quota are shown.'))
         self.cb_hide_unusable.toggled.connect(self._set_hide_unusable_5h)
         row3b.addWidget(self.cb_hide_unusable)
         row3b.addStretch(1)
@@ -636,16 +617,14 @@ class LimitSettingsDialog(QDialog):
         lay.addLayout(options_v)
 
         help_label = QLabel(
-            "Choose accounts, give them optional names, and edit the short "
-            "header badge. An empty Header field hides only that account's "
-            "badge; the quota marks remain visible.")
+            tr("Choose accounts, give them optional names, and edit the short header badge. An empty Header field hides only that account's badge; the quota marks remain visible."))
         help_label.setWordWrap(True)
         lay.addWidget(help_label)
         self.account_selector = LimitAccountSelector(
             self.main_win, self.service)
         lay.addWidget(self.account_selector)
         lay.addStretch(1)
-        self.tabs.addTab(page, "Gauges & accounts")
+        self.tabs.addTab(page, tr('Gauges & accounts'))
 
     def _set_master_enabled(self, checked):
         self.data["limit_gauges"] = "True" if checked else "False"
@@ -733,29 +712,27 @@ class LimitSettingsDialog(QDialog):
         page_lay.setContentsMargins(2, 2, 2, 2)
         page_lay.setSpacing(3)
         intro = QLabel(
-            "Per account/window: threshold, popup, sound and volume. An "
-            "alert fires once per reset window and re-arms when quota "
-            "rises above its threshold.")
+            tr('Per account/window: threshold, popup, sound and volume. An alert fires once per reset window and re-arms when quota rises above its threshold.'))
         intro.setWordWrap(True)
         page_lay.addWidget(intro)
 
         # --- Notification Appearance & Behavior Box ---
-        notif_box = QGroupBox("Notification appearance")
+        notif_box = QGroupBox(tr('Notification appearance'))
         notif_box_lay = QGridLayout(notif_box)
         notif_box_lay.setContentsMargins(6, 4, 6, 4)
         notif_box_lay.setHorizontalSpacing(8)
         notif_box_lay.setVerticalSpacing(4)
 
         # Duration
-        notif_box_lay.addWidget(QLabel("Duration:"), 0, 0)
+        notif_box_lay.addWidget(QLabel(tr('Duration:')), 0, 0)
         self.cmb_notif_duration = QComboBox()
-        self.cmb_notif_duration.addItem("5 seconds", 5)
-        self.cmb_notif_duration.addItem("8 seconds", 8)
-        self.cmb_notif_duration.addItem("10 seconds", 10)
-        self.cmb_notif_duration.addItem("15 seconds", 15)
-        self.cmb_notif_duration.addItem("30 seconds", 30)
-        self.cmb_notif_duration.addItem("60 seconds", 60)
-        self.cmb_notif_duration.addItem("Until dismissed", 0)
+        self.cmb_notif_duration.addItem(tr('5 seconds'), 5)
+        self.cmb_notif_duration.addItem(tr('8 seconds'), 8)
+        self.cmb_notif_duration.addItem(tr('10 seconds'), 10)
+        self.cmb_notif_duration.addItem(tr('15 seconds'), 15)
+        self.cmb_notif_duration.addItem(tr('30 seconds'), 30)
+        self.cmb_notif_duration.addItem(tr('60 seconds'), 60)
+        self.cmb_notif_duration.addItem(tr('Until dismissed'), 0)
         cur_dur = int(self.data.get("limit_notif_duration_sec", 10))
         dur_idx = self.cmb_notif_duration.findData(cur_dur)
         if dur_idx >= 0:
@@ -767,7 +744,7 @@ class LimitSettingsDialog(QDialog):
         notif_box_lay.addWidget(self.cmb_notif_duration, 0, 1)
 
         # Symbol / Emoji
-        notif_box_lay.addWidget(QLabel("Symbol:"), 0, 2)
+        notif_box_lay.addWidget(QLabel(tr('Symbol:')), 0, 2)
         self.cmb_notif_symbol = QComboBox()
         self.cmb_notif_symbol.setEditable(True)
         symbol_presets = [
@@ -794,7 +771,7 @@ class LimitSettingsDialog(QDialog):
         notif_box_lay.addWidget(self.cmb_notif_symbol, 0, 3)
 
         # Color / Accent
-        notif_box_lay.addWidget(QLabel("Color:"), 1, 0)
+        notif_box_lay.addWidget(QLabel(tr('Color:')), 1, 0)
         color_h = QHBoxLayout()
         color_h.setSpacing(4)
         self.cmb_notif_color = QComboBox()
@@ -820,16 +797,16 @@ class LimitSettingsDialog(QDialog):
         self.cmb_notif_color.currentIndexChanged.connect(self._set_notif_color)
         color_h.addWidget(self.cmb_notif_color, 1)
 
-        self.btn_pick_notif_color = QPushButton("Pick…")
+        self.btn_pick_notif_color = QPushButton(tr('Pick…'))
         self.btn_pick_notif_color.setFixedWidth(52)
-        self.btn_pick_notif_color.setToolTip("Pick custom notification accent color")
+        self.btn_pick_notif_color.setToolTip(tr('Pick custom notification accent color'))
         self.btn_pick_notif_color.clicked.connect(self._pick_custom_notif_color)
         color_h.addWidget(self.btn_pick_notif_color)
         notif_box_lay.addLayout(color_h, 1, 1)
 
         # Test popup button
-        self.btn_test_notif = QPushButton("Test popup")
-        self.btn_test_notif.setToolTip("Show sample notification with current appearance settings")
+        self.btn_test_notif = QPushButton(tr('Test popup'))
+        self.btn_test_notif.setToolTip(tr('Show sample notification with current appearance settings'))
         self.btn_test_notif.clicked.connect(self._test_notification_appearance)
         notif_box_lay.addWidget(self.btn_test_notif, 1, 2, 1, 2)
 
@@ -840,15 +817,15 @@ class LimitSettingsDialog(QDialog):
         # always want to be identical.
         copy_row = QHBoxLayout()
         copy_row.setSpacing(4)
-        copy_row.addWidget(QLabel("Copy alert settings from:"))
+        copy_row.addWidget(QLabel(tr('Copy alert settings from:')))
         self.cmb_copy_from = QComboBox()
         self.cmb_copy_from.setMinimumWidth(230)
         self.cmb_copy_from.setToolTip(
-            "The section whose settings are the template")
+            tr('The section whose settings are the template'))
         copy_row.addWidget(self.cmb_copy_from, 1)
-        self.btn_copy_to_all = QPushButton("Apply to all")
+        self.btn_copy_to_all = QPushButton(tr('Apply to all'))
         self.btn_copy_to_all.setToolTip(
-            "Overwrite every other section with this one, field for field")
+            tr('Overwrite every other section with this one, field for field'))
         self.btn_copy_to_all.clicked.connect(self._copy_rule_to_all)
         copy_row.addWidget(self.btn_copy_to_all)
         page_lay.addLayout(copy_row)
@@ -860,7 +837,7 @@ class LimitSettingsDialog(QDialog):
         self.alert_scroll = QScrollArea()
         self.alert_scroll.setWidgetResizable(True)
         page_lay.addWidget(self.alert_scroll)
-        self.tabs.addTab(self.alert_page, "Notifications")
+        self.tabs.addTab(self.alert_page, tr('Notifications'))
         self._rebuild_alert_rows()
 
     def _get_current_notif_duration(self) -> int:
@@ -959,7 +936,7 @@ class LimitSettingsDialog(QDialog):
         # the copy controls below must never offer a section that is not there.
         self._alert_sections = []
         if not accounts:
-            lay.addWidget(QLabel("No accounts detected. Use Sources → Refresh now."))
+            lay.addWidget(QLabel(tr('No accounts detected. Use Sources → Refresh now.')))
         for account in accounts:
             for window in self._account_windows(account):
                 self._add_alert_rule(lay, account, window)
@@ -1063,13 +1040,13 @@ class LimitSettingsDialog(QDialog):
         row = QHBoxLayout()
         row.setSpacing(3)
 
-        enabled = QCheckBox("Alert")
+        enabled = QCheckBox(tr('Alert'))
         enabled.setChecked(rule["enabled"] == "True")
         enabled.toggled.connect(
             lambda value, k=key: self._set_rule(k, "enabled", value))
         row.addWidget(enabled)
 
-        row.addWidget(QLabel("Remaining ≤"))
+        row.addWidget(QLabel(tr('Remaining ≤')))
         threshold = QDoubleSpinBox()
         threshold.setRange(0.0, 100.0)
         threshold.setDecimals(1)
@@ -1080,14 +1057,14 @@ class LimitSettingsDialog(QDialog):
             lambda value, k=key: self._set_rule(k, "threshold", value))
         row.addWidget(threshold)
 
-        popup = QCheckBox("Popup")
+        popup = QCheckBox(tr('Popup'))
         popup.setChecked(rule["show_notification"] == "True")
         popup.toggled.connect(
             lambda value, k=key: self._set_rule(
                 k, "show_notification", value))
         row.addWidget(popup)
 
-        sound_enabled = QCheckBox("Sound")
+        sound_enabled = QCheckBox(tr('Sound'))
         sound_enabled.setChecked(rule["sound_enabled"] == "True")
         sound_enabled.toggled.connect(
             lambda value, k=key: self._set_rule(k, "sound_enabled", value))
@@ -1110,7 +1087,7 @@ class LimitSettingsDialog(QDialog):
                 combo.currentData(), self._rule_volume(k)))
         row.addWidget(sound, 1)
 
-        row.addWidget(QLabel("Vol"))
+        row.addWidget(QLabel(tr('Vol')))
         volume = QDoubleSpinBox()
         volume.setRange(0.0, 1.0)
         volume.setDecimals(2)
@@ -1120,7 +1097,7 @@ class LimitSettingsDialog(QDialog):
             lambda value, k=key: self._set_rule(k, "volume", value))
         row.addWidget(volume)
 
-        test = QPushButton("Test")
+        test = QPushButton(tr('Test'))
         test.clicked.connect(
             lambda _checked=False, k=key: self._test_rule(k, "low"))
         row.addWidget(test)
@@ -1128,21 +1105,21 @@ class LimitSettingsDialog(QDialog):
 
         reset_row = QHBoxLayout()
         reset_row.setSpacing(3)
-        reset_enabled = QCheckBox("Alert when limit resets — time to work")
+        reset_enabled = QCheckBox(tr('Alert when limit resets — time to work'))
         reset_enabled.setChecked(rule["reset_enabled"] == "True")
         reset_enabled.toggled.connect(
             lambda value, k=key: self._set_rule(
                 k, "reset_enabled", value))
         reset_row.addWidget(reset_enabled)
 
-        reset_popup = QCheckBox("Popup")
+        reset_popup = QCheckBox(tr('Popup'))
         reset_popup.setChecked(rule["reset_show_notification"] == "True")
         reset_popup.toggled.connect(
             lambda value, k=key: self._set_rule(
                 k, "reset_show_notification", value))
         reset_row.addWidget(reset_popup)
 
-        reset_sound_enabled = QCheckBox("Sound")
+        reset_sound_enabled = QCheckBox(tr('Sound'))
         reset_sound_enabled.setChecked(rule["reset_sound_enabled"] == "True")
         reset_sound_enabled.toggled.connect(
             lambda value, k=key: self._set_rule(
@@ -1166,7 +1143,7 @@ class LimitSettingsDialog(QDialog):
                 combo.currentData(), self._rule_volume(k, reset=True)))
         reset_row.addWidget(reset_sound, 1)
 
-        reset_row.addWidget(QLabel("Vol"))
+        reset_row.addWidget(QLabel(tr('Vol')))
         reset_volume = QDoubleSpinBox()
         reset_volume.setRange(0.0, 1.0)
         reset_volume.setDecimals(2)
@@ -1177,7 +1154,7 @@ class LimitSettingsDialog(QDialog):
                 k, "reset_volume", value))
         reset_row.addWidget(reset_volume)
 
-        reset_test = QPushButton("Test reset")
+        reset_test = QPushButton(tr('Test reset'))
         reset_test.clicked.connect(
             lambda _checked=False, k=key: self._test_rule(k, "reset"))
         reset_row.addWidget(reset_test)
@@ -1239,10 +1216,7 @@ class LimitSettingsDialog(QDialog):
         lay.setContentsMargins(2, 2, 2, 2)
         lay.setSpacing(2)
         intro = QLabel(
-            "Colours for every AI-limit surface: the header gauge, the bars on "
-            "the Limits tab, the reset countdown and the captions here. A "
-            "colour you never touch follows the active theme; \"Reset\" on a "
-            "row returns it to that.")
+            tr('Colours for every AI-limit surface: the header gauge, the bars on the Limits tab, the reset countdown and the captions here. A colour you never touch follows the active theme; "Reset" on a row returns it to that.'))
         intro.setWordWrap(True)
         lay.addWidget(intro)
 
@@ -1267,9 +1241,9 @@ class LimitSettingsDialog(QDialog):
             grid.addWidget(swatch, row, 1)
             self._color_buttons[role.key] = swatch
 
-            reset = QPushButton("Reset")
+            reset = QPushButton(tr('Reset'))
             reset.setFixedWidth(52)
-            reset.setToolTip("Follow the theme / built-in default again")
+            reset.setToolTip(tr('Follow the theme / built-in default again'))
             reset.clicked.connect(
                 lambda _checked=False, key=role.key: self._reset_color(key))
             grid.addWidget(reset, row, 2)
@@ -1278,16 +1252,16 @@ class LimitSettingsDialog(QDialog):
         lay.addWidget(scroll, 1)
 
         row = QHBoxLayout()
-        reset_all = QPushButton("Reset every colour")
+        reset_all = QPushButton(tr('Reset every colour'))
         reset_all.setToolTip(
-            "Drop all AI-limit colour overrides and follow the theme again")
+            tr('Drop all AI-limit colour overrides and follow the theme again'))
         reset_all.clicked.connect(self._reset_all_colors)
         row.addWidget(reset_all)
         self.lbl_color_hint = QLabel("")
         self._hint_style(self.lbl_color_hint)
         row.addWidget(self.lbl_color_hint, 1)
         lay.addLayout(row)
-        self.tabs.addTab(page, "Colours")
+        self.tabs.addTab(page, tr('Colours'))
         self._refresh_color_buttons()
 
     def _refresh_color_buttons(self):
@@ -1308,7 +1282,7 @@ class LimitSettingsDialog(QDialog):
             button.setText(value + ("" if key in active else " *"))
         hint = getattr(self, "lbl_color_hint", None)
         if hint is not None:
-            hint.setText("* follows the active theme")
+            hint.setText(tr('* follows the active theme'))
 
     def _pick_color(self, key):
         from PyQt6.QtWidgets import QColorDialog
@@ -1376,14 +1350,12 @@ class LimitSettingsDialog(QDialog):
         confirmation away — piping a remote script into a shell is never
         something this dialog does on its own.
         """
-        box = QGroupBox("Agent CLIs")
+        box = QGroupBox(tr('Agent CLIs'))
         lay = QVBoxLayout(box)
         lay.setContentsMargins(3, 2, 3, 2)
         lay.setSpacing(2)
         intro = QLabel(
-            "FastPrompter reads quota by asking each vendor's own CLI. Where a "
-            "CLI is missing it falls back to whatever that vendor writes to "
-            "disk, which is less exact — or, for Antigravity, only its refusals.")
+            tr("FastPrompter reads quota by asking each vendor's own CLI. Where a CLI is missing it falls back to whatever that vendor writes to disk, which is less exact — or, for Antigravity, only its refusals."))
         intro.setWordWrap(True)
         lay.addWidget(intro)
 
@@ -1419,10 +1391,10 @@ class LimitSettingsDialog(QDialog):
             info = install_status(key)
             if info["installed"]:
                 state.setText(f"installed · {info['path']}")
-                button.setText("Reinstall / update")
+                button.setText(tr('Reinstall / update'))
             else:
                 state.setText(f"not installed · lands in {info['target']}")
-                button.setText("Install…")
+                button.setText(tr('Install…'))
 
     def _install_cli(self, key):
         """Ask, then run the vendor's official installer in a console window."""
@@ -1483,53 +1455,46 @@ class LimitSettingsDialog(QDialog):
 
         self.extra_homes = QLineEdit(
             str(self.data.get("limit_codex_homes", "") or ""))
-        self.extra_homes.setPlaceholderText("D:\\codex-work, E:\\codex-personal")
+        self.extra_homes.setPlaceholderText(tr('D:\\codex-work, E:\\codex-personal'))
         self.extra_homes.editingFinished.connect(self._set_extra_homes)
         form.addRow("Extra Codex homes", self.extra_homes)
 
         self.claude_homes = QLineEdit(
             str(self.data.get("limit_claude_homes", "") or ""))
         self.claude_homes.setPlaceholderText(
-            "empty = ~/.claude plus any ~/.claude-* home")
+            tr('empty = ~/.claude plus any ~/.claude-* home'))
         self.claude_homes.setToolTip(
-            "One CLAUDE_CONFIG_DIR per extra Claude account. Homes named "
-            "~/.claude-<name> are found on their own; list a path here only "
-            "when the account lives somewhere else. Each becomes its own "
-            "gauge, read with its own credentials.")
+            tr('One CLAUDE_CONFIG_DIR per extra Claude account. Homes named ~/.claude-<name> are found on their own; list a path here only when the account lives somewhere else. Each becomes its own gauge, read with its own credentials.'))
         self.claude_homes.editingFinished.connect(self._set_claude_homes)
         form.addRow("Extra Claude homes", self.claude_homes)
 
         self.antigravity_dir = QLineEdit(
             str(self.data.get("limit_antigravity_dir", "") or ""))
         self.antigravity_dir.setPlaceholderText(
-            "empty = detected ~/.gemini/antigravity")
+            tr('empty = detected ~/.gemini/antigravity'))
         self.antigravity_dir.setToolTip(
-            "Only for a relocated or portable Antigravity install. Its data "
-            "lives under ~/.gemini/antigravity, not ~/.antigravity.")
+            tr('Only for a relocated or portable Antigravity install. Its data lives under ~/.gemini/antigravity, not ~/.antigravity.'))
         self.antigravity_dir.editingFinished.connect(self._set_antigravity_dir)
         form.addRow("Antigravity folder", self.antigravity_dir)
 
         self.zcode_config = QLineEdit(
             str(self.data.get("limit_zcode_config", "") or ""))
         self.zcode_config.setPlaceholderText(
-            "empty = detected ~/.zcode/v2/config.json")
+            tr('empty = detected ~/.zcode/v2/config.json'))
         self.zcode_config.setToolTip(
-            "Only for a relocated or portable ZCode install. FastPrompter "
-            "reads the plan's API key from this file and never stores or logs "
-            "it.")
+            tr("Only for a relocated or portable ZCode install. FastPrompter reads the plan's API key from this file and never stores or logs it."))
         self.zcode_config.editingFinished.connect(self._set_zcode_config)
         form.addRow("ZCode config file", self.zcode_config)
         lay.addLayout(form)
 
         top_bar = QHBoxLayout()
-        self.btn_auto_troubleshoot = QPushButton("⚡ Auto-Troubleshoot & Auto-Repair All")
+        self.btn_auto_troubleshoot = QPushButton(tr('⚡ Auto-Troubleshoot & Auto-Repair All'))
         self.btn_auto_troubleshoot.setToolTip(
-            "Scan all AI sources, repair stale bridges, adopt candidate paths, "
-            "and automatically enable detected coding plans.")
+            tr('Scan all AI sources, repair stale bridges, adopt candidate paths, and automatically enable detected coding plans.'))
         self.btn_auto_troubleshoot.clicked.connect(self._run_auto_troubleshoot)
         top_bar.addWidget(self.btn_auto_troubleshoot)
 
-        refresh = QPushButton("Refresh accounts and limits now")
+        refresh = QPushButton(tr('Refresh accounts and limits now'))
         refresh.clicked.connect(self._refresh_now)
         top_bar.addWidget(refresh)
         lay.addLayout(top_bar)
@@ -1541,20 +1506,18 @@ class LimitSettingsDialog(QDialog):
         self._build_cli_group(lay)
 
         # Codex section
-        codex_box = QGroupBox("Codex (ChatGPT / OpenAI)")
+        codex_box = QGroupBox(tr('Codex (ChatGPT / OpenAI)'))
         codex_lay = QVBoxLayout(codex_box)
         codex_lay.setContentsMargins(3, 2, 3, 2)
         codex_lay.setSpacing(2)
         codex_note = QLabel(
-            "Codex quota is probed directly from the CLI via `codex app-server`. "
-            "It authenticates via ~/.codex/auth.json (or sibling homes) and "
-            "spends no quota.")
+            tr('Codex quota is probed directly from the CLI via `codex app-server`. It authenticates via ~/.codex/auth.json (or sibling homes) and spends no quota.'))
         codex_note.setWordWrap(True)
         codex_lay.addWidget(codex_note)
 
         codex_btn_row = QHBoxLayout()
-        self.btn_codex_login = QPushButton("Log in to Codex…")
-        self.btn_codex_login.setToolTip("Opens a console window to run 'codex login'")
+        self.btn_codex_login = QPushButton(tr('Log in to Codex…'))
+        self.btn_codex_login.setToolTip(tr("Opens a console window to run 'codex login'"))
         self.btn_codex_login.clicked.connect(lambda: self._launch_login("codex"))
         codex_btn_row.addWidget(self.btn_codex_login)
         codex_btn_row.addStretch(1)
@@ -1570,7 +1533,7 @@ class LimitSettingsDialog(QDialog):
         self.btn_claude = QPushButton()
         self.btn_claude.clicked.connect(self._toggle_claude)
         claude_row.addWidget(self.btn_claude)
-        self.btn_claude_login = QPushButton("Log in to Claude…")
+        self.btn_claude_login = QPushButton(tr('Log in to Claude…'))
         self.btn_claude_login.clicked.connect(lambda: self._launch_login("claude"))
         claude_row.addWidget(self.btn_claude_login)
         self.lbl_claude = QLabel()
@@ -1590,18 +1553,7 @@ class LimitSettingsDialog(QDialog):
         self.claude_bridge_rows_box.hide()
         lay.addWidget(self.claude_bridge_rows_box)
         explanation = QLabel(
-            "Claude limits come from four read-only sources: the Claude Code "
-            "CLI's own /usage answer (exact percentages AND reset times, the "
-            "best of them), its status line, Claude Desktop's usage sampler "
-            "(keeps the gauges alive when Claude Code is not running), and "
-            "the refusals Claude Code journals when the API blocks a window. "
-            "Nothing is estimated, and the existing status-line configuration "
-            "is preserved and restored on disconnect. A second account is a "
-            "second CLAUDE_CONFIG_DIR: ~/.claude-<name> homes are detected "
-            "automatically, others go in 'Extra Claude homes' above. Each "
-            "account row below connects or disconnects THAT account's own "
-            "home only; the single row shown for one account acts on the "
-            "default ~/.claude home.")
+            tr("Claude limits come from four read-only sources: the Claude Code CLI's own /usage answer (exact percentages AND reset times, the best of them), its status line, Claude Desktop's usage sampler (keeps the gauges alive when Claude Code is not running), and the refusals Claude Code journals when the API blocks a window. Nothing is estimated, and the existing status-line configuration is preserved and restored on disconnect. A second account is a second CLAUDE_CONFIG_DIR: ~/.claude-<name> homes are detected automatically, others go in 'Extra Claude homes' above. Each account row below connects or disconnects THAT account's own home only; the single row shown for one account acts on the default ~/.claude home."))
         explanation.setWordWrap(True)
         lay.addWidget(explanation)
         # T-1266 C6: the detection answer comes FIRST and is always shown --
@@ -1620,17 +1572,12 @@ class LimitSettingsDialog(QDialog):
         lay.addWidget(self.lbl_claude_sources)
 
         antigravity_note = QLabel(
-            "Antigravity's CLI (agy) reports exact percentages for every quota "
-            "pool it bills — its own Gemini models and the Claude/GPT models it "
-            "hosts are separate pools with separate weekly and 5-hour limits. "
-            "Without the CLI only its own 429 refusals are readable: the window "
-            "reads 0% until that reset and then reports unknown again, never an "
-            "invented number.")
+            tr("Antigravity's CLI (agy) reports exact percentages for every quota pool it bills — its own Gemini models and the Claude/GPT models it hosts are separate pools with separate weekly and 5-hour limits. Without the CLI only its own 429 refusals are readable: the window reads 0% until that reset and then reports unknown again, never an invented number."))
         antigravity_note.setWordWrap(True)
         lay.addWidget(antigravity_note)
 
         agy_row = QHBoxLayout()
-        self.btn_antigravity_login = QPushButton("Log in to Antigravity…")
+        self.btn_antigravity_login = QPushButton(tr('Log in to Antigravity…'))
         self.btn_antigravity_login.clicked.connect(lambda: self._launch_login("antigravity"))
         agy_row.addWidget(self.btn_antigravity_login)
         agy_row.addStretch(1)
@@ -1645,7 +1592,7 @@ class LimitSettingsDialog(QDialog):
         self._build_freebuff_group(lay)
         lay.addStretch(1)
         self.sources_page = page
-        self.tabs.addTab(page, "Sources")
+        self.tabs.addTab(page, tr('Sources'))
         self._refresh_codex_status()
         self._refresh_claude_status()
         self._refresh_antigravity_status()
@@ -1662,26 +1609,16 @@ class LimitSettingsDialog(QDialog):
         never something to switch on quietly, so the consent lives here with the
         exact destination written out.
         """
-        self.cb_zcode = QCheckBox("Read ZCode (GLM Coding Plan) limits")
+        self.cb_zcode = QCheckBox(tr('Read ZCode (GLM Coding Plan) limits'))
         self.cb_zcode.setChecked(
             str(self.data.get("limit_zcode_enabled", "False")) == "True")
         self.cb_zcode.setToolTip(
-            "One HTTPS GET per sweep to https://api.z.ai"
-            "/api/monitor/usage/quota/limit, authenticated with the API key "
-            "already in your ZCode config. It is a billing monitor, not a "
-            "model call, so it spends no tokens and no quota.")
+            tr('One HTTPS GET per sweep to https://api.z.ai/api/monitor/usage/quota/limit, authenticated with the API key already in your ZCode config. It is a billing monitor, not a model call, so it spends no tokens and no quota.'))
         self.cb_zcode.toggled.connect(self._toggle_zcode)
         parent_lay.addWidget(self.cb_zcode)
 
         note = QLabel(
-            "ZCode is the only limit source that leaves this machine: it ships "
-            "no /usage command, and its own cached numbers sit in a database "
-            "the running app keeps locked. When enabled, FastPrompter asks the "
-            "same monitor endpoint the ZCode app asks, reading the API key from "
-            "ZCode's config for one Authorization header — never logged, never "
-            "stored, never shown. Only Z.ai and BigModel hosts are accepted, "
-            "over verified HTTPS. Reported: the 5-hour prompt pool and the "
-            "weekly quota, both from the plan's own credit meter.")
+            tr("ZCode is the only limit source that leaves this machine: it ships no /usage command, and its own cached numbers sit in a database the running app keeps locked. When enabled, FastPrompter asks the same monitor endpoint the ZCode app asks, reading the API key from ZCode's config for one Authorization header — never logged, never stored, never shown. Only Z.ai and BigModel hosts are accepted, over verified HTTPS. Reported: the 5-hour prompt pool and the weekly quota, both from the plan's own credit meter."))
         note.setWordWrap(True)
         parent_lay.addWidget(note)
 
@@ -1690,8 +1627,8 @@ class LimitSettingsDialog(QDialog):
         self._hint_style(self.lbl_zcode_sources)
         parent_lay.addWidget(self.lbl_zcode_sources)
 
-        self.btn_zcode_quick_enable = QPushButton("Enable detected ZCode Plan")
-        self.btn_zcode_quick_enable.setToolTip("Turn on ZCode limit monitoring for detected plans")
+        self.btn_zcode_quick_enable = QPushButton(tr('Enable detected ZCode Plan'))
+        self.btn_zcode_quick_enable.setToolTip(tr('Turn on ZCode limit monitoring for detected plans'))
         self.btn_zcode_quick_enable.clicked.connect(lambda: self.cb_zcode.setChecked(True))
         self.btn_zcode_quick_enable.hide()
         parent_lay.addWidget(self.btn_zcode_quick_enable)
@@ -1760,26 +1697,16 @@ class LimitSettingsDialog(QDialog):
         admits no session and spends no Freebucks. The token comes from
         Freebuff's own state file, never from FastPrompter.
         """
-        self.cb_freebuff = QCheckBox("Read Freebuff (Freebucks) limits")
+        self.cb_freebuff = QCheckBox(tr('Read Freebuff (Freebucks) limits'))
         self.cb_freebuff.setChecked(
             str(self.data.get("limit_freebuff_enabled", "False")) == "True")
         self.cb_freebuff.setToolTip(
-            "One read-only HTTPS GET per sweep to www.codebuff.com"
-            "/api/v1/freebuff/session — the same call Freebuff Desktop itself "
-            "makes to refresh its header. It creates no session and spends no "
-            "Freebucks.")
+            tr('One read-only HTTPS GET per sweep to www.codebuff.com/api/v1/freebuff/session — the same call Freebuff Desktop itself makes to refresh its header. It creates no session and spends no Freebucks.'))
         self.cb_freebuff.toggled.connect(self._toggle_freebuff)
         parent_lay.addWidget(self.cb_freebuff)
 
         note = QLabel(
-            "Freebuff Desktop shows its Freebucks balance in memory only, so "
-            "FastPrompter asks the same session endpoint the app itself polls "
-            "— a read-only GET (no session is created, nothing is spent). The "
-            "sign-in token is read from Freebuff's own state file for one "
-            "Authorization header — never logged, never stored, never shown. "
-            "Only the vendor's own host is accepted, over verified HTTPS. "
-            "Reported: the daily Freebucks pool, the wallet balance, and "
-            "per-model prices in the tooltip.")
+            tr("Freebuff Desktop shows its Freebucks balance in memory only, so FastPrompter asks the same session endpoint the app itself polls — a read-only GET (no session is created, nothing is spent). The sign-in token is read from Freebuff's own state file for one Authorization header — never logged, never stored, never shown. Only the vendor's own host is accepted, over verified HTTPS. Reported: the daily Freebucks pool, the wallet balance, and per-model prices in the tooltip."))
         note.setWordWrap(True)
         parent_lay.addWidget(note)
 
@@ -1788,9 +1715,9 @@ class LimitSettingsDialog(QDialog):
         self._hint_style(self.lbl_freebuff_sources)
         parent_lay.addWidget(self.lbl_freebuff_sources)
 
-        self.btn_freebuff_quick_enable = QPushButton("Enable detected Freebuff account")
+        self.btn_freebuff_quick_enable = QPushButton(tr('Enable detected Freebuff account'))
         self.btn_freebuff_quick_enable.setToolTip(
-            "Turn on Freebuff limit monitoring for the signed-in account")
+            tr('Turn on Freebuff limit monitoring for the signed-in account'))
         self.btn_freebuff_quick_enable.clicked.connect(
             lambda: self.cb_freebuff.setChecked(True))
         self.btn_freebuff_quick_enable.hide()
@@ -1799,7 +1726,7 @@ class LimitSettingsDialog(QDialog):
         # T-1243 spec 27: the FULL model-price table lives here, compact and
         # sorted by price then model -- the hover panel only shows a bounded
         # subset and points at this view.
-        self.lbl_freebuff_prices_title = QLabel("Freebuff model prices")
+        self.lbl_freebuff_prices_title = QLabel(tr('Freebuff model prices'))
         self._hint_style(self.lbl_freebuff_prices_title)
         self.lbl_freebuff_prices_title.hide()
         parent_lay.addWidget(self.lbl_freebuff_prices_title)
@@ -1852,8 +1779,7 @@ class LimitSettingsDialog(QDialog):
                           f"{state.get('state_path') or '?'}")
             return
         if not signed_in:
-            label.setText("Freebuff: not signed in — sign in inside Freebuff "
-                          "Desktop first")
+            label.setText(tr('Freebuff: not signed in — sign in inside Freebuff Desktop first'))
             return
         lines = [f"Freebuff: signed in as {who} · read-only GET "
                  f"{state.get('endpoint', '')}"]
@@ -1998,7 +1924,7 @@ class LimitSettingsDialog(QDialog):
     def _refresh_now(self):
         if hasattr(self, "btn_refresh"):
             self.btn_refresh.setEnabled(False)
-            self.btn_refresh.setText("Refreshing...")
+            self.btn_refresh.setText(tr('Refreshing...'))
         self.service.discover()
         self.service.refresh()
         self.account_selector.sync(force=True)
@@ -2115,7 +2041,7 @@ class LimitSettingsDialog(QDialog):
                 install_bridge(home)
         except Exception as exc:
             QMessageBox.warning(
-                self, "Claude Code limits",
+                self, tr('Claude Code limits'),
                 "Could not update the Claude statusLine for\n"
                 f"{home}:\n\n{exc}")
         self._refresh_claude_status()
@@ -2165,7 +2091,7 @@ class LimitSettingsDialog(QDialog):
                 text = "Not connected"
             if button is not None:
                 if status.get("stale"):
-                    button.setText("Reconnect Claude Code")
+                    button.setText(tr('Reconnect Claude Code'))
                 else:
                     button.setText(
                         "Disconnect Claude Code" if status["connected"]
@@ -2174,7 +2100,7 @@ class LimitSettingsDialog(QDialog):
                 label.setText(text)
         except Exception as exc:
             if button is not None:
-                button.setText("Connect Claude Code")
+                button.setText(tr('Connect Claude Code'))
             if label is not None:
                 label.setText(f"Configuration error: {exc}")
         self._refresh_claude_accounts()
@@ -2321,7 +2247,7 @@ class LimitSettingsDialog(QDialog):
             from fastprompter.core.usage_limits.troubleshooter import auto_heal_all
             result = auto_heal_all(self.data, self.service)
         except Exception as exc:
-            QMessageBox.warning(self, "Auto-Troubleshoot", f"Auto-troubleshoot failed:\n\n{exc}")
+            QMessageBox.warning(self, tr('Auto-Troubleshoot'), f"Auto-troubleshoot failed:\n\n{exc}")
             return
 
         self._commit()
@@ -2353,13 +2279,13 @@ class LimitSettingsDialog(QDialog):
 
     def _show_troubleshoot_summary(self, healed, remaining, accounts_count, diagnostics):
         dialog = QDialog(self)
-        dialog.setWindowTitle("AI Limits Auto-Troubleshoot")
+        dialog.setWindowTitle(tr('AI Limits Auto-Troubleshoot'))
         dialog.setMinimumWidth(460)
         lay = QVBoxLayout(dialog)
         lay.setSpacing(8)
 
         if healed:
-            box_h = QGroupBox("Automated Repairs Completed")
+            box_h = QGroupBox(tr('Automated Repairs Completed'))
             box_h_lay = QVBoxLayout(box_h)
             for h in healed:
                 lbl = QLabel(f"✓ {h}")
@@ -2373,7 +2299,7 @@ class LimitSettingsDialog(QDialog):
             lay.addWidget(succ)
 
         if remaining:
-            box_r = QGroupBox("Remaining Setup Items")
+            box_r = QGroupBox(tr('Remaining Setup Items'))
             box_r_lay = QVBoxLayout(box_r)
             for r in remaining:
                 lbl = QLabel(f"• {r}")
@@ -2384,30 +2310,30 @@ class LimitSettingsDialog(QDialog):
             act_box = QHBoxLayout()
             codex_diag = diagnostics.get("codex", {})
             if codex_diag.get("status_code") == "needs_login":
-                btn = QPushButton("Log in to Codex…")
+                btn = QPushButton(tr('Log in to Codex…'))
                 btn.clicked.connect(lambda: [dialog.accept(), self._launch_login("codex")])
                 act_box.addWidget(btn)
             elif codex_diag.get("status_code") == "needs_install":
-                btn = QPushButton("Install Codex CLI")
+                btn = QPushButton(tr('Install Codex CLI'))
                 btn.clicked.connect(lambda: [dialog.accept(), self._install_cli("codex")])
                 act_box.addWidget(btn)
 
             claude_diag = diagnostics.get("claude", {})
             if claude_diag.get("status_code") == "needs_install":
-                btn = QPushButton("Install Claude CLI")
+                btn = QPushButton(tr('Install Claude CLI'))
                 btn.clicked.connect(lambda: [dialog.accept(), self._install_cli("claude")])
                 act_box.addWidget(btn)
 
             agy_diag = diagnostics.get("antigravity", {})
             if not agy_diag.get("details", {}).get("cli_installed"):
-                btn = QPushButton("Install Antigravity CLI")
+                btn = QPushButton(tr('Install Antigravity CLI'))
                 btn.clicked.connect(lambda: [dialog.accept(), self._install_cli("antigravity")])
                 act_box.addWidget(btn)
             elif agy_diag.get("status_code") == "needs_login":
                 # The CLI is present but has no stored session, so probing is
                 # refused on purpose (no surprise browser). Offer the explicit
                 # login here — auto-pressing it would be the popup we avoid.
-                btn = QPushButton("Log in to Antigravity…")
+                btn = QPushButton(tr('Log in to Antigravity…'))
                 btn.clicked.connect(lambda: [dialog.accept(), self._launch_login("antigravity")])
                 act_box.addWidget(btn)
 
@@ -2415,7 +2341,7 @@ class LimitSettingsDialog(QDialog):
 
         btn_box = QHBoxLayout()
         btn_box.addStretch(1)
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton(tr('Close'))
         close_btn.clicked.connect(dialog.accept)
         btn_box.addWidget(close_btn)
         lay.addLayout(btn_box)
@@ -2443,7 +2369,7 @@ class LimitSettingsDialog(QDialog):
                 # the browser is open, so the instruction cannot disappear at
                 # the exact moment it is needed.
                 QMessageBox.information(
-                    self, "Antigravity sign-in instructions", msg)
+                    self, tr('Antigravity sign-in instructions'), msg)
                 launch_vendor_login(vendor)
             else:
                 launch_vendor_login(vendor)

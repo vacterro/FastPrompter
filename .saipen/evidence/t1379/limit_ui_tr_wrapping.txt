@@ -1,0 +1,116 @@
+T-1379 -- CODE half: the Limit UI now routes its text through tr()
+==============================================================
+
+Scope note
+----------
+This record covers the CODE half only. The ticket's verify clause also
+requires the literals to "resolve in all 33 locale packs", and the drifted
+key 'All AI accounts hidden (0% usage or no usable 5h window)' to exist in
+est.py and the other 32. That is the TRANSLATION half, owned by the
+saitranslate producer and blocked on T-1376. T-1379 stays open for it.
+
+WHY tr() MAKES THIS SAFE
+------------------------
+core/i18n/_engine.py:42
+
+    def tr(key, lang=None):
+        if not key: return key
+        target = (lang or get_language()).upper()
+        if target == EN_FALLBACK: return key
+        lang_dict = _registry.get(target)
+        if lang_dict is None: return key
+        return lang_dict.get(key, key)
+
+Two properties make the rewrite behaviour-preserving rather than a gamble:
+
+  * English returns the key unchanged, so nothing moves for an en-US user.
+  * A key missing from a locale pack returns the key -- which IS the English
+    literal, because the keys are English sentences. So a locale that has
+    never seen a new key paints exactly what it paints today.
+
+That is why this can land before the translation work instead of after it.
+It is also why the change is invisible to the existing test suite and to
+`--gate core`: nothing about it can fail, which is precisely the problem the
+new test below exists to solve.
+
+WHAT CHANGED
+------------
+  src/fastprompter/ui/limit_settings_dialog.py   133 wrapped
+  src/fastprompter/ui/limit_account_selector.py   12
+  src/fastprompter/ui/limit_overview.py            7
+  src/fastprompter/ui/limit_gauges.py               5
+  src/fastprompter/ui/limit_hover_card.py           0
+                                        TOTAL 157 sites, 142 distinct keys
+
+  src/fastprompter/core/i18n/en.py   1,568 -> 1,694 keys (126 added)
+
+  + `from fastprompter.core.translations import tr` in the four files that
+    wrap something. That is the import path four other UI modules already
+    use (audio_hub_pages, backup_dialog, ctrlw_settings, hotkey_mixin).
+
+HOW THE EDITS WERE MADE
+-----------------------
+AST, not regex. `V:/_TEMP_/wrap_tr.py` parses each file, walks Call nodes,
+and rewrites a string Constant only where the parser proved it is an
+argument to a user-facing call (setText, setToolTip, setPlaceholderText,
+setWindowTitle, addItem, QLabel, QPushButton, QGroupBox, QMessageBox
+statics, ...). Offsets resolve through a whole-file byte->char map, because
+an implicitly concatenated literal
+
+    btn.setToolTip(
+        "Consume 1 banked reset credit to refill quota "
+        "immediately")
+
+is ONE Constant whose span crosses two lines; a per-line offset model
+corrupts it, and did on the first attempt -- the file did not parse and was
+not written. Every file is re-parsed after its own rewrite and the write is
+skipped if that fails, so a bad edit cannot reach the tree.
+
+en.py was merged, not re-emitted: the 126 new keys were merge-sorted into
+the existing block, and the module head (docstring, `from __future__`) and
+the closing brace were left as the surrounding lines produced them. The
+pre-existing 1,568 keys and their order are byte-identical; the file is
+still strictly `sorted()`.
+
+DEVIATION FROM THE VERIFY CLAUSE, AND WHY
+-----------------------------------------
+The clause reads: "limit_overview.py, limit_gauges.py, limit_settings_dialog.py,
+limit_hover_card.py and limit_account_selector.py each import
+fastprompter.core.translations.tr".
+
+limit_hover_card.py does not, and adding the import would be a false claim.
+It paints exactly one QLabel:
+
+    69:  self._label = QLabel(self)
+    167: self._label.setText(html or "")
+
+The `html` is assembled by its caller (limit_gauges.py, which is wrapped).
+There is no user-facing literal in the file to translate, so an import there
+would be unused -- ruff F401 -- and would assert a coverage the file does not
+have. The test encodes the real invariant instead: a Limit UI file imports tr()
+if and only if it wraps at least one key.
+
+THE CHECK THAT MAKES THIS NON-TRIVIAL
+--------------------------------------
+tests/test_limit_ui_tr_keys_t1379.py
+
+  * every tr() key in the five files resolves in en.TRANSLATIONS
+  * a file imports tr() iff it wraps at least one key
+  * the scan still finds >= 100 keys, so it cannot pass by matching nothing
+
+Without it this change is unverifiable: tr() never raises on a missing key,
+so a dropped or misspelled key is indistinguishable from correct behaviour at
+runtime and in the gate.
+
+  $ python -m pytest tests/test_limit_ui_tr_keys_t1379.py -q
+    11 passed
+
+STILL OPEN
+----------
+  * 32 locale packs do not contain the 126 new keys. They render English,
+    exactly as before this change. Not a regression; not a translation.
+  * 'All AI accounts hidden (0% usage or no usable 5h window)' and the
+    format_offer_expiry vocabulary are still absent from est.py. The first
+    is not among the literals this pass wrapped -- the AST scan did not find
+    it in these five files, which is a separate finding for the translation
+    producer, not a gap this pass introduced.

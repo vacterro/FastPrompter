@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from fastprompter.core.translations import tr
+
 
 def hidden_account_keys(data: dict) -> set[str]:
     """Return persisted hidden keys, tolerating pre-codec/string profiles."""
@@ -121,17 +123,17 @@ class LimitAccountSelector(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
         if not accounts:
-            self._grid.addWidget(QLabel("No AI accounts detected"), 0, 0)
+            self._grid.addWidget(QLabel(tr('No AI accounts detected')), 0, 0)
             return
         name_map = _setting_map(
             self.main_win.data, "limit_gauges_account_names")
         label_map = _setting_map(
             self.main_win.data, "limit_gauges_account_labels")
-        self._grid.addWidget(QLabel("Show"), 0, 0)
-        self._grid.addWidget(QLabel("Detected"), 0, 1)
-        self._grid.addWidget(QLabel("Your name"), 0, 2)
-        self._grid.addWidget(QLabel("Header"), 0, 3)
-        self._grid.addWidget(QLabel("Order"), 0, 4, 1, 2)
+        self._grid.addWidget(QLabel(tr('Show')), 0, 0)
+        self._grid.addWidget(QLabel(tr('Detected')), 0, 1)
+        self._grid.addWidget(QLabel(tr('Your name')), 0, 2)
+        self._grid.addWidget(QLabel(tr('Header')), 0, 3)
+        self._grid.addWidget(QLabel(tr('Order')), 0, 4, 1, 2)
         last = len(accounts) - 1
         for index, account in enumerate(accounts):
             row = index + 1
@@ -152,7 +154,7 @@ class LimitAccountSelector(QWidget):
             name_edit.setPlaceholderText(account.display_name)
             name_edit.setText(name_map.get(account.key, ""))
             name_edit.setToolTip(
-                "Optional account name used in limit details and hover")
+                tr('Optional account name used in limit details and hover'))
             name_edit.textEdited.connect(
                 lambda text, key=account.key: self._set_name(key, text))
             self._grid.addWidget(name_edit, row, 2)
@@ -163,23 +165,23 @@ class LimitAccountSelector(QWidget):
             badge_edit.setText(label_map.get(
                 account.key, default_account_label(account)))
             badge_edit.setToolTip(
-                "Short header badge. Leave empty for no badge on this account.")
+                tr('Short header badge. Leave empty for no badge on this account.'))
             badge_edit.textEdited.connect(
                 lambda text, key=account.key: self._set_badge(key, text))
             self._grid.addWidget(badge_edit, row, 3)
 
-            move_up = QPushButton("▲")
+            move_up = QPushButton(tr('▲'))
             move_up.setFixedWidth(22)
             move_up.setEnabled(index > 0)
-            move_up.setToolTip("Draw this account earlier in the header")
+            move_up.setToolTip(tr('Draw this account earlier in the header'))
             move_up.clicked.connect(
                 lambda _checked=False, key=account.key: self._move(key, -1))
             self._grid.addWidget(move_up, row, 4)
 
-            move_down = QPushButton("▼")
+            move_down = QPushButton(tr('▼'))
             move_down.setFixedWidth(22)
             move_down.setEnabled(index < last)
-            move_down.setToolTip("Draw this account later in the header")
+            move_down.setToolTip(tr('Draw this account later in the header'))
             move_down.clicked.connect(
                 lambda _checked=False, key=account.key: self._move(key, 1))
             self._grid.addWidget(move_down, row, 5)

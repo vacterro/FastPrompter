@@ -51,6 +51,7 @@ def sip_deleted(widget) -> bool:
     except (TypeError, RuntimeError):
         return False
 
+from fastprompter.core.translations import tr
 from fastprompter.core.usage_limits.freebuff_format import (
     format_amount,
     format_price,
@@ -149,7 +150,7 @@ class LimitGauges(QWidget):
         self.setMinimumHeight(12)
         self.setFixedWidth(self.PAD * 2 + 14)   # room for status text always
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("AI usage: click to open settings")
+        self.setToolTip(tr('AI usage: click to open settings'))
         self._last_prefer_labels = None
         self._initial_auto_scheduled = False
         self._result_ready.connect(self._on_data)
@@ -400,7 +401,7 @@ class LimitGauges(QWidget):
         res_word = "reset" if banked == 1 else "resets"
         ans = QMessageBox.question(
             self,
-            "Activate Rate Limit Reset",
+            tr('Activate Rate Limit Reset'),
             f"Activate rate limit reset for {account.display_name}?\n\n"
             f"Available: {banked} banked {res_word}.\n\n"
             "This will consume 1 reset credit to immediately refill your quota.",
@@ -419,7 +420,7 @@ class LimitGauges(QWidget):
             if res.get("ok"):
                 QMessageBox.information(
                     self,
-                    "Reset Activated",
+                    tr('Reset Activated'),
                     f"Rate limit reset activated successfully for {account.display_name}!\n"
                     f"Outcome: {res.get('outcome', 'success')}\n\n"
                     "Quota has been refreshed.",
@@ -428,13 +429,13 @@ class LimitGauges(QWidget):
                 err = res.get("error") or res.get("outcome") or "Unknown error"
                 QMessageBox.warning(
                     self,
-                    "Reset Failed",
+                    tr('Reset Failed'),
                     f"Failed to activate reset for {account.display_name}:\n{err}",
                 )
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                "Reset Error",
+                tr('Reset Error'),
                 f"Exception while activating reset:\n{exc}",
             )
         finally:

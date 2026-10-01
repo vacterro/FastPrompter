@@ -27,6 +27,7 @@ from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtGui import QColor, QCursor, QFont, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import QMessageBox, QPushButton, QSizePolicy, QWidget
 
+from fastprompter.core.translations import tr
 from fastprompter.core.usage_limits.model import (
     OK,
     STALE,
@@ -192,17 +193,16 @@ class LimitOverview(QWidget):
                 text, offer = payload
                 direct = bool(offer.redeemable_in_fastprompter)
                 if direct:
-                    btn = QPushButton("Activate reset", self)
+                    btn = QPushButton(tr('Activate reset'), self)
                     btn.setToolTip(
-                        "Consume 1 banked reset credit to refill quota "
-                        "immediately")
+                        tr('Consume 1 banked reset credit to refill quota immediately'))
                     btn.clicked.connect(
                         lambda checked=False, s=shot:
                         self._prompt_activate_reset(s))
                 else:
                     from fastprompter.ui.limit_gauges import _RESET_OPEN_URLS
                     url = _RESET_OPEN_URLS.get(shot.account.provider_id, "")
-                    btn = QPushButton("Open Usage", self)
+                    btn = QPushButton(tr('Open Usage'), self)
                     btn.setToolTip(
                         f"{shot.account.display_name} resets are redeemed at "
                         f"the vendor — open its usage page")
@@ -249,7 +249,7 @@ class LimitOverview(QWidget):
         res_word = "reset" if banked == 1 else "resets"
         ans = QMessageBox.question(
             self,
-            "Activate Rate Limit Reset",
+            tr('Activate Rate Limit Reset'),
             f"Activate rate limit reset for {account.display_name}?\n\n"
             f"Available: {banked} banked {res_word}.\n\n"
             "This will consume 1 reset credit to immediately refill your quota.",
@@ -268,7 +268,7 @@ class LimitOverview(QWidget):
             if res.get("ok"):
                 QMessageBox.information(
                     self,
-                    "Reset Activated",
+                    tr('Reset Activated'),
                     f"Rate limit reset activated successfully for {account.display_name}!\n"
                     f"Outcome: {res.get('outcome', 'success')}\n\n"
                     "Quota is refreshing...",
@@ -278,13 +278,13 @@ class LimitOverview(QWidget):
                 err = res.get("error") or res.get("outcome") or "Unknown error"
                 QMessageBox.warning(
                     self,
-                    "Reset Failed",
+                    tr('Reset Failed'),
                     f"Failed to activate reset for {account.display_name}:\n{err}",
                 )
         except Exception as exc:
             QMessageBox.warning(
                 self,
-                "Reset Error",
+                tr('Reset Error'),
                 f"Exception while activating reset:\n{exc}",
             )
         finally:
