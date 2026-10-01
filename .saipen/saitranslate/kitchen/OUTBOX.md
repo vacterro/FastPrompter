@@ -1,7 +1,7 @@
 # OUTBOX
 
 ## TRANSLATE-019: ee re-cut @ 2be089df (21.09.26) -- UI surface closed (re-sync), docs surface backlog carried
-- **status:** ready
+- **status:** stale
 - **legacy:** false
 - **critical:** false
 - **summary:** FORCE-FRESH `ee` cut bound to current HEAD 2be089df290a961212290c0302cab055b8537cf1 / fingerprint d82fe425 (W-040 stale invalidated; previous TRANSLATE-018 draft 05df824/e8c53d82 superseded). UI surface: 33/33 packs loadable, `Missing from en.json: 0` after the 2-long-key delta (the multi-line tr() keys with embedded \\n), 0 structural errors, packs == modules (33 runtime i18n modules re-synced from packs), honest coverage_pct on all 33 lanes (no 100.0-forced wins), 1501 canonical keys (1021 static + _DATA, 489 non-static data-driven/docs/wiki keys noted honestly). Docs surface: 3 shipped guide mirrors DE/EST/JA re-cut to byte-identity (already in TRANSLATE-018; still valid), translated wiki docs 4/32 (de/est/ja/ru) with 16 docs each, README mirrors 3/32 — backlog carried (UKR+Ded 0). Ready payload is the UI re-sync + honest metadata + typecheck vocab rebuild, not the docs tail.

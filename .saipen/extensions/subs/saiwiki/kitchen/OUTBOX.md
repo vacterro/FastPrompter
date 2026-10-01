@@ -1,7 +1,7 @@
 # OUTBOX
 
 ## W-041: qq re-cut @ 2be089df (21.09.26) — whole-wiki verification passes 0/0; READY
-- **status:** ready
+- **status:** stale
 - **legacy:** false
 - **critical:** false
 - **summary:** FORCE-FRESH `qq` re-cut against current HEAD 2be089df290a961212290c0302cab055b8537cf1 (tree moved since W-040's binding 05df8240/34c266cc no longer matches; W-040 invalidated). Re-ran the whole-wiki fact oracle `qq_verify_040.py` against the live tree: 0 failures over 15 pages. Tree drift since W-040: `sound_dependencies.py` added under `core/` (core 37->38, total 175->176), `ui/` 67->68 (one module), `sound_events` map 60->69 (the architecture prose still said 60). Repaired: `Module-Structure.md` core total 37->38, Total 175->176, added `sound_dependencies.py` row; `Architecture-Overview.md` event count 60->69. No file outside `.saipen/extensions/subs/saiwiki/` was touched.
