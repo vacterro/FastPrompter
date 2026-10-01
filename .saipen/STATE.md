@@ -2,7 +2,7 @@
 phase: DONE
 task: none
 next_action: "saipen continue"
-blocker: none
+blocker: OPERATOR DECISION REQUIRED -- all 8 open tickets blocked on human authority or external resources, none agent-actionable: T-1373/T-1374 (SAIPEN_HOME), T-1371/T-1375 (cohort STALE_PLAN), T-1376 (sub collect/dispose circular), T-1379 (saitranslate producer), T-1377/T-1382 (soft caps)
 agent: buffy
 saipen_version: 7
 saipen_home: "C:/Users/vac34/.agents/skills/saipen"
@@ -13,9 +13,9 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3798
+last_event: 3800
 style_contract: ded-71fc58de
-updated: "2026-10-01T20:37:00Z"
+updated: "2026-10-01T21:10:42Z"
 transition_from: SCOUT
 execution_intent: goal
 goal_waves: 0
