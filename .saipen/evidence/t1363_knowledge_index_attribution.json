@@ -1,0 +1,59 @@
+{
+  "ticket": "T-1363",
+  "claim": "A clean checkout regenerated INDEX.md to cards: 3 and dropped a card the committed index referenced.",
+  "attribution": {
+    "verdict": "ATTRIBUTED protocol output, NOT unattributed user data",
+    "basis": [
+      ".saipen/evidence/t1370_cohort_manifest.json: git_state=untracked, bucket=PROTOCOL, owning_ticket=protocol, role='SAIPEN memory', reason='committed with the reconciliation corridor, never with product code'",
+      ".saipen/LOG.md E-3605 [T-1360] [agent: buffy] records 'KNOWLEDGE card manual-reset-offers-contract added'",
+      "git log --all -- <card> is empty: never committed in any branch"
+    ],
+    "consequence": "CORE.md 1.5 (unattributed changes are user data) does NOT bar committing it."
+  },
+  "before": {
+    "state": "origin/main @ 6e64047 committed INDEX.md declared cards: 4, digest sha256:2cbe6fb9...",
+    "detached_worktree_regeneration": "cards: 3, digest sha256:418c8785..., 1 line removed (the manual-reset card), 2 insertions / 3 deletions",
+    "defect": "committed index is stale in a clean checkout; the referenced card silently disappears"
+  },
+  "after": {
+    "commit": "bc902d2",
+    "files": [
+      ".saipen/KNOWLEDGE/INDEX.md",
+      ".saipen/KNOWLEDGE/architecture.md",
+      ".saipen/KNOWLEDGE/cards/manual-reset-offers-contract.md",
+      ".saipen/KNOWLEDGE/cards/commit-invalidates-closure-receipts.md"
+    ],
+    "index_cards": 5,
+    "detached_worktree_regeneration_drift": "none (git diff --stat empty)",
+    "digest_clean_checkout": "588e0532ace3cec2867382089b744c0410b97fce63148794540c25355dd0d97e",
+    "digest_committed_blob": "588e0532ace3cec2867382089b744c0410b97fce63148794540c25355dd0d97e",
+    "match": true
+  },
+  "gates": {
+    "validate.py --gate ship": "exit 0, conformant, 80 warnings",
+    "git diff --cached --check": "clean",
+    "staged_scope": "exactly the 4 intended PROTOCOL-bucket paths; no git add . / -A"
+  },
+  "oracle": {
+    "principle": "VERIFY-ORACLE-01: a gate that cannot fail is not a gate",
+    "script": "build/_t1363_oracle.py",
+    "pre_fix": {
+      "commit": "6e64047",
+      "cards": 3,
+      "committed_digest": "d1afadf79ddf6c9f",
+      "regenerated_digest": "b7a20ccb30d8b8d4",
+      "result": "DRIFT",
+      "red": true
+    },
+    "post_fix": {
+      "commit": "bc902d2",
+      "cards": 5,
+      "committed_digest": "588e0532ace3cec2",
+      "regenerated_digest": "588e0532ace3cec2",
+      "result": "REPRODUCIBLE",
+      "green": true
+    },
+    "pair": "ADMISSIBLE",
+    "note": "The RED half is the true pre-fix commit recovered from git, not a simulated failure. The oracle was written against the post-fix state and demonstrated to fail on the pre-fix commit."
+  }
+}
