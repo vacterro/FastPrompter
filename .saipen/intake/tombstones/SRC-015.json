@@ -1,0 +1,16 @@
+{
+  "actionable": 1,
+  "archive_ref": ".saipen/archive/source/SRC-015.md",
+  "closed_at": "2026-10-01T22:13:49Z",
+  "closure_event": null,
+  "linked_work": "T-1322",
+  "linked_works": [
+    "T-1322"
+  ],
+  "receipt_id": "SRC-015",
+  "requirements": 1,
+  "schema_version": 1,
+  "source_sha256": "da4b3e26f09a0ff17fb693a9f09d08d3a8659e158c453dd8168f0152e3a3b568",
+  "status": "CLOSED",
+  "unresolved": 0
+}

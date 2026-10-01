@@ -1,0 +1,32 @@
+{
+  "amends": "SRC-008",
+  "archive_ref": ".saipen/archive/source/SRC-009.md",
+  "closed_at": "2026-10-01T22:13:48Z",
+  "closure_event": null,
+  "linked_work": "T-1207",
+  "receipt_id": "SRC-009",
+  "received_at": "2026-09-06T16:27:15Z",
+  "redaction": {
+    "applied": false,
+    "authoritative": false,
+    "original_sha256": "ce0f841efcd2f57b15297493ff026d820add1105dd0cd2dae70c52d8f07fa317",
+    "sanitized_sha256": "ce0f841efcd2f57b15297493ff026d820add1105dd0cd2dae70c52d8f07fa317"
+  },
+  "reread_at": "2026-10-01T22:13:48Z",
+  "schema_version": 1,
+  "sensitive": false,
+  "source_authority": {
+    "body_sha256": "ce0f841efcd2f57b15297493ff026d820add1105dd0cd2dae70c52d8f07fa317",
+    "mode": "exact",
+    "original_available": true
+  },
+  "source_kind": "implementation_mission",
+  "source_sha256": "ce0f841efcd2f57b15297493ff026d820add1105dd0cd2dae70c52d8f07fa317",
+  "status": "CLOSED",
+  "storage_status": "ARCHIVED",
+  "transport": {
+    "newline_normalization": "none",
+    "source_encoding": "utf-8",
+    "transport_transform": "none"
+  }
+}

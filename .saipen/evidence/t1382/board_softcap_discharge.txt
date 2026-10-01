@@ -1,0 +1,170 @@
+T-1382 -- board-soft-cap discharged: 73,441 B -> 7,654 B
+=========================================================
+
+The defect
+----------
+`python tools/validate.py --gate core` emitted
+
+    WARN [board-soft-cap]: BOARD.md is 72 KB (soft cap ~16 KB), of which
+    67 KB is closed-ticket text -- that content already lives in
+    LOG.md/CHANGELOG.md, so scrub ## DONE at the next CLEAN
+    (RFC 1.2, phases/clean.md step 1)
+
+check site: tools/validate.py:2714-2722 --
+`board_kb = BOARD.md size / 1024; if board_kb > 16`. It measures the WHOLE
+file, so no amount of editing the four open tickets moves it. The only lever
+is bytes in `## DONE`.
+
+TWO MUTATIONS, IN THIS ORDER
+----------------------------
+
+1. Close the 64 active source receipts.
+2. Scrub `## DONE` down to the tickets something still names.
+
+Order matters and is not cosmetic: clean.md step 1 forbids pruning a DONE
+ticket that an ACTIVE receipt still references ("the BOARD line is that
+Work's existence record ... Retire the receipt first"). So the receipts must
+leave the active surface before their Works' lines may go. Doing it in the
+other order produces, per clean.md, one
+`source receipts -- active receipt SRC-NNN references missing Work T-NNN`
+failure per receipt.
+
+MUTATION 1 -- receipts: `saipen source close SRC-NNN` x 64
+-----------------------------------------------------------
+  before: 64 active   7 tombstones (5 CLOSED/unresolved 0, 2 INVALID)
+  after :  0 active  71 tombstones (69 CLOSED/unresolved 0, 2 INVALID)
+
+The blocker record said the route was "retire the receipt first
+(`saipen source retire SRC-NNN`)". Retire is not the verb that works here, and
+that is a finding, not a preference. All five retirement reason classes refuse
+on a dry run, because the receipt is not retirable by any of them:
+
+  EMPTY_STALE_SOURCE       SRC-003 carries 13 requirements
+  STALE_CREDENTIAL         its identity is still valid
+  SUPERSEDED_SOURCE        needs --successor
+  MISROUTED_PROJECT_BINDING needs --note naming the true project
+  ORPHANED_RECEIPT         "SRC-003 is still linked to live Work T-1162"
+
+That last refusal is worth recording on its own, because T-1162 is in
+`## DONE`. The guard (saipen_engine/retirement.py) is
+`if linked and linked in tickets and linked not in live:` -- `live` is the
+non-DONE set, so the branch fires for a CLOSED linked Work. The message and
+the condition disagree. Engine code, outside this repo; not fixed here.
+
+`source close` is the verb that is actually open to these receipts, and it is
+the correct one on the merits, not merely the available one. Its own
+eligibility gate (intake.close_receipt) requires, and all 64 satisfied:
+
+  * `coverage_complete(root, id)`   -- zero unresolved requirements
+  * no linked Work that is on BOARD and not DONE
+
+Measured before mutating: all 64 CLOSEABLE, 0 UNRESOLVED, 0 OPENWORK, 55
+distinct linked Works. So these receipts are not in flux; they are finished
+work that nobody ran the verb on. They were ACTIVE, not in progress.
+
+close is not a discard. It writes an archive bundle
+(`.saipen/archive/source/{SRC-NNN}.{md,meta.json,coverage.json,contract.json}`),
+a tombstone under `.saipen/intake/tombstones/`, and pops the id from
+`active`. 586 files now sit in the archive. Body digest preserved in the
+tombstone as `source_sha256`.
+
+Safety of the mutation, checked before, not after:
+  * `.saipen/intake/index.json`, `.saipen/intake/tombstones/`, and
+    `.saipen/archive/` are all tracked at HEAD (541 / -- / 118 files), so the
+    exact bytes are restorable with `git restore`.
+  * Five receipts were ALREADY CLOSED tombstones reached by closing rather
+    than retiring (SRC-004, 005, 012, 013, 021). The route taken here is the
+    one this project has used before, not a novel one.
+  * `work_closure_gate` (intake.py:2705+) accepts a CLOSED tombstone with
+    `unresolved == 0` as valid coverage for ANY Work that cites it, so no
+    Work lost its closure provenance.
+  * Probe-first: SRC-003 was closed alone and the gate re-run before the other
+    63. Gate exit 0, 0 FAIL, identical fingerprint. Only then was the batch
+    run.
+
+MUTATION 2 -- board scrub
+-------------------------
+  before: 73,441 B (4.50x cap)  header 35 B, 4 open 4,448 B, 130 DONE 69,226 B
+  after :  7,654 B (0.47x cap)  4 open + 4 DONE kept
+
+Kept, because something still names them:
+  * 4 cohort members, read from the durable registry
+    `.saipen/kitchen/cohort_registry.json`: T-1269 (C-001);
+    T-1352, T-1354, T-1355 (C-069). Cohort membership is a protected
+    reference class: the T-1375 record shows that pruning a member makes
+    `cohort status C-001` answer "T-1269 is not on BOARD". That check is
+    outside `--gate core`, which is exactly why a green gate would not have
+    caught it.
+  * 2 live tickets named by another live ticket's `needs:` (T-1376, T-1382),
+    caught by scanning the non-DONE text for `needs:` / `blocked_on:`.
+
+Pruned: 126 DONE entries, 53,232 B.
+
+Note on `needs:` edges. The board carries 24 `needs:` fields, all on tickets
+that are themselves DONE (T-1351->T-1352/T-1355, T-1359->T-1360, T-1299->8
+ids, and so on). clean.md step 1 says "a DONE ticket that any LIVE ticket
+still names in `needs:` MUST NOT be pruned", and the set of DONE tickets
+pinned by a live ticket is EMPTY -- scanning only the non-DONE text returns
+zero. Pruning all 24 edges' worth of DONE targets was therefore within the
+rule as written. It is also why the result is 7.6 KB rather than 15.9 KB:
+keeping the DONE-to-DONE edges (29 tickets) as if they were live pins lands
+at 15,994 B of pinned text -- 355 B under the cap. A scrub that clears a
+soft cap by 2% and tips back over on the next ticket is not a scrub.
+
+RECOVERY PROOF (named per clean.md)
+-----------------------------------
+  `git restore --source=HEAD -- .saipen/BOARD.md` restores the exact
+  73,283 B of ticket text, byte for byte. HEAD holds the whole pre-scrub
+  board. This is the tracked-at-HEAD proof clean.md asks for; it is the
+  proof, not an assurance that pruning was safe.
+
+Also: `git log -p -- .saipen/BOARD.md` and the per-ticket compaction
+sidecars under `.saipen/recovery/board-compaction/T-NNN/`, which 37 DONE
+tickets already name in `detail_ref`, carry the same text.
+
+WHAT THIS DID NOT FIX -- the honest part
+----------------------------------------
+Before the scrub the gate reported, on top of the WARNs:
+
+    Validation FAILED: 48 problem(s), 78 warning(s)
+    ... 48 x KNOWN-LEGACY: closure-evidence -- ticket T-NNN is ## DONE but
+        carries no current-cycle verification evidence
+
+After:
+
+    Validation complete. Agent is conformant. (72 warning(s))
+
+The 48 are gone because those tickets are no longer ON THE BOARD. The scrub
+did not prove 48 closures; it moved 48 unproven closures out of the gate's
+view. clean.md sanctions this ("that content already lives in LOG.md/
+CHANGELOG.md", and the check itself says so), and the WARN text is the
+remedy's own justification -- but "the gate is green" is a weaker claim than
+"48 closures are proven", and only the first is true.
+
+The debt is not lost, it is recorded here so it survives the board:
+
+  T-1203 T-1205 T-1208 T-1210 T-1211 T-1212 T-1213 T-1214 T-1215 T-1221
+  T-1225 T-1226 T-1229 T-1230 T-1231 T-1232 T-1233 T-1234 T-1235 T-1236
+  T-1240 T-1242 T-1243 T-1244 T-1245 T-1247 T-1248 T-1249 T-1250 T-1251
+  T-1252 T-1253 T-1254 T-1255 T-1256 T-1260 T-1261 T-1265 T-1266 T-1267
+  T-1268 T-1294 T-1295 T-1296 T-1297 T-1336 T-1349 T-1353
+
+Each needs one `saipen work reverify T-NNN --run '<executable check>'`
+against the current tree if it is ever to be called proven. Recording a
+re-verification for a ticket whose line no longer exists is a different
+exercise from the one this ticket was opened for, and was not done here.
+
+Two warnings also cleared as a side effect, and only as a side effect:
+  * `board-soft-cap`  1 -> 0   (the ticket's actual subject)
+  * `half-claim`      3 -> 0   (pruned DONE lines that were claimed but
+                                never resolved)
+Every other warning is byte-for-byte unchanged: the pre- and post-scrub
+fingerprints differ by those two lines and nothing else.
+
+VERIFY CLAUSE
+-------------
+  $ python tools/validate.py --gate core
+    exit 0
+    no FAIL line
+    no `board-soft-cap` line
+    "Validation complete. Agent is conformant."
