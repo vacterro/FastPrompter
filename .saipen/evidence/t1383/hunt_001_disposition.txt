@@ -1,0 +1,146 @@
+T-1383 -- Core disposition of saihunt/HUNT-001: REJECTED
+============================================================
+
+Ticket verify: "Independently reproduce or reject hypothesis, record Core
+disposition, apply no package patch during intake."
+
+Hypothesis under review
+-----------------------
+  "saipen sub sync|spawn|adopt source the shared contract from
+   STATE.saipen_home, so every worker is provisioned from a home the runtime
+   is not executing."
+
+Disposition: REJECTED. The premise ("a home the runtime is not executing") is
+true; the conclusion ("therefore every worker is provisioned wrongly") does
+not follow, because the file that carries the worker contract is not shipped by
+the executing install at all. The proposed repair -- source the contract from
+the runtime instead of STATE.saipen_home -- would make spawning refuse.
+
+No package patch was applied during intake, per the ticket.
+
+
+1. The two installs, as the process actually resolves them
+---------------------------------------------------------
+  executing install (HOME, what bin/saipen.cmd runs):
+      V:\___VAC\__K\__CODE\_AI_STUFF_AGENTIC\_SAIPEN\saipen
+  project's own saipen_home (STATE field):
+      C:/Users/vac34/.agents/skills/saipen
+
+  The executing install ships ONLY protocol documents:
+
+      $ ls -d "$HOME"/*/
+      .../saipen/phases/
+      .../saipen/runtime/
+      $ test -d "$HOME/extensions" && echo YES || echo NO
+      NO -- running home ships no extensions/subs/
+
+  The project home is a full install. It carries the whole subSaipen contract:
+
+      extensions/subs/PROTOCOL.md
+      extensions/subs/saihunt.md
+      extensions/subs/TEMPLATE/{STATE,BOARD,LOG}.md
+      extensions/subs/TEMPLATE/kitchen/OUTBOX.md
+      VERSION
+
+  (For the record, the same extensions/ tree also exists one level up, at
+  _SAIPEN/extensions/subs, alongside the running home rather than inside it.
+  It is not part of HOME.)
+
+
+2. Why the engine reads the contract from STATE.saipen_home
+------------------------------------------------------------
+  tools/saipen.py:3335
+      saipen_home = state.get("saipen_home") or ""
+  tools/saipen.py:3389/3394/3398
+      sub_sync/sub_spawn/sub_adopt all receive that value
+
+  saipen_engine/subs.py:2482
+      template_root = Path(saipen_home) / "extensions" / "subs" / "TEMPLATE"
+  saipen_engine/subs.py:2497
+      role_source = Path(saipen_home) / "extensions" / "subs" / f"{name}.md"
+
+  Both are guarded refusals when the tree is absent. Sourcing them from HOME
+  would hit, on every spawn:
+
+      REFUSE [VALIDATION_FAILED] saipen_home ... has incomplete subSaipen
+             TEMPLATE; clone/refresh before spawning
+
+      REFUSE [VALIDATION_FAILED] no role evidence to anchor spawn of ...
+             ROLE_EVIDENCE_UNAVAILABLE
+
+  So reading the contract from the project's install is the only path that
+  works. This is a required input, not a defect.
+
+
+3. The voice contract is deliberately the opposite choice
+-----------------------------------------------------------
+  saipen_engine/state.py:589  running_style_token()   -> reads the running
+      install's STYLE.md.
+  saipen_engine/subs.py:2525/2817                       -> workers are
+      stamped with that token.
+
+  saipen_engine/state.py:594 installed_style_token(saipen_home=None)
+      "`saipen_home` is accepted and IGNORED: the running installation owns the
+       voice contract. ... 'the pointer is stale' is not evidence that it did
+       [read the current contract]."
+
+  The asymmetry is documented and intentional: file PROVENANCE is project-pinned
+  (reproducible per project), the voice CONTRACT is runtime-current (proves the
+  writing agent read the live STYLE.md). The hypothesis treats this as one
+  undifferentiated "shared contract" sourced by one rule.
+
+
+4. Byte-level check of what actually differs
+---------------------------------------------
+  md5, first 12 hex, across the installs that carry each file:
+
+  file                                     agents-skills   _SAIPEN root
+  extensions/subs/PROTOCOL.md              f85c94cda4b9    810f770e3a18  DIFF
+  extensions/subs/saihunt.md               ec645e68531b    ec645e68531b  SAME
+  extensions/subs/TEMPLATE/STATE.md        0452075fef5a    0452075fef5a  SAME
+  extensions/subs/TEMPLATE/BOARD.md        713ecff99d35    713ecff99d35  SAME
+  extensions/subs/TEMPLATE/LOG.md          92285e82e913    92285e82e913  SAME
+  extensions/subs/TEMPLATE/kitchen/OUTBOX  3b4e47a20b43    3b4e47a20b43  SAME
+  VERSION                                  6bb602ea9828    6bb602ea9828  SAME
+
+  Consequence: for a NAMED role such as saihunt, role_revision is byte-identical
+  whichever install is read. role_revision -- the one field the package carries
+  and the gate checks -- carries no provenance signal at all. The only charter
+  that could differ is PROTOCOL.md, the generic fallback used solely when
+  <name>.md is absent, and the four TEMPLATE files that shape every worker are
+  identical.
+
+  Against the running install (_SAIPEN/saipen):
+  BOOT.md   7b79e80ca7e4  7b79e80ca7e4  SAME
+  STYLE.md  f1931afbf045  9b63e432149c  DIFF
+
+
+5. The one real difference, and why it is not this ticket
+----------------------------------------------------------
+  STYLE.md differs between the two homes. That is the direct cause of the
+  refusal recorded in T-1376 evidence:
+
+      REFUSE [VALIDATION_FAILED] subSaipen STATE is malformed: style_contract
+             'ded-6b950e75' does not match the installed STYLE.md marker
+             'ded-71fc58de'
+
+  It was NOT caused by the contract being read from the wrong install: the
+  worker was stamped with the running token at spawn time, and the running
+  STYLE.md has since changed. `sub sync`/`sub spawn` re-stamp the token from the
+  running install, which is why re-spawning during the T-1376 drain succeeded.
+
+  A voice-contract divergence between two installs is a real condition and is
+  worth the engine owner knowing, but it is a different subject from HUNT-001,
+  it is not reachable from this project, and re-homing it under T-1383 would
+  misfile it.
+
+
+6. Reproduce
+-------------
+  A="C:/Users/vac34/.agents/skills/saipen"
+  B="V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN"
+  H="V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN/saipen"
+  md5sum "$A/extensions/subs/saihunt.md" "$B/extensions/subs/saihunt.md"
+  test -d "$H/extensions" && echo YES || echo "NO -- running home ships no extensions/subs/"
+  grep -n "template_root = Path(saipen_home)" "$B/tools/saipen_engine/subs.py"
+  grep -n "def installed_style_token" -A 8 "$B/tools/saipen_engine/state.py"
