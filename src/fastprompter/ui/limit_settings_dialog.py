@@ -475,11 +475,13 @@ class LimitSettingsDialog(QDialog):
         if btn is not None:
             if banked_total > 0 and can_activate:
                 res_suffix = "s" if banked_total != 1 else ""
-                btn.setText(f"Activate reset ({banked_total} reset{res_suffix})")
+                btn.setText(tr("Activate reset ({n} reset{s})").format(
+                    n=banked_total, s=res_suffix))
                 btn.show()
             elif banked_total > 0:
                 res_suffix = "s" if banked_total != 1 else ""
-                btn.setText(f"Open Usage ({banked_total} reset{res_suffix})")
+                btn.setText(tr("Open Usage ({n} reset{s})").format(
+                    n=banked_total, s=res_suffix))
                 btn.show()
             else:
                 btn.hide()
@@ -972,8 +974,9 @@ class LimitSettingsDialog(QDialog):
                 tr("Only one alert section exists — nothing to copy it onto."))
         else:
             self.lbl_copy_hint.setText(
-                f"{len(sections)} sections. Copying overwrites every field: "
-                "on/off, threshold, popup, sound, volume, and the reset half.")
+                tr("{n} sections. Copying overwrites every field: "
+                   "on/off, threshold, popup, sound, volume, and the reset half."
+                   ).format(n=len(sections)))
 
     def _copy_rule_to_all(self):
         """Make every other section identical to the chosen one.
@@ -1390,10 +1393,11 @@ class LimitSettingsDialog(QDialog):
         for key, (state, button) in rows.items():
             info = install_status(key)
             if info["installed"]:
-                state.setText(f"installed · {info['path']}")
+                state.setText(tr("installed · {path}").format(path=info['path']))
                 button.setText(tr('Reinstall / update'))
             else:
-                state.setText(f"not installed · lands in {info['target']}")
+                state.setText(tr("not installed · lands in {target}").format(
+                    target=info['target']))
                 button.setText(tr('Install…'))
 
     def _install_cli(self, key):
@@ -1404,12 +1408,13 @@ class LimitSettingsDialog(QDialog):
         verb = "Reinstall" if info["installed"] else "Install"
         answer = QMessageBox.question(
             self, f"{verb} {info['label']}",
-            f"{verb} {info['label']} by running the official installer from "
-            f"{info['source']}?\n\n"
-            f"Command:\n{info['command']}\n\n"
-            f"Installs to: {info['target']}\n\n"
-            "A console window opens so you can watch it and answer any prompt. "
-            "FastPrompter does not modify the command.",
+            tr("{verb} {label} by running the official installer from {source}?\n\n"
+              "Command:\n{command}\n\n"
+              "Installs to: {target}\n\n"
+              "A console window opens so you can watch it and answer any prompt. "
+              "FastPrompter does not modify the command."
+              ).format(verb=verb, label=info['label'], source=info['source'],
+                       command=info['command'], target=info['target']),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:
@@ -1422,9 +1427,10 @@ class LimitSettingsDialog(QDialog):
                 tr("Could not start the installer:\n\n{exc}").format(exc=exc))
             return
         self.lbl_cli_hint.setText(
-            f"{info['label']}: installer started in a separate window. When it "
-            "finishes, press \"Refresh accounts and limits now\" — a new CLI is "
-            "picked up without restarting FastPrompter.")
+            tr("{label}: installer started in a separate window. When it "
+               "finishes, press \"Refresh accounts and limits now\" — a new CLI "
+               "is picked up without restarting FastPrompter."
+               ).format(label=info['label']))
 
     # -- sources ---------------------------------------------------------
     def _build_sources_tab(self):
@@ -1668,19 +1674,20 @@ class LimitSettingsDialog(QDialog):
             else:
                 btn_quick.hide()
         if not state["config_found"]:
-            label.setText("ZCode: config not found at "
-                          f"{state['config_path'] or '?'}")
+            label.setText(tr("ZCode: config not found at {path}").format(
+                path=state['config_path'] or '?'))
             return
         lines = [f"Config: {state['config_path']}"]
         if not state["plans"]:
-            lines.append("Plans: none usable — log in to a Coding Plan in "
-                         "ZCode, or the entry is disabled there")
+            lines.append(tr("Plans: none usable — log in to a Coding Plan in "
+                            "ZCode, or the entry is disabled there"))
         for plan in state["plans"]:
             if not plan["endpoint"]:
-                detail = ("configured host is not a known Z.ai / BigModel "
-                          "endpoint — refusing to send credentials there")
+                detail = tr("configured host is not a known Z.ai / BigModel "
+                            "endpoint — refusing to send credentials there")
             elif plan["has_key"]:
-                detail = f"key present · {plan['endpoint']}"
+                detail = tr("key present · {endpoint}").format(
+                    endpoint=plan['endpoint'])
             else:
                 detail = tr("no API key in ZCode's config")
             lines.append(f"{plan['label']}: {detail}")
@@ -1775,14 +1782,14 @@ class LimitSettingsDialog(QDialog):
         account = state.get("account") or {}
         who = account.get("name") or account.get("email") or "signed in"
         if not state.get("state_found"):
-            label.setText("Freebuff: Desktop state not found at "
-                          f"{state.get('state_path') or '?'}")
+            label.setText(tr("Freebuff: Desktop state not found at {path}").format(
+                path=state.get('state_path') or '?'))
             return
         if not signed_in:
             label.setText(tr('Freebuff: not signed in — sign in inside Freebuff Desktop first'))
             return
-        lines = [f"Freebuff: signed in as {who} · read-only GET "
-                 f"{state.get('endpoint', '')}"]
+        lines = [tr("Freebuff: signed in as {who} · read-only GET {ep}").format(
+            who=who, ep=state.get('endpoint', ''))]
         if not state.get("enabled"):
             lines.append(tr("Currently off — nothing is requested."))
         label.setText("\n".join(lines))
@@ -1846,19 +1853,21 @@ class LimitSettingsDialog(QDialog):
             label.setText(tr("Antigravity sources unavailable: {exc}").format(exc=exc))
             return
         if not state["installed"]:
-            label.setText(f"Antigravity: not found at {state['data_dir'] or '?'}")
+            label.setText(tr("Antigravity: not found at {path}").format(
+                path=state['data_dir'] or '?'))
             return
         lines = []
         if state.get("cli_installed"):
             if state.get("cli_authenticated", True):
-                lines.append(f"CLI: {state['cli_path']} · exact percentages per "
-                             "quota pool")
+                lines.append(tr("CLI: {path} · exact percentages per quota pool"
+                                ).format(path=state['cli_path']))
             else:
-                lines.append(f"CLI: {state['cli_path']} · not logged in (click "
-                             "'Log in to Antigravity…' below to authenticate)")
+                lines.append(tr("CLI: {path} · not logged in (click "
+                                "'Log in to Antigravity…' below to authenticate)"
+                                ).format(path=state['cli_path']))
         else:
-            lines.append("CLI: not installed — install it above; without it "
-                         "only Antigravity's own refusals are readable")
+            lines.append(tr("CLI: not installed — install it above; without it "
+                            "only Antigravity's own refusals are readable"))
         if state["blocked_until"]:
             import datetime
             until = datetime.datetime.fromtimestamp(
@@ -1903,7 +1912,8 @@ class LimitSettingsDialog(QDialog):
             return
         lines = []
         if status.get("cli_installed"):
-            lines.append(f"CLI: {status['cli_path']} · ready for JSON-RPC probe")
+            lines.append(tr("CLI: {path} · ready for JSON-RPC probe").format(
+                path=status['cli_path']))
             if hasattr(self, "btn_codex_login"):
                 self.btn_codex_login.setEnabled(True)
         else:
@@ -1913,7 +1923,8 @@ class LimitSettingsDialog(QDialog):
         homes = status.get("homes", [])
         if status.get("auth_found"):
             active = [h["path"] for h in homes if h.get("has_auth")]
-            lines.append(f"Authentication: active ({len(active)} home(s) with auth.json)")
+            lines.append(tr("Authentication: active ({n} home(s) with auth.json)").format(
+                n=len(active)))
         else:
             if homes:
                 lines.append(tr("Authentication: not logged in (~/.codex/auth.json missing) · click 'Log in to Codex…'"))
@@ -1963,18 +1974,18 @@ class LimitSettingsDialog(QDialog):
         try:
             status = bridge_status(home)
         except Exception as exc:
-            return f"Configuration error: {exc}", tr("Connect Claude Code")
+            return tr("Configuration error: {exc}").format(exc=exc), tr("Connect Claude Code")
         if status.get("stale"):
             # The command records absolute interpreter/launcher paths, so a
             # moved checkout or a switch to the frozen build leaves Claude
             # Code running a path that no longer exists — silently.
-            return ("Connected to an OLD FastPrompter path · press "
-                    "Reconnect to repair"), tr("Reconnect Claude Code")
+            return tr("Connected to an OLD FastPrompter path · press "
+                      "Reconnect to repair"), tr("Reconnect Claude Code")
         if status["connected"] and status["has_cache"]:
             return tr("Connected · structured limits received"), tr("Disconnect Claude Code")
         if status["connected"]:
             return tr("Connected · waiting for first Claude API response"), tr("Disconnect Claude Code")
-        return "Not connected", tr("Connect Claude Code")
+        return tr("Not connected"), tr("Connect Claude Code")
 
     def _sync_claude_bridge_rows(self, accounts) -> None:
         """Rebuild per-account bridge rows only when the roster changes.
@@ -2042,8 +2053,8 @@ class LimitSettingsDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(
                 self, tr('Claude Code limits'),
-                "Could not update the Claude statusLine for\n"
-                f"{home}:\n\n{exc}")
+                tr("Could not update the Claude statusLine for\n{home}:\n\n{exc}").format(
+                    home=home, exc=exc))
         self._refresh_claude_status()
         service = getattr(self, "service", None)
         reconfigure = getattr(service, "reconfigure_async", None)
@@ -2149,9 +2160,10 @@ class LimitSettingsDialog(QDialog):
             name = row["name"]
             path = row["path"]
             lines.append(f"  {name}{badge_text} · {origin} · {path}")
-            lines.append(
-                f"      credentials: {creds} · status line: {bridge}"
-                f" · quota data: {row['data_state']}")
+            lines.append(tr("      credentials: {creds} · status line: {bridge}"
+                         " · quota data: {state}").format(
+                             creds=creds, bridge=bridge,
+                             state=row['data_state']))
         return lines
 
     def _refresh_claude_accounts(self):
@@ -2188,13 +2200,14 @@ class LimitSettingsDialog(QDialog):
                 role = "default" if home["is_default"] else home["kind"]
                 bridge = (tr("status line connected") if home["bridge_connected"]
                           else tr("status line not connected \u00b7 read via CLI"))
-                lines.append(f"Home ({role}): {home['path']} \u00b7 {bridge}")
+                lines.append(tr("Home ({role}): {path} \u00b7 {bridge}").format(
+                    role=role, path=home['path'], bridge=bridge))
         if state.get("cli_installed"):
-            lines.append(f"CLI: {state['cli_path']} · exact percentages and "
-                         "reset times")
+            lines.append(tr("CLI: {path} · exact percentages and reset times"
+                            ).format(path=state['cli_path']))
         else:
-            lines.append("CLI: not installed — install it above for exact "
-                         "percentages and reset times")
+            lines.append(tr("CLI: not installed — install it above for exact "
+                            "percentages and reset times"))
         if state["bridge_connected"]:
             lines.append(tr("Status line (default home): connected · ")
                          + ("cache present" if state["bridge_has_cache"]
@@ -2208,8 +2221,10 @@ class LimitSettingsDialog(QDialog):
                 f"{_desktop_window_name(key)} {value:.0f}% used"
                 for key, value in sorted(windows.items()))
             freshness = "live" if state["desktop_fresh"] else "stale"
-            lines.append(f"Claude Desktop sampler: {detail} · "
-                         f"{int(age // 60)} min old ({freshness})")
+            lines.append(tr("Claude Desktop sampler: {detail} · "
+                         "{mins} min old ({fresh})").format(
+                             detail=detail, mins=int(age // 60),
+                             fresh=freshness))
         else:
             lines.append(tr("Claude Desktop sampler: no samples found"))
         blocked = state["blocked_windows"]
@@ -2294,7 +2309,8 @@ class LimitSettingsDialog(QDialog):
             lay.addWidget(box_h)
 
         if accounts_count > 0:
-            succ = QLabel(f"★ {accounts_count} account(s) reporting quota live!")
+            succ = QLabel(tr("★ {n} account(s) reporting quota live!").format(
+                n=accounts_count))
             succ.setStyleSheet("font-weight: bold; font-size: 12px;")
             lay.addWidget(succ)
 
@@ -2351,7 +2367,7 @@ class LimitSettingsDialog(QDialog):
         try:
             from fastprompter.core.usage_limits.troubleshooter import launch_vendor_login
             if vendor == "antigravity":
-                msg = (
+                msg = tr(
                     "FastPrompter is about to open a console named "
                     "'FastPrompter - Antigravity sign-in'. A Google sign-in page may "
                     "then open in your browser.\n\n"
@@ -2373,12 +2389,12 @@ class LimitSettingsDialog(QDialog):
                 launch_vendor_login(vendor)
             else:
                 launch_vendor_login(vendor)
-                msg = (
-                    f"A console window opened for {vendor.title()} login.\n\n"
+                msg = tr(
+                    "A console window opened for {vendor} login.\n\n"
                     "Complete the login in that window, then return here and click "
                     "'Refresh accounts and limits now'."
-                )
+                ).format(vendor=vendor.title())
                 QMessageBox.information(
-                    self, f"Log in to {vendor.title()}", msg)
+                    self, tr("Log in to {vendor}").format(vendor=vendor.title()), msg)
         except Exception as exc:
-            QMessageBox.warning(self, f"Log in to {vendor.title()}", tr("Could not launch login:\n\n{exc}").format(exc=exc))
+            QMessageBox.warning(self, tr("Log in to {vendor}").format(vendor=vendor.title()), tr("Could not launch login:\n\n{exc}").format(exc=exc))
