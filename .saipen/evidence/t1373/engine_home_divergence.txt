@@ -110,7 +110,18 @@ ticket's verify clause, satisfied:
   ruff check tools/validate.py -> All checks passed!
 
 
-7. What was NOT done, and why
+7. SUPERSEDED IN PART -- read this with T-1374's evidence
+----------------------------------------------------------
+The fix described above was correct about the cause (ambient SAIPEN_HOME must
+not bind the gate) but picked the wrong replacement default: it hardcoded
+C:\Users\vac34\.agents\skills\saipen, calling that "the launcher's engine".
+It is a third install. T-1374 replaces the hardcoded path with a parse of
+bin\saipen.cmd, which is the only file that says which engine runs the
+project. See .saipen/evidence/t1374/style_contract_resolution.txt section 7.
+The measured numbers in this file are unchanged by that correction.
+
+
+8. What was NOT done, and why
 ------------------------------
 The three engine copies were not reconciled. Deleting or updating a copy under
 C:\Users\vac34\AppData\Local\saipen or C:\Users\vac34\.agents is outside this
