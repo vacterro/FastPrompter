@@ -442,7 +442,7 @@ class LimitSettingsDialog(QDialog):
             for k in ("codex", "claude", "antigravity", "zcode"):
                 rep = diag.get(k, {})
                 parts.append(f"{rep.get('title', k)}: {rep.get('summary', 'unknown')}")
-            label.setText("Detection scan:\n• " + "\n• ".join(parts))
+            label.setText(tr("Detection scan:\n• ") + "\n• ".join(parts))
         except Exception:
             pass
 
@@ -534,7 +534,7 @@ class LimitSettingsDialog(QDialog):
             if hidden_banked:
                 hb_label.setText(
                     "⚠ Hidden: " + ", ".join(hidden_banked)
-                    + " — unhide or activate")
+                    + tr(" — unhide or activate"))
                 hb_label.show()
             else:
                 hb_label.hide()
@@ -881,7 +881,7 @@ class LimitSettingsDialog(QDialog):
     def _pick_custom_notif_color(self):
         from PyQt6.QtWidgets import QColorDialog
         cur = self.data.get("limit_notif_color", "") or "#D9B340"
-        col = QColorDialog.getColor(QColor(cur), self, "Select Notification Accent Color")
+        col = QColorDialog.getColor(QColor(cur), self, tr("Select Notification Accent Color"))
         if col.isValid():
             hex_val = col.name()
             self.data["limit_notif_color"] = hex_val
@@ -897,8 +897,8 @@ class LimitSettingsDialog(QDialog):
         dur = self._get_current_notif_duration()
         col = self._get_current_notif_color()
         self.main_win._show_limit_popup(
-            "AI limit test",
-            "Sample notification: duration, color, and symbol preview.",
+            tr("AI limit test"),
+            tr("Sample notification: duration, color, and symbol preview."),
             duration_sec=dur,
             color=col,
             symbol=sym,
@@ -967,9 +967,9 @@ class LimitSettingsDialog(QDialog):
         self.btn_copy_to_all.setEnabled(enabled)
         if not enabled:
             self.lbl_copy_hint.setText(
-                "Nothing to copy: fewer than two alert sections exist."
+                tr("Nothing to copy: fewer than two alert sections exist.")
                 if not sections else
-                "Only one alert section exists — nothing to copy it onto.")
+                tr("Only one alert section exists — nothing to copy it onto."))
         else:
             self.lbl_copy_hint.setText(
                 f"{len(sections)} sections. Copying overwrites every field: "
@@ -1195,11 +1195,11 @@ class LimitSettingsDialog(QDialog):
                 rule[f"{prefix}sound"], rule[f"{prefix}volume"], preview=True,
             )
         if rule[f"{prefix}show_notification"] == "True":
-            message = ("Limit reset — quota is available again. Time to work."
+            message = (tr("Limit reset — quota is available again. Time to work.")
                        if kind == "reset"
-                       else "Remaining quota crossed the configured threshold.")
+                       else tr("Remaining quota crossed the configured threshold."))
             self.main_win._show_limit_popup(
-                "AI limit reset test" if kind == "reset" else "AI limit test",
+                tr("AI limit reset test") if kind == "reset" else tr("AI limit test"),
                 message)
 
     # -- colours ---------------------------------------------------------
@@ -1457,7 +1457,7 @@ class LimitSettingsDialog(QDialog):
             str(self.data.get("limit_codex_homes", "") or ""))
         self.extra_homes.setPlaceholderText(tr('D:\\codex-work, E:\\codex-personal'))
         self.extra_homes.editingFinished.connect(self._set_extra_homes)
-        form.addRow("Extra Codex homes", self.extra_homes)
+        form.addRow(tr("Extra Codex homes"), self.extra_homes)
 
         self.claude_homes = QLineEdit(
             str(self.data.get("limit_claude_homes", "") or ""))
@@ -1466,7 +1466,7 @@ class LimitSettingsDialog(QDialog):
         self.claude_homes.setToolTip(
             tr('One CLAUDE_CONFIG_DIR per extra Claude account. Homes named ~/.claude-<name> are found on their own; list a path here only when the account lives somewhere else. Each becomes its own gauge, read with its own credentials.'))
         self.claude_homes.editingFinished.connect(self._set_claude_homes)
-        form.addRow("Extra Claude homes", self.claude_homes)
+        form.addRow(tr("Extra Claude homes"), self.claude_homes)
 
         self.antigravity_dir = QLineEdit(
             str(self.data.get("limit_antigravity_dir", "") or ""))
@@ -1484,7 +1484,7 @@ class LimitSettingsDialog(QDialog):
         self.zcode_config.setToolTip(
             tr("Only for a relocated or portable ZCode install. FastPrompter reads the plan's API key from this file and never stores or logs it."))
         self.zcode_config.editingFinished.connect(self._set_zcode_config)
-        form.addRow("ZCode config file", self.zcode_config)
+        form.addRow(tr("ZCode config file"), self.zcode_config)
         lay.addLayout(form)
 
         top_bar = QHBoxLayout()
@@ -1682,10 +1682,10 @@ class LimitSettingsDialog(QDialog):
             elif plan["has_key"]:
                 detail = f"key present · {plan['endpoint']}"
             else:
-                detail = "no API key in ZCode's config"
+                detail = tr("no API key in ZCode's config")
             lines.append(f"{plan['label']}: {detail}")
         if str(self.data.get("limit_zcode_enabled", "False")) != "True":
-            lines.append("Currently off — nothing is requested.")
+            lines.append(tr("Currently off — nothing is requested."))
         label.setText("\n".join(lines))
 
     def _build_freebuff_group(self, parent_lay):
@@ -1784,7 +1784,7 @@ class LimitSettingsDialog(QDialog):
         lines = [f"Freebuff: signed in as {who} · read-only GET "
                  f"{state.get('endpoint', '')}"]
         if not state.get("enabled"):
-            lines.append("Currently off — nothing is requested.")
+            lines.append(tr("Currently off — nothing is requested."))
         label.setText("\n".join(lines))
         self._refresh_freebuff_prices()
 
@@ -1870,7 +1870,7 @@ class LimitSettingsDialog(QDialog):
                 state["observed_at"]).strftime("%d.%m %H:%M")
             lines.append(f"Refusal journal: no active block · last refusal {seen}")
         else:
-            lines.append("Refusal journal: no refusal recorded")
+            lines.append(tr("Refusal journal: no refusal recorded"))
         label.setText("\n".join(lines))
 
     def _set_refresh(self, value):
@@ -1907,7 +1907,7 @@ class LimitSettingsDialog(QDialog):
             if hasattr(self, "btn_codex_login"):
                 self.btn_codex_login.setEnabled(True)
         else:
-            lines.append("CLI: not installed — install it above under Agent CLIs")
+            lines.append(tr("CLI: not installed — install it above under Agent CLIs"))
             if hasattr(self, "btn_codex_login"):
                 self.btn_codex_login.setEnabled(False)
         homes = status.get("homes", [])
@@ -1916,9 +1916,9 @@ class LimitSettingsDialog(QDialog):
             lines.append(f"Authentication: active ({len(active)} home(s) with auth.json)")
         else:
             if homes:
-                lines.append("Authentication: not logged in (~/.codex/auth.json missing) · click 'Log in to Codex…'")
+                lines.append(tr("Authentication: not logged in (~/.codex/auth.json missing) · click 'Log in to Codex…'"))
             else:
-                lines.append("Authentication: no Codex home directory found · click 'Log in to Codex…' to authenticate")
+                lines.append(tr("Authentication: no Codex home directory found · click 'Log in to Codex…' to authenticate"))
         label.setText("\n".join(lines))
 
     def _refresh_now(self):
@@ -1963,18 +1963,18 @@ class LimitSettingsDialog(QDialog):
         try:
             status = bridge_status(home)
         except Exception as exc:
-            return f"Configuration error: {exc}", "Connect Claude Code"
+            return f"Configuration error: {exc}", tr("Connect Claude Code")
         if status.get("stale"):
             # The command records absolute interpreter/launcher paths, so a
             # moved checkout or a switch to the frozen build leaves Claude
             # Code running a path that no longer exists — silently.
             return ("Connected to an OLD FastPrompter path · press "
-                    "Reconnect to repair"), "Reconnect Claude Code"
+                    "Reconnect to repair"), tr("Reconnect Claude Code")
         if status["connected"] and status["has_cache"]:
-            return "Connected · structured limits received", "Disconnect Claude Code"
+            return tr("Connected · structured limits received"), tr("Disconnect Claude Code")
         if status["connected"]:
-            return "Connected · waiting for first Claude API response", "Disconnect Claude Code"
-        return "Not connected", "Connect Claude Code"
+            return tr("Connected · waiting for first Claude API response"), tr("Disconnect Claude Code")
+        return "Not connected", tr("Connect Claude Code")
 
     def _sync_claude_bridge_rows(self, accounts) -> None:
         """Rebuild per-account bridge rows only when the roster changes.
@@ -2142,9 +2142,9 @@ class LimitSettingsDialog(QDialog):
             if not row["bridge_connected"]:
                 bridge = "no"
             elif row["bridge_has_cache"]:
-                bridge = "yes (cache present)"
+                bridge = tr("yes (cache present)")
             else:
-                bridge = "yes (no cache yet)"
+                bridge = tr("yes (no cache yet)")
             badge_text = f" [{badge}]" if badge else ""
             name = row["name"]
             path = row["path"]
@@ -2186,8 +2186,8 @@ class LimitSettingsDialog(QDialog):
             # single-account machine this block stays invisible.
             for home in homes:
                 role = "default" if home["is_default"] else home["kind"]
-                bridge = ("status line connected" if home["bridge_connected"]
-                          else "status line not connected \u00b7 read via CLI")
+                bridge = (tr("status line connected") if home["bridge_connected"]
+                          else tr("status line not connected \u00b7 read via CLI"))
                 lines.append(f"Home ({role}): {home['path']} \u00b7 {bridge}")
         if state.get("cli_installed"):
             lines.append(f"CLI: {state['cli_path']} · exact percentages and "
@@ -2196,11 +2196,11 @@ class LimitSettingsDialog(QDialog):
             lines.append("CLI: not installed — install it above for exact "
                          "percentages and reset times")
         if state["bridge_connected"]:
-            lines.append("Status line (default home): connected · "
+            lines.append(tr("Status line (default home): connected · ")
                          + ("cache present" if state["bridge_has_cache"]
-                            else "no cache yet (Claude Code must render it)"))
+                            else tr("no cache yet (Claude Code must render it)")))
         else:
-            lines.append("Status line (default home): not connected")
+            lines.append(tr("Status line (default home): not connected"))
         windows = state["desktop_windows"]
         if windows:
             age = state["desktop_age_s"] or 0
@@ -2211,7 +2211,7 @@ class LimitSettingsDialog(QDialog):
             lines.append(f"Claude Desktop sampler: {detail} · "
                          f"{int(age // 60)} min old ({freshness})")
         else:
-            lines.append("Claude Desktop sampler: no samples found")
+            lines.append(tr("Claude Desktop sampler: no samples found"))
         blocked = state["blocked_windows"]
         if blocked:
             import datetime
@@ -2289,7 +2289,7 @@ class LimitSettingsDialog(QDialog):
             box_h_lay = QVBoxLayout(box_h)
             for h in healed:
                 lbl = QLabel(f"✓ {h}")
-                lbl.setStyleSheet("color: #4caf50; font-weight: bold;")
+                lbl.setStyleSheet(tr("color: #4caf50; font-weight: bold;"))
                 box_h_lay.addWidget(lbl)
             lay.addWidget(box_h)
 

@@ -351,13 +351,13 @@ class LimitGauges(QWidget):
         if self._reset_menu_actions():
             menu.addSeparator()
 
-        act_refresh = menu.addAction("Refresh Limits Now")
+        act_refresh = menu.addAction(tr("Refresh Limits Now"))
         act_refresh.triggered.connect(self._service.refresh)
 
         menu.addSeparator()
 
         if hasattr(self.main_win, "open_limit_settings_dialog"):
-            act_settings = menu.addAction("AI Limit Settings...")
+            act_settings = menu.addAction(tr("AI Limit Settings..."))
             act_settings.triggered.connect(self.main_win.open_limit_settings_dialog)
 
         menu.exec(event.globalPos())
@@ -386,7 +386,7 @@ class LimitGauges(QWidget):
 
         rows = self._reset_rows()
         action = collections.namedtuple(
-            "ResetMenuAction", "account snapshot offers activate open_url")
+            "ResetMenuAction", tr('account snapshot offers activate open_url'))
         out = []
         for row in rows:
             activate = any(o.redeemable_in_fastprompter for o in row.offers)
@@ -398,13 +398,17 @@ class LimitGauges(QWidget):
     def _prompt_activate_reset(self, account, shot):
         from PyQt6.QtWidgets import QMessageBox
         banked = getattr(shot, "banked_resets", 0) or 0
-        res_word = "reset" if banked == 1 else "resets"
+        res_word = tr("reset") if banked == 1 else tr("resets")
         ans = QMessageBox.question(
             self,
             tr('Activate Rate Limit Reset'),
-            f"Activate rate limit reset for {account.display_name}?\n\n"
-            f"Available: {banked} banked {res_word}.\n\n"
-            "This will consume 1 reset credit to immediately refill your quota.",
+            tr("Activate rate limit reset for {name}?").format(
+                name=account.display_name) + "\n\n"
+            + tr("Available: {banked} banked {res_word}.").format(
+                banked=banked, res_word=res_word)
+            + "\n\n"
+            + tr("This will consume 1 reset credit to immediately refill "
+                 "your quota."),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -416,27 +420,33 @@ class LimitGauges(QWidget):
             if hasattr(self._service, "consume_account_reset"):
                 res = self._service.consume_account_reset(account.key)
             else:
-                res = {"ok": False, "error": "Service does not support reset consumption"}
+                res = {"ok": False, "error": tr("Service does not support reset consumption")}
             if res.get("ok"):
                 QMessageBox.information(
                     self,
                     tr('Reset Activated'),
-                    f"Rate limit reset activated successfully for {account.display_name}!\n"
-                    f"Outcome: {res.get('outcome', 'success')}\n\n"
-                    "Quota has been refreshed.",
+                    tr("Rate limit reset activated successfully for {name}!").format(
+                        name=account.display_name)
+                    + "\n"
+                    + tr("Outcome: {outcome}").format(
+                        outcome=res.get('outcome', 'success'))
+                    + "\n\n"
+                    + tr("Quota has been refreshed."),
                 )
             else:
-                err = res.get("error") or res.get("outcome") or "Unknown error"
+                err = res.get("error") or res.get("outcome") or tr("Unknown error")
                 QMessageBox.warning(
                     self,
                     tr('Reset Failed'),
-                    f"Failed to activate reset for {account.display_name}:\n{err}",
+                    tr("Failed to activate reset for {name}:").format(
+                        name=account.display_name)
+                    + "\n" + err,
                 )
         except Exception as exc:
             QMessageBox.warning(
                 self,
                 tr('Reset Error'),
-                f"Exception while activating reset:\n{exc}",
+                tr("Exception while activating reset:") + "\n" + str(exc),
             )
         finally:
             self.unsetCursor()
@@ -809,22 +819,26 @@ class LimitGauges(QWidget):
 
         def _reset_snippet(b):
             if b.gated_by:
-                return f"<span style='color:{bad_col};'>— blocked by {_win_label(b.gated_by)}</span>"
+                return (f"<span style='color:{bad_col};'>" + tr("— blocked by ")
+                        + _win_label(b.gated_by) + "</span>")
             if b.resets_at_epoch:
                 import datetime
                 try:
                     t = datetime.datetime.fromtimestamp(b.resets_at_epoch)
                     remaining = b.resets_at_epoch - tooltip_now
                     if remaining <= 0:
-                        r_text = "resets now"
+                        r_text = tr("resets now")
                     elif remaining < 60:
-                        r_text = "resets in &lt;1m"
+                        r_text = tr("resets in &lt;1m")
                     elif remaining < 3600:
-                        r_text = f"resets in {math.ceil(remaining / 60)}m"
+                        r_text = tr("resets in {mins}m").format(
+                            mins=math.ceil(remaining / 60))
                     elif remaining < 86400:
-                        r_text = f"resets in {int(remaining // 3600)}h"
+                        r_text = tr("resets in {hours}h").format(
+                            hours=int(remaining // 3600))
                     else:
-                        r_text = f"resets {t.strftime('%a %H:%M')}"
+                        r_text = tr("resets {when}").format(
+                            when=t.strftime('%a %H:%M'))
                     return f"<span style='color:#9e9479;'>— {r_text}</span>"
                 except Exception:
                     pass
@@ -888,11 +902,16 @@ class LimitGauges(QWidget):
             accounts = self._visible_accounts()
             hidden = [a for a in snap.accounts if a not in accounts]
 
-        shift_tag = " <span style='font-weight:normal; font-size:10px; color:#4FB6A8;'>(all accounts — Shift held)</span>" if ignore_filters else " <span style='font-weight:normal; font-size:10px; color:#9a8b5f;'>(remaining)</span>"
+        shift_tag = (
+            " <span style='font-weight:normal; font-size:10px; color:#4FB6A8;'>("
+            + tr("all accounts — Shift held") + ")</span>"
+            if ignore_filters else
+            " <span style='font-weight:normal; font-size:10px; color:#9a8b5f;'>("
+            + tr("remaining") + ")</span>")
         parts = [
             "<html><body style='font-family:Verdana, Segoe UI, sans-serif; font-size:11px; color:#c0c0c0;'>",
             "<div style='font-weight:bold; font-size:12px; color:#ffd700; border-bottom:1px solid #5a4f32; padding-bottom:2px; margin-bottom:3px;'>",
-            f"AI Usage Limits{shift_tag}",
+            tr("AI Usage Limits") + shift_tag,
             "</div>"
         ]
 
@@ -1355,7 +1374,7 @@ def _fmt_win(b) -> str:
     rem = b.remaining_percent
     rem_s = "--" if rem is None else f"{int(round(rem))}% left"
     if b.gated_by:
-        return f"{rem_s} — blocked by {_win_label(b.gated_by)}"
+        return f"{rem_s}" + tr(" — blocked by ") + _win_label(b.gated_by)
     if b.resets_at_epoch:
         import datetime
         try:

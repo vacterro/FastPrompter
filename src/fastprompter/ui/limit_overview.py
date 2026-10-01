@@ -133,9 +133,9 @@ class LimitOverview(QWidget):
                            if isinstance(w, UsageWindow)]
             live = [w for w in windows if w.available]
             if any(w.reset_pending for w in windows):
-                rows.append(("note", "Reset time passed; refresh to check current limits", None))
+                rows.append(("note", tr("Reset time passed; refresh to check current limits"), None))
             if not live:
-                rows.append(("note", "no readable quota window", None))
+                rows.append(("note", tr("no readable quota window"), None))
             else:
                 # A pool heading is drawn exactly ONCE per independent quota
                 # group, so two "7 days" rows from different pools cannot be
@@ -204,8 +204,9 @@ class LimitOverview(QWidget):
                     url = _RESET_OPEN_URLS.get(shot.account.provider_id, "")
                     btn = QPushButton(tr('Open Usage'), self)
                     btn.setToolTip(
-                        f"{shot.account.display_name} resets are redeemed at "
-                        f"the vendor — open its usage page")
+                        f"{shot.account.display_name} "
+                        + tr("resets are redeemed at the vendor — "
+                              "open its usage page"))
                     btn.clicked.connect(
                         lambda checked=False, u=url: self._open_usage_page(u))
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -246,13 +247,17 @@ class LimitOverview(QWidget):
         account = shot.account
         import time as _t
         banked = banked_reset_count(shot, now=_t.time())
-        res_word = "reset" if banked == 1 else "resets"
+        res_word = tr("reset") if banked == 1 else tr("resets")
         ans = QMessageBox.question(
             self,
             tr('Activate Rate Limit Reset'),
-            f"Activate rate limit reset for {account.display_name}?\n\n"
-            f"Available: {banked} banked {res_word}.\n\n"
-            "This will consume 1 reset credit to immediately refill your quota.",
+            tr("Activate rate limit reset for {name}?").format(
+                name=account.display_name) + "\n\n"
+            + tr("Available: {banked} banked {res_word}.").format(
+                banked=banked, res_word=res_word)
+            + "\n\n"
+            + tr("This will consume 1 reset credit to immediately refill "
+                 "your quota."),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -264,28 +269,34 @@ class LimitOverview(QWidget):
             if hasattr(self._service, "consume_account_reset"):
                 res = self._service.consume_account_reset(account.key)
             else:
-                res = {"ok": False, "error": "Service does not support reset consumption"}
+                res = {"ok": False, "error": tr("Service does not support reset consumption")}
             if res.get("ok"):
                 QMessageBox.information(
                     self,
                     tr('Reset Activated'),
-                    f"Rate limit reset activated successfully for {account.display_name}!\n"
-                    f"Outcome: {res.get('outcome', 'success')}\n\n"
-                    "Quota is refreshing...",
+                    tr("Rate limit reset activated successfully for {name}!").format(
+                        name=account.display_name)
+                    + "\n"
+                    + tr("Outcome: {outcome}").format(
+                        outcome=res.get('outcome', 'success'))
+                    + "\n\n"
+                    + tr("Quota is refreshing..."),
                 )
                 self.refresh()
             else:
-                err = res.get("error") or res.get("outcome") or "Unknown error"
+                err = res.get("error") or res.get("outcome") or tr("Unknown error")
                 QMessageBox.warning(
                     self,
                     tr('Reset Failed'),
-                    f"Failed to activate reset for {account.display_name}:\n{err}",
+                    tr("Failed to activate reset for {name}:").format(
+                        name=account.display_name)
+                    + "\n" + err,
                 )
         except Exception as exc:
             QMessageBox.warning(
                 self,
                 tr('Reset Error'),
-                f"Exception while activating reset:\n{exc}",
+                tr("Exception while activating reset:") + "\n" + str(exc),
             )
         finally:
             self.unsetCursor()
@@ -500,8 +511,8 @@ class LimitOverview(QWidget):
         """
         drains = self._fill_mode() == "remaining"
         if window.gated_by:
-            spent = "0% left" if drains else "100% used"
-            return f"{spent} · blocked by {_win_label(window.gated_by)}"
+            spent = tr("0% left") if drains else tr("100% used")
+            return f"{spent}" + tr(" · blocked by ") + _win_label(window.gated_by)
         unit = getattr(window, "unit", "") or ""
         rem_amount = getattr(window, "remaining_amount", None)
         limit_amount = getattr(window, "limit_amount", None)
@@ -536,7 +547,7 @@ class LimitOverview(QWidget):
                     f"  {_win_label(payload, shot.account.provider_id)}: {source}")
             else:
                 lines.append(f"  {payload}")
-        return "\n".join(lines) or "No AI accounts detected"
+        return "\n".join(lines) or tr("No AI accounts detected")
 
 
 def _reset_text(epoch) -> str:
