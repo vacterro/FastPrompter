@@ -1,7 +1,7 @@
 ---
-phase: SHIP
-task: T-1362
-next_action: "PHASE SHIP T-1362"
+phase: DONE
+task: none
+next_action: "saipen status"
 blocker: "T-1362 (BLOCKED, unsatisfiable from this repo): fresh-clone conformance cannot be reached by any commit because debt.current_tree_reverify compares receipt.source_head to live HEAD by strict equality (debt.py:1702-1707) and a receipt is stamped with the HEAD that existed when it was minted, so committing receipts invalidates exactly those receipts. Needs an engine-side change (ancestor tolerance via merge-base --is-ancestor, or clone-time receipt bootstrap) plus operator authorization. T-1363 is RESOLVED and DONE (bc902d2 + 10da652): the card was attributed protocol output per t1370_cohort_manifest.json and LOG E-3605, not unattributed user data."
 agent: buffy
 saipen_version: 7
@@ -13,10 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3725
+last_event: 3726
 style_contract: ded-6b950e75
-updated: "2026-10-01T01:22:01Z"
-transition_from: REVIEW
+updated: "2026-10-01T01:34:50Z"
+transition_from: SHIP
 execution_intent: goal
 goal_waves: 0
 goal_tickets: 4

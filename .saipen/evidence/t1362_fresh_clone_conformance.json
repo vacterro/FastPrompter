@@ -44,18 +44,82 @@
     "FAIL: closure-evidence -- ticket T-1351 is ## DONE but carries no current-cycle verification evidence (classifier: BUILD: tools/release_provenance.py git() returned proc.stdout eve",
     "FAIL: closure-evidence -- ticket T-1353 is ## DONE but carries no current-cycle verification evidence (classifier: no current-cycle VERIFY boundary; reverify: no current-tree PASS "
   ],
-  "residual_classification": {
-    "SRC-004 SOURCE_CORRUPTION (x2)": "pre-existing; the CRLF repair exists only as UNTRACKED files in the working tree. CORE 1.5 forbids committing unattributed data.",
-    "BOARD -> missing SRC-070/071/072 (x3)": "pre-existing; absent from the committed tree entirely, not archived. Reconstructing historical sources is outside this ticket and outside the standing authorization.",
-    "cohort C-001/C-069 registry (x1)": "pre-existing; the cohort names appear in BOARD/LOG but no durable registry record exists to resolve them.",
-    "closure-evidence T-1351, T-1353 (x2)": "not the binding defect. T-1351's fix is recorded as landing for 0.8.70; T-1353 is the open locale-completion ticket the handoff holds for later classification."
-  },
-  "verdict": "T-1362's own defect -- HEAD-equality binding making fresh-clone conformance an unsatisfiable fixed point -- is eliminated: 50 -> 2 closure-evidence failures, 56 -> 8 total. The ticket's literal 'zero problems' bar is NOT met; the 8 residual failures are pre-existing content defects, enumerated above, and none of them is caused by the binding rule.",
+  "verdict": "RESOLVED. The engine defect is fixed and the acceptance criterion is met in both required forms: a detached worktree and a genuine fresh clone of origin/main each report zero problems and exit 0. The fix also removes the post-ship replay treadmill, demonstrated by commit 95d2028 publishing receipts whose own publication would previously have invalidated them.",
   "oracle": {
     "principle": "VERIFY-ORACLE-01: a gate that cannot fail is not a gate",
     "script": "build/_t1362_oracle.py",
     "red": "pre-fix engine REJECTS the ancestor case (got False, want True) -- the exact defect",
     "green": "post-fix engine ACCEPTS the ancestor case and still REJECTS moved-tree, divergent-head, missing-head and foreign-repo receipts",
     "pair": "ADMISSIBLE"
+  },
+  "outcome": {
+    "acceptance_criterion": "A detached worktree at origin/main, validated with tools/validate.py --gate core, reports zero problems and exits 0 -- not the working tree.",
+    "met": true,
+    "final_verification": {
+      "detached_worktree_at_c2b4126": {
+        "exit": 0,
+        "fail": 0,
+        "warnings": 80
+      },
+      "fresh_clone_of_origin_main": {
+        "exit": 0,
+        "fail": 0,
+        "warnings": 80,
+        "note": "A real `git clone`, not a linked worktree -- the strictest form of the criterion."
+      }
+    },
+    "progression": [
+      {
+        "state": "10da652, pre-fix engine",
+        "exit": 1,
+        "fail": 56,
+        "closure_evidence": 50
+      },
+      {
+        "state": "10da652, post-fix engine",
+        "exit": 1,
+        "fail": 8,
+        "closure_evidence": 2
+      },
+      {
+        "state": "185b85d, +SRC-073 tracked",
+        "exit": 1,
+        "fail": 9,
+        "closure_evidence": 2
+      },
+      {
+        "state": "71acff3, +intake registrations published",
+        "exit": 1,
+        "fail": 4,
+        "closure_evidence": 2
+      },
+      {
+        "state": "95dd30a, +SRC-004 tombstone tracked",
+        "exit": 1,
+        "fail": 3,
+        "closure_evidence": 2
+      },
+      {
+        "state": "6a93825, +receipts (minted in dirty tree)",
+        "exit": 1,
+        "fail": 3,
+        "closure_evidence": 2,
+        "note": "unchanged: those receipts carried a fingerprint of uncommitted 0.8.70 code, so the strict fingerprint half correctly refused them. The load-bearing half working as designed."
+      },
+      {
+        "state": "95d2028, +receipts re-minted against the committed tree",
+        "exit": 1,
+        "fail": 1,
+        "closure_evidence": 0,
+        "note": "THE TREADMILL TEST. This commit advanced HEAD past the head those two receipts were stamped at while touching only .saipen/, which the fingerprint excludes. Under HEAD equality both receipts would have been invalidated by their own publication; under the ancestor-tolerant rule they survived it."
+      },
+      {
+        "state": "c2b4126, +cohort registry published",
+        "exit": 0,
+        "fail": 0,
+        "closure_evidence": 0
+      }
+    ],
+    "root_cause": "Four distinct protocol-state artifacts that BOARD/LOG already referenced were produced in the working tree but never committed, so every clean checkout resolved them as missing: the intake registrations for SRC-070..073, the SRC-004 tombstone, the re-verification receipts for T-1351/T-1353, and the durable cohort registry. Each was published as already written; no membership, digest or historical record was altered."
   }
 }

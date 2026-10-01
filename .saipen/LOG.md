@@ -2637,3 +2637,4 @@
 - 01.10.26 01:21 [E-3723] [parent: E-3722] [T-1362] [agent: buffy] [op: transition-d54af217efbd4290ade7b20b19d06601] RUN: transition to REVIEW -- verify evidence recorded; residual content defects catalogued in evidence
 - 01.10.26 01:21 [E-3724] [parent: E-3723] [agent: buffy] [op: transition-d54af217efbd4290ade7b20b19d06601] DEC: goal_tickets 3->4
 - 01.10.26 01:22 [E-3725] [parent: E-3724] [T-1362] [agent: buffy] [op: transition-1f06f94bfeab4168a949366e00b94c3c] RUN: transition to SHIP -- engine fix proven on a clean worktree; evidence and corrected KNOWLEDGE card staged
+- 01.10.26 01:34 [E-3726] [parent: E-3725] [T-1362] [agent: buffy] [op: finish-dbb04773edc04ffe9c190cc13e64f1e4] DEC: ticket finished via SAIOPS -- completion (from SHIP)
