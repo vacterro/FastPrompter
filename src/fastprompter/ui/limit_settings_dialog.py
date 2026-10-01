@@ -1419,7 +1419,7 @@ class LimitSettingsDialog(QDialog):
         except Exception as exc:
             QMessageBox.warning(
                 self, f"{verb} {info['label']}",
-                f"Could not start the installer:\n\n{exc}")
+                tr("Could not start the installer:\n\n{exc}").format(exc=exc))
             return
         self.lbl_cli_hint.setText(
             f"{info['label']}: installer started in a separate window. When it "
@@ -1658,7 +1658,7 @@ class LimitSettingsDialog(QDialog):
             state = source_status(
                 str(self.data.get("limit_zcode_config", "") or "") or None)
         except Exception as exc:
-            label.setText(f"ZCode sources unavailable: {exc}")
+            label.setText(tr("ZCode sources unavailable: {exc}").format(exc=exc))
             return
         btn_quick = getattr(self, "btn_zcode_quick_enable", None)
         usable = [p for p in state.get("plans", []) if p.get("has_key")]
@@ -1763,7 +1763,7 @@ class LimitSettingsDialog(QDialog):
                 str(self.data.get("limit_freebuff_state", "") or "") or None,
                 enabled=str(self.data.get("limit_freebuff_enabled", "False")) == "True")
         except Exception as exc:
-            label.setText(f"Freebuff sources unavailable: {exc}")
+            label.setText(tr("Freebuff sources unavailable: {exc}").format(exc=exc))
             return
         btn_quick = getattr(self, "btn_freebuff_quick_enable", None)
         signed_in = bool(state.get("signed_in"))
@@ -1843,7 +1843,7 @@ class LimitSettingsDialog(QDialog):
             state = source_status(
                 str(self.data.get("limit_antigravity_dir", "") or "") or None)
         except Exception as exc:
-            label.setText(f"Antigravity sources unavailable: {exc}")
+            label.setText(tr("Antigravity sources unavailable: {exc}").format(exc=exc))
             return
         if not state["installed"]:
             label.setText(f"Antigravity: not found at {state['data_dir'] or '?'}")
@@ -1863,12 +1863,12 @@ class LimitSettingsDialog(QDialog):
             import datetime
             until = datetime.datetime.fromtimestamp(
                 state["blocked_until"]).strftime("%a %H:%M")
-            lines.append(f"Refusal journal: quota blocked until {until}")
+            lines.append(tr("Refusal journal: quota blocked until {until}").format(until=until))
         elif state["observed_at"]:
             import datetime
             seen = datetime.datetime.fromtimestamp(
                 state["observed_at"]).strftime("%d.%m %H:%M")
-            lines.append(f"Refusal journal: no active block · last refusal {seen}")
+            lines.append(tr("Refusal journal: no active block · last refusal {seen}").format(seen=seen))
         else:
             lines.append(tr("Refusal journal: no refusal recorded"))
         label.setText("\n".join(lines))
@@ -1899,7 +1899,7 @@ class LimitSettingsDialog(QDialog):
             extra = [h.strip() for h in str(self.data.get("limit_codex_homes", "") or "").split(",") if h.strip()]
             status = source_status(extra)
         except Exception as exc:
-            label.setText(f"Codex sources unavailable: {exc}")
+            label.setText(tr("Codex sources unavailable: {exc}").format(exc=exc))
             return
         lines = []
         if status.get("cli_installed"):
@@ -2127,7 +2127,7 @@ class LimitSettingsDialog(QDialog):
                         if getattr(a, "provider_id", "") == "claude"]
             rows = accounts_report(accounts, state.snapshots)
         except Exception as exc:
-            return [f"Claude accounts unavailable: {exc}"]
+            return [tr("Claude accounts unavailable: {exc}").format(exc=exc)]
         badges = {}
         for account in accounts:
             try:
@@ -2172,7 +2172,7 @@ class LimitSettingsDialog(QDialog):
             )
             state = source_status()
         except Exception as exc:
-            label.setText(f"Claude sources unavailable: {exc}")
+            label.setText(tr("Claude sources unavailable: {exc}").format(exc=exc))
             return
         lines = []
         try:
@@ -2220,7 +2220,7 @@ class LimitSettingsDialog(QDialog):
                 + datetime.datetime.fromtimestamp(
                     block["resets_at"]).strftime("%H:%M")
                 for key, block in sorted(blocked.items()))
-            lines.append(f"Claude Code refusals: blocked {detail}")
+            lines.append(tr("Claude Code refusals: blocked {detail}").format(detail=detail))
         label.setText("\n".join(lines))
 
     def _toggle_claude(self):
@@ -2381,4 +2381,4 @@ class LimitSettingsDialog(QDialog):
                 QMessageBox.information(
                     self, f"Log in to {vendor.title()}", msg)
         except Exception as exc:
-            QMessageBox.warning(self, f"Log in to {vendor.title()}", f"Could not launch login:\n\n{exc}")
+            QMessageBox.warning(self, f"Log in to {vendor.title()}", tr("Could not launch login:\n\n{exc}").format(exc=exc))
