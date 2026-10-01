@@ -1,0 +1,17 @@
+{
+  "op_id": "scope-ea256c36ecc4428bb95da09a4f694947",
+  "paths": {
+    ".saipen/KNOWLEDGE/INDEX.md": "588e0532ace3cec2867382089b744c0410b97fce63148794540c25355dd0d97e",
+    ".saipen/KNOWLEDGE/architecture.md": "bb38faca21eb663f1e0411c1ab557cbc47686c402b48ec36afe8cbdec12e98ae",
+    ".saipen/KNOWLEDGE/cards/commit-invalidates-closure-receipts.md": "e13aef054d868c44fcc5901d8d8b9a99a20f1cd05fe5a41e875b21fe5278bd3f",
+    ".saipen/KNOWLEDGE/cards/manual-reset-offers-contract.md": "89c237c507e982ea010b8dc23a761b7418c9977b57cce08f5e439249b6ab76d1",
+    ".saipen/evidence/t1363_knowledge_index_attribution.json": "a28d2e5b2a4c9a08c3277446aa56bcf62c0b7ba99ef0c52eb2114569906f1b54"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-10-01T00:07:58Z",
+  "schema_version": 2,
+  "source_head": "bc902d23325dee802c60823915458f44e8c6940b",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "ticket": "T-1363"
+}

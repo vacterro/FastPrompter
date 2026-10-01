@@ -1,0 +1,17 @@
+{
+  "op_id": "scope-48a7d49832f945d58bc5791e1cd0a7e4",
+  "paths": {
+    ".saipen/KNOWLEDGE/INDEX.md": "d1afadf79ddf6c9fb2026cec092744c0310e0efdc786f923fc9b75ab22950210",
+    ".saipen/KNOWLEDGE/cards/reverify-gate-tolerates-retired-paths.md": "84f94ad38a49620c31a65fe5528f5fa16cc9317c7858802440fd2f3eebdb3d6d",
+    ".saipen/evidence/t1259_cleanup_check.py": "6a0ecd6aaa7cafcbc90f44f9d848c4f05f5d21dffeef6f8c878c8d16e09b2e8e",
+    ".saipen/evidence/t1361_gate_negative_controls.json": "68504fcb0381743bc8d7d1edb27e75858b1f3c42a04a4b05d014e17a8eee6d8f",
+    ".saipen/evidence/t1361_regression_pair.json": "b2400901e03ebce4d52840aac5b1376ef70ea6fbf8a2c2975966403e27b6e0d6"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-09-30T22:57:13Z",
+  "schema_version": 2,
+  "source_head": "fe167a74f8808e94228b2b590de3ff60b878ea70",
+  "source_tree_fingerprint": "git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef",
+  "ticket": "T-1361"
+}

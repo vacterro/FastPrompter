@@ -1,0 +1,15 @@
+{
+  "op_id": "scope-17289374924b4317a365fcc8181a839d",
+  "paths": {
+    "src/fastprompter/ui/editor.py": "5ad9bd0c8a3f3b17bbaf9ffee1dd1ed0463f4f2eb001f346fd0584dde356f25c",
+    "tests/test_t1349_hover_grace.py": "10804e035898974727ac98b33d97def019fbde53ae3ebfff9466a30ba0e14389",
+    "tests/test_t1352_copy_row_collisions.py": "277cb06ba9da7cd2a4794b0be04055e35dc3f5b01e7efdaf86d8e4c473117718"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-09-30T07:45:41Z",
+  "schema_version": 2,
+  "source_head": "b7eac60b03963d043e8019fac80ab7070e2e31bf",
+  "source_tree_fingerprint": "git-delta-v1:b7df89223dd4f415dab7971c8f95febde02f126bd4e7a3dc212cf76914f9beda",
+  "ticket": "T-1352"
+}

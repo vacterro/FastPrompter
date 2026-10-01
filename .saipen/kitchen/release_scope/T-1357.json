@@ -1,0 +1,15 @@
+{
+  "op_id": "scope-423c41cafdef4b46ac2b69d5d2ef4212",
+  "paths": {
+    "tests/test_release_provenance.py": "bd272e7b83c871595998c283bfea72b36eb07dcbb1ea0ac15eeca2e4baf008dc",
+    "tests/test_t1357_receipt_validator.py": "e6514ff3e128ea133d65502f64ed711889b359948eb8d8872446c914872dbad4",
+    "tools/release_provenance.py": "172e49f2bc93957211c5f48147397ca9ff1dc986881fe2702c2cecd80bd08892"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-09-30T12:26:42Z",
+  "schema_version": 2,
+  "source_head": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "source_tree_fingerprint": "git-delta-v1:eb01c3bd874f6d52097ab00f36dd8342fd8aef467c074e02ffd36cf540f6e506",
+  "ticket": "T-1357"
+}

@@ -1,0 +1,14 @@
+{
+  "op_id": "scope-7d8f9e9c7e37410a8df0022cc7523f47",
+  "paths": {
+    ".gitignore": "f2197a33bba7ce74791fb6935cdaa1379751fc1c9f76a1d535757ee2b6d362b8",
+    "tests/test_t1358_cohort_publication.py": "779ee132ea9248ab37e107589e8f9297428212b1bea61a61c343ad0fe81800d4"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-09-30T12:17:22Z",
+  "schema_version": 2,
+  "source_head": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "source_tree_fingerprint": "git-delta-v1:8a0d363c28c4f40c789c8e8ff11fb7215051ff77d7a61ebfd3a7a0b42cbe7875",
+  "ticket": "T-1358"
+}

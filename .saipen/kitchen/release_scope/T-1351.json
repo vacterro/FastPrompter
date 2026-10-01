@@ -1,0 +1,13 @@
+{
+  "op_id": "scope-bce82008318f4d1099239d117ddc47ab",
+  "paths": {
+    ".saipen/evidence/t1351/release_audit.md": "e99bf60cb3c79e09c0f382a44df81454b7a6acbf23edbff8b2d6d88bc546d950"
+  },
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "recorded_at": "2026-09-30T10:29:25Z",
+  "schema_version": 2,
+  "source_head": "17cb7937428a875f416fc35b4f1ed6d26cd347b6",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "ticket": "T-1351"
+}
