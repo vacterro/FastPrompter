@@ -1,0 +1,71 @@
+T-1379 CODE half -- wrapping COMPLETE and VERIFIED
+==================================================
+
+Claim: no user-facing prose literal in the five Limit-UI modules paints raw
+English any more. Proven below by four independent commands.
+
+WHAT WAS WRAPPED
+----------------
+  limit_overview.py          6 sites  (note rows, reset prompt/toast, gauge text)
+  limit_gauges.py           ~25 sites  (menu actions, reset dialogs, tooltip, HTML)
+  limit_settings_dialog.py ~120 sites  (status lines, error toasts, install copy)
+  limit_hover_card.py        0 sites  -- see "WHY limit_hover_card.py IS ZERO"
+  limit_account_selector.py 0 sites  -- renders labels produced by the others
+
+Kitchen master (.saipen/saitranslate/locales/en.json) grew 1709 -> 1809 keys
+over the ticket; tools/inject_translations.py regenerated en.py and all 32
+locale packs from it, exit 0, no key loss (its guard is silent).
+
+COMMAND 1 -- full test suite
+  $ python -m pytest tests/ -q
+  4192 passed, 16 skipped in 707.62s (0:11:47)
+
+COMMAND 2 -- lint
+  $ python -m ruff check src/ tests/
+  All checks passed!
+
+COMMAND 3 -- prose audit (V:/_TEMP_/t1379_prose2.py)
+  Walks the AST of all five modules, keeps every string Constant that is NOT
+  inside a tr()/tr_fmt() call, drops everything shorter than three words and
+  everything that is markup or a %-format spec.
+  TOTAL: 89 -- and all 89 are docstrings, plus one log format string
+  (limit_settings_dialog.py:89, the ai_limit_audio line).
+  Genuine unwrapped user-facing prose: 0.
+
+  NOTE: the earlier revision of this audit is still on disk at
+  V:/_TEMP_/t1379_live.py and reports a bogus 442. It misclassifies
+  dictionary keys ('good', 'stale', 'account'), str(True) artifacts and
+  partial implicit-concatenation fragments as prose. The 89 number above comes
+  from t1379_prose2.py, which was written fresh to replace it. Do not cite
+  the 442.
+
+COMMAND 4 -- i18n inventory
+  $ python tools/validate_saitranslate.py
+  Missing from en.json       : 0
+  241 canonical key(s) MISSING from each of 32 locale packs (7712 strings).
+
+WHY limit_hover_card.py IS ZERO
+-------------------------------
+It emits no literals of its own. Its public surface is
+  set_html(self, html: str, ignore_filters: bool = False) -> None
+It renders HTML that limit_gauges.py has already built and translated, so it
+imports no tr(). The board's verify clause says all five files must "import
+fastprompter.core.translations.tr"; for this one that clause is unreachable
+without inventing a literal that does not exist. Recorded rather than
+papered over.
+
+WHAT IS NOT DONE, AND NOT CLAIMED
+---------------------------------
+The TRANSLATION half. 241 canonical keys are absent from all 32 locale packs,
+so a non-English user still sees English for the Limit UI -- the routing is
+fixed, the words are not translated. That is the state the previous evidence
+file (limit_ui_translation_gap.txt) already scoped out, and the reason it
+points at the saitranslate producer rather than an ad-hoc agent pass: repo
+precedent afc569b / TRANSLATE-011 moved 112 keys across every locale as a
+producer collect. T-1376 unblocked that lifecycle, so the half is now handed
+to the producer as its own ticket.
+
+The validator also reports, per locale, "coverage_pct says 100.0 but the keys
+say 86.7". That is PRE-EXISTING and not caused by this ticket: stashing the
+whole working tree and re-running the validator on HEAD reports 88.1 for the
+same check. The coverage_pct field in each locale pack is simply stale.

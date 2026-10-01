@@ -1,7 +1,7 @@
 ---
-phase: SCOUT
-task: T-1379
-next_action: "PHASE SCOUT T-1379 [CODE half: wrap the 118 prose literals measured in evidence/t1379/limit_ui_translation_gap.txt, keys via saitranslate/locales/en.json + tools/inject_translations.py; TRANSLATION half and T-1383 close are queued behind it]"
+phase: DONE
+task: none
+next_action: "PHASE SCOUT T-1384"
 blocker: none
 agent: buffy
 saipen_version: 7
@@ -13,13 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3880
+last_event: 3888
 style_contract: ded-71fc58de
-updated: "2026-10-01T22:59:17Z"
-transition_from: DONE
+updated: "2026-10-01T23:28:16Z"
+transition_from: SHIP
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 10
+goal_tickets: 11
 ---
 T-1336 DONE 28.09.26 (E-3328):
 
