@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-073:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "Live audit of all four deliverables, not LOG prose: (1) CLEAN proven by .saipen/evidence/t1259_cleanup_check.py exit 0 -- 'corpus: 1108 blocking reference files (17 tracked paths absent from the working tree, skipped), deleted paths proven absent+unreferenced: 67, preserved 0, T-1259 CLEAN REVERIFY PASS'; the 13 SAIHANDOFF-named paths are 13/13 recorded in the manifest and 13/13 absent from disk, and every manifest record carries classification+sha256+bytes; (2) the verify gate itself is now runnable after fixing its crash; (3) T-1259 already DONE at E-3678 with closure_mode own_patch; (4) .saipen/evidence/post_0869_pre_0870_baseline.json sha256 ef72b1cb, CURRENT_PASS, problem_count 0, main==origin fe167a74, v0.8.69 a655fdd, VERSION 0.8.69",
+      "text": "T-1259 cleanup: manifest-proven CLEAN of root-level one-off patch/fix/scratch scripts, verify, close ticket, checkpoint post-0.8.69",
+      "verification": "Cheapest-first ladder green (parse, import resolving ROOT to the repo root, repro exit 0). Instrument controls non-vacuous: 5/5 deliberate violations each turned the gate red (.saipen/evidence/t1361_gate_negative_controls.json), so the new skip defanged no detection clause. Anchored regression pair ADMISSIBLE against the true pre-fix bytes recovered from git HEAD: pre-fix exit 1 on the decisive FileNotFoundError, post-fix exit 0, identical fixture and oracle with the gate implementation the only variable (.saipen/evidence/t1361_regression_pair.json). Independent re-run in REVIEW agreed. Closure published as commit 6e64047 pushed fast-forward to origin/main; v0.8.69 tag unmoved.",
+      "work": "T-1361"
+    }
+  },
+  "schema_version": 1
+}

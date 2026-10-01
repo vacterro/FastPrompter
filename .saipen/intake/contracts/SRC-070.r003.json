@@ -1,0 +1,24 @@
+{
+  "clauses": {
+    "SRC-070:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Synchronize the existing origin safely without rewriting published history"
+    },
+    "SRC-070:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Freeze the exact 0.8.69 release cohort and source fingerprint"
+    },
+    "SRC-070:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Pass the repository CI gates from a clean clone of the release commit"
+    }
+  },
+  "derived_at": "2026-09-30T07:17:24Z",
+  "derived_from": "SRC-070",
+  "interpretation_revision": 3,
+  "schema_version": 1,
+  "source_sha256": "49063cdd3574bf5513a8e5caa88f0db5589ccf6f513077bc7a05c969f9aa5fdd"
+}

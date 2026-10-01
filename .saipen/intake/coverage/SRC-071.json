@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-071:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1359 closed with verification evidence in LOG: verify -> PASS [target: T-1359] conf: high -- uv run --no-sync pytest tests/test_interval_default_chime_t1359.py tests/test_fastprompter_night_upgrade.py -> 19 passed; interval/timer/i18n/bake wave 458 passed; Ruff clean; compileall OK",
+      "text": "\u0414\u0430, PASS. \u041f\u0443\u0441\u0442\u044c \u0442\u043e\u0433\u0434\u0430 \u043f\u043e \u0434\u0435\u0444\u043e\u043b\u0442\u0443 \u0431\u0443\u0434\u0435\u0442 \u0432\u043a\u043b\u044e\u0447\u0435\u043d \u0441\u0440\u0430\u0437\u0443 24h chime \u043f\u0440\u0435\u0441\u0435\u0442 \u0441\u0440\u0430\u0437\u0443.",
+      "verification": "the Work this request created reached its own verification gate; see the T-1359 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1359"
+    }
+  },
+  "schema_version": 1
+}

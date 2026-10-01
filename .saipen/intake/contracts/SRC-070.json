@@ -1,0 +1,44 @@
+{
+  "clauses": {
+    "SRC-070:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Synchronize the existing origin safely without rewriting published history"
+    },
+    "SRC-070:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Freeze the exact 0.8.69 release cohort and source fingerprint"
+    },
+    "SRC-070:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Pass the repository CI gates from a clean clone of the release commit"
+    },
+    "SRC-070:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Build and identify the exact Windows EXE for the frozen release source"
+    },
+    "SRC-070:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Pass the packaged EXE lifecycle, persistence and IPC probe"
+    },
+    "SRC-070:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Produce and verify the release receipt binding version, source commit and EXE"
+    },
+    "SRC-070:R007": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Publish the public patch release and verify the remote tag and download"
+    }
+  },
+  "derived_at": "2026-09-30T07:17:38Z",
+  "derived_from": "SRC-070",
+  "interpretation_revision": 7,
+  "schema_version": 1,
+  "source_sha256": "49063cdd3574bf5513a8e5caa88f0db5589ccf6f513077bc7a05c969f9aa5fdd"
+}

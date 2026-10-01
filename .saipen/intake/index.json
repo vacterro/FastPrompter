@@ -4,10 +4,6 @@
       "linked_work": "T-1162",
       "source_sha256": "026a4ae95aeec585794af3e808c5b99facc0ea02fc44631833f8985546b0817e"
     },
-    "SRC-004": {
-      "linked_work": "T-1162",
-      "source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6"
-    },
     "SRC-007": {
       "linked_work": "T-1207",
       "source_sha256": "bc91acccdf03eef6bc26627116568b2f50cc8da787cb13b1c052dede470cba6b"
@@ -239,11 +235,54 @@
     "SRC-068": {
       "linked_work": "T-1339",
       "source_sha256": "0df333a5eb5d1c0a8d9092b0ae466aa22f61e3177b139ec39ed7920b9ebe675a"
+    },
+    "SRC-070": {
+      "linked_work": "T-1351",
+      "source_sha256": "49063cdd3574bf5513a8e5caa88f0db5589ccf6f513077bc7a05c969f9aa5fdd"
+    },
+    "SRC-071": {
+      "linked_work": "T-1359",
+      "source_sha256": "46cde5086da7eecfcb58d08593df3e4cdf2581e0b0b2472774140df67aafd16e"
+    },
+    "SRC-072": {
+      "linked_work": "T-1360",
+      "source_sha256": "9067f54e5196c7369a072148d13ed10ad1405b1098941a2585754d77f8e77c8f"
+    },
+    "SRC-073": {
+      "linked_work": "T-1361",
+      "source_sha256": "a3f84d66ff7a79144884329fe2d693f690bfdc0c1a2fb4a7611415e3723500b4"
     }
   },
-  "next_id": 70,
+  "next_id": 74,
   "schema_version": 1,
   "tombstones": {
+    "SRC-004": {
+      "archive_ref": ".saipen/archive/retired/SRC-004.md",
+      "linked_work": "T-1162",
+      "measured_sha256": "f73bb6e49b88b2f61d6fa5d5d66191873e6fb1066cd90fd289878725fdefd462",
+      "receipt_id": "SRC-004",
+      "retired_at": "2026-09-30T20:03:39Z",
+      "retired_by": "buffy",
+      "retirement": {
+        "digest_mismatch": true,
+        "measured_sha256": "f73bb6e49b88b2f61d6fa5d5d66191873e6fb1066cd90fd289878725fdefd462",
+        "note": "",
+        "reason": "STALE_CREDENTIAL",
+        "receipt_only": true,
+        "recorded_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6",
+        "retired_at": "2026-09-30T20:03:39Z",
+        "retired_by": "buffy",
+        "retirement_event": "E-3680",
+        "schema_version": 2,
+        "source_reason": "STALE_CREDENTIAL",
+        "successor": ""
+      },
+      "retirement_event": "E-3680",
+      "schema_version": 2,
+      "source_reason": "STALE_CREDENTIAL",
+      "source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6",
+      "status": "INVALID"
+    },
     "SRC-005": {
       "actionable": 14,
       "archive_ref": ".saipen/archive/source/SRC-005.md",

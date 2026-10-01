@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-072:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1360 closed with verification evidence in LOG: verify -> PASS [target: T-1360] conf: high -- uv run --no-sync pytest tests/test_reset_offers_t1360.py tests/test_interval_default_chime_t1359.py -> 36 passed: mandatory cross-provider oracle (3 exhausted providers, filters on: quota rows filtered, Resets section lists all 3, aggregate 3, no usability flip, automatic queue unchanged) and the Codex exhausted+filtered visibility case; live ZCode pro",
+      "text": "Finish T-1359 default 24h Chime preset, then T-1360 cross-provider reset offers, then resume release reconciliation",
+      "verification": "the Work this request created reached its own verification gate; see the T-1360 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1360"
+    }
+  },
+  "schema_version": 1
+}

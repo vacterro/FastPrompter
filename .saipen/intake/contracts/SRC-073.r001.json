@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-073:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1259 cleanup: manifest-proven CLEAN of root-level one-off patch/fix/scratch scripts, verify, close ticket, checkpoint post-0.8.69"
+    }
+  },
+  "derived_at": "2026-09-30T23:00:14Z",
+  "derived_from": "SRC-073",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "a3f84d66ff7a79144884329fe2d693f690bfdc0c1a2fb4a7611415e3723500b4"
+}

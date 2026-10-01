@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-072:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Finish T-1359 default 24h Chime preset, then T-1360 cross-provider reset offers, then resume release reconciliation"
+    }
+  },
+  "derived_at": "2026-09-30T11:50:49Z",
+  "derived_from": "SRC-072",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "9067f54e5196c7369a072148d13ed10ad1405b1098941a2585754d77f8e77c8f"
+}

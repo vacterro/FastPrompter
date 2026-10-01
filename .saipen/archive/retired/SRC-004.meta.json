@@ -1,4 +1,5 @@
 {
+  "archive_ref": ".saipen/archive/retired/SRC-004.md",
   "linked_work": "T-1162",
   "receipt_id": "SRC-004",
   "received_at": "2026-08-30T20:44:36Z",
@@ -7,6 +8,20 @@
     "authoritative": false,
     "original_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6",
     "sanitized_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6"
+  },
+  "retirement": {
+    "digest_mismatch": true,
+    "measured_sha256": "f73bb6e49b88b2f61d6fa5d5d66191873e6fb1066cd90fd289878725fdefd462",
+    "note": "",
+    "reason": "STALE_CREDENTIAL",
+    "receipt_only": true,
+    "recorded_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6",
+    "retired_at": "2026-09-30T20:03:39Z",
+    "retired_by": "buffy",
+    "retirement_event": "E-3680",
+    "schema_version": 2,
+    "source_reason": "STALE_CREDENTIAL",
+    "successor": ""
   },
   "schema_version": 1,
   "sensitive": false,
@@ -17,7 +32,8 @@
   },
   "source_kind": "user_instruction",
   "source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6",
-  "status": "ACTIVE",
+  "status": "INVALID",
+  "storage_status": "ARCHIVED",
   "transport": {
     "newline_normalization": "none",
     "source_encoding": "utf-8",

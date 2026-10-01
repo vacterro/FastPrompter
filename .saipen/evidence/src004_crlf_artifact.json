@@ -1,0 +1,37 @@
+{
+  "receipt": "SRC-004",
+  "question": "is the SRC-004 body corrupt, or is the recorded digest a CRLF measurement of the same content?",
+  "body": {
+    "path": ".saipen/intake/active/SRC-004.md",
+    "bytes": 21967,
+    "on_disk_line_endings": "LF",
+    "cr_count": 0,
+    "git_status": "clean"
+  },
+  "recorded_digests": {
+    "metadata_source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6",
+    "index_source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6",
+    "index_and_metadata_agree": true,
+    "contract_source_sha256": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6"
+  },
+  "measured_digests": {
+    "as_stored": "f73bb6e49b88b2f61d6fa5d5d66191873e6fb1066cd90fd289878725fdefd462",
+    "normalized_to_lf": "f73bb6e49b88b2f61d6fa5d5d66191873e6fb1066cd90fd289878725fdefd462",
+    "transformed_to_crlf": "51092c5f1e7e7c2d4495f85607f99ad465891649c38a48e5d1458423a53204b6"
+  },
+  "reproduction": {
+    "sha256(body with LF -> CRLF) == recorded": true,
+    "sha256(body as stored, LF) == recorded": false
+  },
+  "line_ending_provenance": {
+    "git_check_attr": "\".saipen\\\\intake\\\\active\\\\SRC-004.md\": text: unset | \".saipen\\\\intake\\\\active\\\\SRC-004.md\": eol: lf",
+    "core_autocrlf": "true",
+    "explanation": "core.autocrlf=true made the intake bodies CRLF in the working copy, and the recorded digest was taken over that CRLF rendering. .gitattributes then pinned eol=lf for .saipen/intake/**, so the same content is now stored LF. The text is byte-identical after a newline transform; no content was lost or altered."
+  },
+  "corpus_state": {
+    "linked_work": "T-1162",
+    "interpretation_revision": 13,
+    "requirement_count": 0
+  },
+  "conclusion": "NOT content corruption. The body is intact and git-clean; the recorded digest is a CRLF-rendition measurement of the identical text, and the CRLF transform reproduces it exactly. Under SAIHANDOFF section 15 the source must not be rewritten to match the digest, and the recorded digest is itself the historical record, so neither side is silently patched. The protocol's own mechanism for a broken body-digest identity is source retire --reason STALE_CREDENTIAL, which copies the ORIGINAL bytes to cold storage exactly as they stand, records measured_sha256 beside recorded_sha256, and keeps digest_mismatch visible forever."
+}
