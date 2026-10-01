@@ -829,6 +829,11 @@ def _parse_reset(value) -> float | None:
     if isinstance(value, str):
         try:
             parsed = datetime.datetime.fromisoformat(value)
+            # Naive provider output is DEFINED as UTC (quota-reset-time
+            # contract). `timestamp()` on a naive value reads it as LOCAL,
+            # which moved Claude's reset window by the host's UTC offset.
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=datetime.UTC)
             return parsed.timestamp()
         except (ValueError, OverflowError):
             return None

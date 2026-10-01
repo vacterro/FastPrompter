@@ -1,0 +1,90 @@
+T-1378 -- Claude reset timestamps read naive provider output as LOCAL time
+=======================================================================
+
+DEFECT
+
+  src/fastprompter/core/usage_limits/providers/claude.py:819 _parse_reset()
+  parsed a naive ISO string with datetime.datetime.fromisoformat(value) and
+  returned parsed.timestamp(). Python defines timestamp() on a NAIVE datetime
+  as a LOCAL-time read, so the instant moved by the host's UTC offset.
+
+  The quota-reset-time contract says the opposite in as many words: provider
+  reset instants cross as numeric epochs and NAIVE provider output is DEFINED
+  as UTC, because re-attaching the machine's current offset is exactly the
+  drift the contract exists to prevent.
+
+MEASURED (this machine, UTC+2 standard / UTC+3 daylight)
+
+  claude._parse_reset('2026-10-02T12:00:00') = 1790931600.0   <- local read (WRONG)
+  codex._epoch   ('2026-10-02T12:00:00') = 1790942400.0   <- utc read  (contract)
+  delta = -10800 s, exactly the host offset.
+
+  Same provider payload string, two providers' quota windows 10800 s apart, on
+  one machine at the same moment.
+
+OUTLIER, NOT A DESIGN DIFFERENCE
+
+  Every fromisoformat() call site under usage_limits/providers, classified by
+  whether it normalizes a naive value before taking the epoch:
+
+    _antigravity_brain.py:77    UTC-normalizing
+    _antigravity_brain.py:79    UTC-normalizing
+    _antigravity_cli.py:153     UTC-normalizing
+    _claude_transcripts.py:155  UTC-normalizing
+    _freebuff_http.py:206       UTC-normalizing
+    codex.py:326                UTC-normalizing
+    claude.py:831               *** NAIVE -> LOCAL ***
+
+  Six of seven were already right. claude.py was the single outlier, which is
+  why this reads as a slip rather than an intentional per-provider decision.
+
+SECOND CALLER
+
+  claude.py:362   snapshot path       -> _parse_reset(bucket['resets_at'])
+  claude.py:597   _campaign_expiry    -> _parse_reset(raw)
+
+  Both now inherit the fix from the one normalizer; the regression test pins
+  that the module still has exactly ONE fromisoformat() call, so a future
+  direct parse cannot reintroduce a second, un-normalized site.
+
+FIX
+
+  if parsed.tzinfo is None:
+      parsed = parsed.replace(tzinfo=datetime.UTC)
+
+  Same shape codex.py:327-328 already used.
+
+VERIFY-ORACLE-01 PAIR -- same test, same oracle, only the implementation moved
+
+  tests/test_claude_reset_timezone_t1378.py, run twice with the claude.py fix
+  stashed and unstashed, nothing else changed:
+
+    fix reverted (pre-fix subject) : 2 failed, 3 passed
+    fix applied                   : 5 passed
+
+  The two failing assertions are the epoch pin and the codex-sibling equality;
+  both report the same -10800 s delta, which is the host offset, not a tolerance.
+
+RED CONTROL on the rest of the contract -- the fix must not disturb the other
+two branches of the same function, and a value that already carries an offset
+must not get a second one:
+
+    _parse_reset(1790942400.0)          -> 1790942400.0   (epoch branch)
+    _parse_reset(1790942400000.0)       -> 1790942400.0   (millisecond branch)
+    _parse_reset('2026-10-02T12:00:00+00:00') -> 1790942400.0   (aware UTC)
+    _parse_reset('2026-10-02T14:00:00+02:00') -> 1790942400.0   (aware +02)
+    _parse_reset(0) / True / 'not a timestamp' -> None
+
+  All five hold before and after the fix: the change is confined to the one
+  branch that was wrong.
+
+SURROUNDING SUITES
+
+  uv run pytest tests/test_usage_limits.py tests/test_usage_limits_claude_accounts.py \
+                    tests/test_limits.py tests/test_limit_overview.py \
+                    tests/test_limit_alert_copy.py \
+                    tests/test_usage_limits_tooltip_compact.py \
+                    tests/test_claude_reset_timezone_t1378.py -q
+  -> 156 passed
+
+  No consumer depended on the local-time reading.
