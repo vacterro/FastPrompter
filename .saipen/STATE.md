@@ -1,7 +1,7 @@
 ---
-phase: BUILD
+phase: REVIEW
 task: T-1372
-next_action: "PHASE BUILD T-1372"
+next_action: "PHASE REVIEW T-1372"
 blocker: none
 agent: buffy
 saipen_version: 7
@@ -13,13 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3745
+last_event: 3751
 style_contract: ded-71fc58de
-updated: "2026-10-01T18:06:17Z"
-transition_from: SCOUT
+updated: "2026-10-01T18:11:13Z"
+transition_from: VERIFY
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 0
+goal_tickets: 1
 ---
 T-1336 DONE 28.09.26 (E-3328):
 

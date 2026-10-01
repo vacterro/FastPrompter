@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-074:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "UNKNOWN",
+      "evidence": null,
+      "text": "saihunt: hunt for defects, debt, and improvement targets in FastPrompter",
+      "verification": null,
+      "work": "T-1372"
+    }
+  },
   "schema_version": 1
 }

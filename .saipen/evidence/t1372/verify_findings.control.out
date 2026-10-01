@@ -1,0 +1,12 @@
+ticket   verdict  detail
+T-1378   REPRODUCED claude=1790931600.0 codex=1790942400.0 differ by -10800s (UTC expectation 1790942400.0)
+T-1379   NOT REPRO 4/5 Limit modules import NO translation entry point (limit_gauges.py, limit_settings_dialog.py, limit_hover_card.py, limit_account_selector.py) -- CLAIM NOT REPRODUCING
+T-1379   REPRODUCED 36/36 packs lack 'No AI accounts detected'; drifted longer literal still in code: True
+T-1380   REPRODUCED 5/5 files carry Cyrillic; validate_saitranslate.py went 0 -> 1 Cyrillic lines since v0.8.69, the other 4 files did not exist there
+T-1373   REPRODUCED receipt v0.8.68 tag v0.8.68 resolves to 1d7765b677fe; 'commit' key present: False, 'release_commit' present: True
+T-1374   REPRODUCED STATE carries ded-71fc58de; the machine holds ['ded-4ae736e4', 'ded-6b950e75'] across 3 STYLE.md copies
+T-1375   REPRODUCED unpublished cohorts: ['C-001', 'C-069']
+T-1376   REPRODUCED roles with ready entries: [('saitranslate', 1), ('saiwiki', 1)]
+T-1377   REPRODUCED BOARD.md 92 KB (cap ~16 KB), LOG.md 2660 lines (cap ~300)
+
+8/9 filed findings still reproduce on this tree.
