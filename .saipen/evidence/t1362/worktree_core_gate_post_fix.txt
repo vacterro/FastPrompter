@@ -1,0 +1,62 @@
+FAIL: source receipts -- active receipt SRC-004: SOURCE_CORRUPTION
+FAIL: source receipts -- source credential gate: SOURCE_CORRUPTION active source SRC-004 digest mismatch
+FAIL: source receipts -- BOARD Work T-1351 references missing source receipt SRC-070
+FAIL: source receipts -- BOARD Work T-1359 references missing source receipt SRC-071
+FAIL: source receipts -- BOARD Work T-1360 references missing source receipt SRC-072
+saipen conformance validation starting (tools/validate.py)...
+Project root: V:\__t1362wt (git-worktree)
+Project lineage: lineage-c13f771bc2924a5a81b65fc79e5aca08
+PASS: state.schema.json and the engine STATE contract constants agree
+PASS: state.schema.json states nothing the validator ignores (4 keywords enforced natively, 5 delegated, 4 types interpreted)
+PASS: STATE.md schema valid (checked against state.schema.json)
+PASS: .saipen/IDENTITY.md is a canonical portable lineage carrier (lineage-c13f771bc2924a5a81b65fc79e5aca08)
+PASS: goal execution_intent counters present
+PASS: subSaipen STATE.md shape valid (7 checked, live + shipped library)
+PASS: .saipen/extensions/subs/MANIFEST.md parses strictly (6 entries)
+PASS: BOARD.md has all required section headings
+PASS: BOARD.md no duplicate tickets
+PASS: BOARD.md no dangling needs: references
+PASS: BOARD.md acyclic
+PASS: BOARD.md Work supersession relations are terminal, existing and acyclic
+PASS: BOARD.md claimed tickets have their needs: satisfied
+PASS: BOARD.md at most one ## DOING ticket (0 claimed)
+FAIL: closure provenance does not resolve: T-1269 names cohort C-001, which has no durable registry record; T-1352 names cohort C-069, which has no durable registry record; T-1354 names cohort C-069, which has no durable registry record; T-1355 names cohort C-069, which has no durable registry record -- a DONE line may record HOW it closed, never that something was published when it was not (CORE-003)
+PASS: LOG.md format valid (skeleton, E-### unique + monotonic, parents resolve; 5 segment(s))
+FAIL: closure-evidence -- ticket T-1351 is ## DONE but carries no current-cycle verification evidence (classifier: BUILD: tools/release_provenance.py git() returned proc.stdout even when the command failed, because check=False suppresses the exception but not the exit status. 'git rev-parse v0.8.69^{commit}' echoes the literal unresolved argument on stdout and exits 128; release.py check_tag_provenance read that echo as a real tag at a different commit and refused to publish the FIRST release of a version that was never tagged, with the misleading message 'version already tagged at different commit; bump VERSION'. Fix: return empty on non-zero exit after the check=True raise. 2 regression tests in tests/test_release_provenance.py -- one asserts git('rev-parse', 'v9.9.9^{commit}', check=False) is empty in a throwaway repo, one asserts check_tag_provenance no longer raises for an untagged version while still raising when the tag exists elsewhere; ablation: 2 fail without the fix, 9 pass with it. Landed for 0.8.70 (see E-3664: release_provenance.py is release-critical, so it cannot enter 0.8.69); reverify: no current-tree PASS re-verification receipt); an unproven closure is never protocol-green -- run saipen work reverify T-1351 --run '<executable check for this Work>' to record ONE immutable current-tree re-verification receipt with EXECUTED evidence (an attested-only --verification contract is recorded evidence, never closure proof), or re-verify with real evidence before DONE
+FAIL: closure-evidence -- ticket T-1353 is ## DONE but carries no current-cycle verification evidence (classifier: no current-cycle VERIFY boundary; reverify: no current-tree PASS re-verification receipt); an unproven closure is never protocol-green -- run saipen work reverify T-1353 --run '<executable check for this Work>' to record ONE immutable current-tree re-verification receipt with EXECUTED evidence (an attested-only --verification contract is recorded evidence, never closure proof), or re-verify with real evidence before DONE
+PASS: improve seat report schema valid (17 report(s) scanned)
+PASS: core sweep linkage valid: every disposition resolves to a real finding/ticket, no unverified or INVALID/ALREADY_FIXED finding produced a ticket, source_reports resolve exactly
+PASS: subsaipen write boundary continuous: no sub artifact targets a main-project canonical file (red control 7)
+PASS: KNOWLEDGE/ clean
+PASS: KNOWLEDGE/ structured surface valid (5 card(s), 5 active, index fresh)
+PASS: append targets end on a line boundary (29 checked)
+PASS: Golden Default palette integrity verified (21 Wintage tokens, sha256:271ba26cd75948e8)
+WARN [half-claim]: BOARD.md:96 ticket T-1297 carries owner but no claim_time -- § 1.4 decides liveness from the pair, so one alone cannot be judged live or stale
+WARN [half-claim]: BOARD.md:100 ticket T-1260 carries owner but no claim_time -- § 1.4 decides liveness from the pair, so one alone cannot be judged live or stale
+WARN [half-claim]: ... and 3 more like the above
+WARN [board-soft-cap]: BOARD.md is 84 KB (soft cap ~16 KB), of which 84 KB is closed-ticket text -- that content already lives in LOG.md/CHANGELOG.md, so scrub ## DONE at the next CLEAN (RFC § 1.2, phases/clean.md step 1)
+WARN [log-taxonomy]: .saipen/logs/LOG-001.md:256 taxonomy 'FIX' isn't RUN/DEC/H -- non-conformant for new entries (RFC § 1.2)
+WARN [log-taxonomy]: .saipen/logs/LOG-001.md:273 taxonomy 'DONE' isn't RUN/DEC/H -- non-conformant for new entries (RFC § 1.2)
+WARN [log-taxonomy]: ... and 14 more like the above
+WARN [log-ticket-ref]: .saipen/logs/LOG-003.md:177 ticket ref [T-812/T-813/T-814] isn't numeric T-### or the literal T-none (RFC § 1.2)
+WARN [log-ticket-ref]: .saipen/LOG.md:588 ticket ref [T-1218/T-1219/T-1220] isn't numeric T-### or the literal T-none (RFC § 1.2)
+WARN [log-ticket-ref]: ... and 13 more like the above
+WARN [accepted-legacy-debt]: mechanical provenance [saio] -- structural SAIOPS-owned events after the first provenanced event (E-737) lack `[op: ...]` but are registered IMMUTABLE accepted legacy debt (AD-000002, exact event/line evidence verified): .saipen/logs/LOG-004.md:190 E-964; .saipen/logs/LOG-004.md:207 E-981; .saipen/logs/LOG-004.md:233 E-1007; .saipen/LOG.md:26 E-1114; .saipen/LOG.md:29 E-1117; .saipen/LOG.md:36 E-1124 [+15 more accepted events of 21 total] (T-584) -- a NEW unmarked structural event still FAILs
+WARN [hunt-mark-unresolvable]: 2 sealed hunt mark(s) name commits this repository does not have or that never reached the remote (earliest .saipen/logs/LOG-001.md:65 @657e26b). Immutable by append-only; new marks are FAILed instead
+WARN [goal-reauth-untripped]: a `DEC: goal reauthorized` line clears goal_waves 1 and goal_tickets 0, both under § 2.4's 3/20 caps -- the valve had not tripped, so nothing needed re-authorizing and the reset granted a fresh budget instead (RFC § 2.4 Entry)
+WARN [log-timestamp-inversion]: .saipen/logs/LOG-004.md:21 timestamp moves backwards by 7m from E-800 to E-801; historical inversions must be documented with a DEC line carrying `observed historical timestamp inversions` at an event id at or after this one (RFC § 1.2). The newest such DEC is E-000
+WARN [log-timestamp-inversion]: .saipen/logs/LOG-004.md:212 timestamp moves backwards by 581m from E-985 to E-986; historical inversions must be documented with a DEC line carrying `observed historical timestamp inversions` at an event id at or after this one (RFC § 1.2). The newest such DEC is E-000
+WARN [log-timestamp-inversion]: ... and 9 more like the above
+WARN [log-soft-cap]: .saipen/LOG.md is 2593 lines / 804 KB, past the ~300 line / ~64 KB soft cap -- seal it into .saipen/logs/LOG-<NNN>.md at the next checkpoint (RFC § 1.2, phases/clean.md)
+WARN [producer-package-stale]: .saipen/extensions/subs/saihunt/kitchen/OUTBOX.md [HUNT-013] carries source_head '551ac7ca81174e853cb6603820ec9b445f0ead6c' but current source_head is '10da652cec0142f36f112c835dc8921a4ccb1f94' -- package is stale and MUST NOT be collected -- reported under `--gate core`, where this producer is not being consumed; it FAILs under `--gate collect:saihunt` and blocks nothing else
+WARN [producer-package-stale]: .saipen/extensions/subs/saihunt/kitchen/OUTBOX.md [HUNT-013] carries source_tree_fingerprint 'git-delta-v1:9539ecf0ffaca2181d8abd735f691aa9f67422bdc1f6a6ab3c86db43066a1248' but the current tree computes 'git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195' -- the tree changed since the package was produced (same HEAD or not), so it is stale and MUST NOT be collected (PROTOCOL.md § 6, T-543) -- reported under `--gate core`, where this producer is not being consumed; it FAILs under `--gate collect:saihunt` and blocks nothing else
+WARN [producer-package-stale]: ... and 4 more like the above
+WARN [producer-package-malformed]: .saipen/extensions/subs/saitranslate/kitchen/OUTBOX.md fails strict OUTBOX parsing: OUTBOX:3 verified field must be a closed verdict (`PASS -- <command/result evidence>` | `FAIL -- <evidence>` | `BLOCKED -- <missing fact>`); arbitrary prose is never positive evidence (PROTOCOL.md § 2) -- reported under `--gate core`, where this producer is not being consumed; it FAILs under `--gate collect:saitranslate` and blocks nothing else
+WARN [producer-package-malformed]: .saipen/extensions/subs/saiwiki/kitchen/OUTBOX.md fails strict OUTBOX parsing: OUTBOX:3 invalid source_tree_fingerprint; OUTBOX:3 verified field must be a closed verdict (`PASS -- <command/result evidence>` | `FAIL -- <evidence>` | `BLOCKED -- <missing fact>`); arbitrary prose is never positive evidence; OUTBOX:20 invalid source_tree_fingerprint; OUTBOX:20 verified field must be a closed verdict (`PASS -- <command/result evidence>` | `FAIL -- <evidence>` | `BLOCKED -- <missing fact>`); arbitrary prose is never positive evidence; OUTBOX:41 invalid source_head (PROTOCOL.md § 2) -- reported under `--gate core`, where this producer is not being consumed; it FAILs under `--gate collect:saiwiki` and blocks nothing else
+WARN [producer-package-malformed]: ... and 1 more like the above
+WARN [subsaipen-uncollected]: 2 subSaipen OUTBOX entr(y/ies) sit at `status: ready` -- that is a finding waiting on `saipen sub collect`, visible only when someone runs it (extensions/subs/PROTOCOL.md § 4)
+WARN [sub-role-revision-stale]: subSaipen STATE(s) carry an old role_revision: saitranslate (sha256:f241e6b83c39e9b46bfa586638efb0374bbb39889646f723b9189bbb4912c0c5 != charter sha256:7d18729f8d94eb58471ae3bb5fad9151e8499fea291e574b26439c5c89012e41) -- the instance revalidates against the current charter before reuse, and a ready OUTBOX it produced under the old revision is stale (PROTOCOL.md § 6, T-542)
+WARN [cross-doc-drift]: cross-doc drift [ahead-stamp-repair] -- CORE.md must say a future-stamped LOG line is restamped to a defensible bound with a DEC naming the original, the replacement, and that the minute is inherited rather than measured. Without it the only sanctioned response is waiting, which keeps a false record and reds every gate until the clock catches up
+WARN [cross-doc-drift]: cross-doc drift [shortcut-memory-ban] -- BOOT.md step 7 must order § 1.10's table read before acting on a shortcut and explicitly state that memory is never a source for it. An agent that believes it knows what a key means answers from recall rather than reading the file
+WARN [cross-doc-drift]: ... and 15 more like the above
+Validation FAILED: 8 problem(s), 80 warning(s)

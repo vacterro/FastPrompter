@@ -1,0 +1,61 @@
+{
+  "ticket": "T-1362",
+  "question": "Can a clean checkout of origin/main be self-conformant under tools/validate.py --gate core?",
+  "commit_under_test": "10da652cec0142f36f112c835dc8921a4ccb1f94",
+  "method": {
+    "worktree": "git worktree add --detach V:/__t1362wt 10da652  (clean checkout, committed tree only)",
+    "green": "python <live>/saipen/tools/validate.py --gate core   run with cwd = worktree",
+    "red": "python V:/__t1362home/saipen/tools/validate.py --gate core  -- an ISOLATED copy of the protocol home with build/_debt.py.backup-E3717 restored over saipen_engine/debt.py; the live engine was never modified to produce this run",
+    "why_two_homes": "registry.resolve_protocol_dir() requires BOOT.md beside tools/, so a tools/-only copy aborts; the full home copy keeps the RED run byte-identical except for debt.py"
+  },
+  "result": {
+    "pre_fix": {
+      "total_fail": 56,
+      "closure_evidence_fail": 50,
+      "warnings": 80,
+      "exit": 1
+    },
+    "post_fix": {
+      "total_fail": 8,
+      "closure_evidence_fail": 2,
+      "warnings": 80,
+      "exit": 1
+    },
+    "closure_evidence_eliminated": 48,
+    "note": "warnings are unchanged at 80 in both runs, so the fix moved no warning and invented no pass"
+  },
+  "binding_evidence": {
+    "committed_receipts": 1158,
+    "sample_stamped_heads": [
+      "1d7ef4303f",
+      "c7d4f1ab91",
+      "930e45baf8"
+    ],
+    "all_ancestors_of_commit_under_test": true,
+    "reading": "A clean checkout sits many commits ahead of the HEAD its own committed receipts were stamped with. HEAD-equality rejected all 50 of them; ancestry accepts them, and the source_tree_fingerprint half still refuses any receipt whose code moved."
+  },
+  "residual_failures_after_fix": [
+    "FAIL: source receipts -- active receipt SRC-004: SOURCE_CORRUPTION",
+    "FAIL: source receipts -- source credential gate: SOURCE_CORRUPTION active source SRC-004 digest mismatch",
+    "FAIL: source receipts -- BOARD Work T-1351 references missing source receipt SRC-070",
+    "FAIL: source receipts -- BOARD Work T-1359 references missing source receipt SRC-071",
+    "FAIL: source receipts -- BOARD Work T-1360 references missing source receipt SRC-072",
+    "FAIL: closure provenance does not resolve: T-1269 names cohort C-001, which has no durable registry record; T-1352 names cohort C-069, which has no durable registry record; T-1354 ",
+    "FAIL: closure-evidence -- ticket T-1351 is ## DONE but carries no current-cycle verification evidence (classifier: BUILD: tools/release_provenance.py git() returned proc.stdout eve",
+    "FAIL: closure-evidence -- ticket T-1353 is ## DONE but carries no current-cycle verification evidence (classifier: no current-cycle VERIFY boundary; reverify: no current-tree PASS "
+  ],
+  "residual_classification": {
+    "SRC-004 SOURCE_CORRUPTION (x2)": "pre-existing; the CRLF repair exists only as UNTRACKED files in the working tree. CORE 1.5 forbids committing unattributed data.",
+    "BOARD -> missing SRC-070/071/072 (x3)": "pre-existing; absent from the committed tree entirely, not archived. Reconstructing historical sources is outside this ticket and outside the standing authorization.",
+    "cohort C-001/C-069 registry (x1)": "pre-existing; the cohort names appear in BOARD/LOG but no durable registry record exists to resolve them.",
+    "closure-evidence T-1351, T-1353 (x2)": "not the binding defect. T-1351's fix is recorded as landing for 0.8.70; T-1353 is the open locale-completion ticket the handoff holds for later classification."
+  },
+  "verdict": "T-1362's own defect -- HEAD-equality binding making fresh-clone conformance an unsatisfiable fixed point -- is eliminated: 50 -> 2 closure-evidence failures, 56 -> 8 total. The ticket's literal 'zero problems' bar is NOT met; the 8 residual failures are pre-existing content defects, enumerated above, and none of them is caused by the binding rule.",
+  "oracle": {
+    "principle": "VERIFY-ORACLE-01: a gate that cannot fail is not a gate",
+    "script": "build/_t1362_oracle.py",
+    "red": "pre-fix engine REJECTS the ancestor case (got False, want True) -- the exact defect",
+    "green": "post-fix engine ACCEPTS the ancestor case and still REJECTS moved-tree, divergent-head, missing-head and foreign-repo receipts",
+    "pair": "ADMISSIBLE"
+  }
+}
