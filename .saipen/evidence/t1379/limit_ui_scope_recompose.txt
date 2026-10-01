@@ -1,0 +1,82 @@
+T-1379 -- SCOPE RECOMPOSITION OF THE LIMIT UI TRANSLATION GAP
+==========================================================
+Written 2026-10-01. Supersedes the "219 absent catalog keys x 33 packs = 7227
+translated entries" figure in the T-1379 blocker, which was never measured.
+
+MEASURED
+--------
+AST scan of the five named files, excluding docstrings and constants, keeping
+strings that look like whole user-visible units:
+
+  limit_settings_dialog.py   151
+  limit_gauges.py             26
+  limit_overview.py           23
+  limit_account_selector.py    6
+  limit_hover_card.py          0
+  --------------------------
+  union                      206 raw, 193 after dedup
+
+193 still OVERCOUNTS: it includes concatenation fragments ('% left', 'd ago',
+'file:', 'Home (') that are pieces of larger composed strings and are not
+independently translatable. The true unit count is lower. The honest summary
+is "roughly 150-190 strings, concentrated in limit_settings_dialog.py", not a
+precise integer the evidence does not support.
+
+The premise itself is confirmed independently: none of the five files imports
+a translation entry point, while translated peers use the single idiom
+`from fastprompter.core.translations import tr` (timer_dialog.py:63 and 20+
+others). Both keys named in the verify clause are genuinely absent from
+est.py: 'All AI accounts hidden (0% usage or no usable 5h window)' and
+'No AI accounts detected'.
+
+THE FINDING THAT CHANGES THE PLAN
+---------------------------------
+tr() FALLS BACK, it does not raise (core/i18n/_engine.py):
+
+    def tr(key, lang=None):
+        ...
+        return lang_dict.get(key, key)     # missing key -> the key itself
+
+So a key present in en.py but absent from the other 32 packs renders as
+English, exactly as the untranslated literal does today. That splits the
+ticket into two halves of completely different cost:
+
+  (i)  CODE HALF -- agent-doable, mechanical, one session.
+       Wrap the literals in tr() and add them to en.py. Result: the surface
+       becomes translatable and the catalog becomes the single source of
+       truth. Non-English locales render identically to today, so this is a
+       strict improvement with no user-visible regression and no risk of a
+       missing key breaking a locale.
+
+  (ii) TRANSLATION HALF -- the actual 150-190 x 32 scale problem, and it is
+       NOT the agent's to write. It is owned by the saitranslate producer,
+       which T-1376 records as failing strict OUTBOX parsing. Until that
+       producer is re-run against current HEAD, half (ii) has no owner that
+       works.
+
+The old framing -- "7227 entries, therefore blocked" -- conflated the two
+halves and made the whole ticket look like a single wall. It is a wall and a
+door: half (i) can be opened now, and doing it is what makes half (ii)
+mechanically routine once the producer is repaired.
+
+WHY HALF (i) WAS NOT DONE IN THE SAME TURN
+-----------------------------------------
+193 call sites across five files, one of them 108 KB, edited by hand or by a
+hand-rolled AST rewriter. The risk is not the edit count but that a
+mechanical rewrite silently corrupts a user-facing string -- a mangled
+concatenation in a tooltip ships as visible garbage in 33 languages, and the
+only oracle is a 25-minute full suite plus eyeballing the diff. That is a
+change worth its own ticket with its own review, not a footnote to a
+scope-correction commit.
+
+RECOMMENDED SEQUENCE FOR THE OPERATOR
+-------------------------------------
+  1. repair the saitranslate producer (T-1376: re-run the producer against
+     current HEAD) -- this is what unblocks half (ii);
+  2. land half (i) as its own ticket, reviewed;
+  3. run the translation producer over the 193 keys for 32 packs;
+  4. T-1379 then satisfies its existing verify clause unchanged.
+
+Note the ordering: step 1 first is not strictly required, since half (i) is
+safe on its own. It is listed first because it is the long pole and the only
+part with no available owner.
