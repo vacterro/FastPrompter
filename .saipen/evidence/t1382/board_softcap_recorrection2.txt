@@ -1,0 +1,138 @@
+T-1382 -- correction: the operator decision this ticket demands is void
+====================================================================
+
+The ticket asks the operator to choose between deleting 26 live `needs:`
+tickets, retiring receipts, or accepting the WARN. Measured against the board
+as it actually stands, none of that is necessary: the cap clears without
+deleting a single `needs:` edge. The blocker text's own arithmetic is wrong in
+both directions, so it is corrected here before anything is mutated.
+
+
+1. What the check measures
+---------------------------
+RFC 1.2, validate.py:2714-2722 (the engine the launcher runs). WARN only --
+"an oversized board is hygiene debt, never corruption":
+
+    board_kb = BOARD.md size in KB;  WARN if board_kb > 16
+
+So the whole file counts, and the remedy named by the check itself is
+"scrub ## DONE at the next CLEAN (RFC 1.2, phases/clean.md step 1)".
+
+
+2. The board as it stands
+--------------------------
+    BOARD.md total          73 733 B   = 4.50x cap
+      header (non-ticket)        91 B
+      4 open tickets          4 448 B
+      130 DONE tickets       69 194 B   median line 455 B, longest 1 192 B
+
+
+3. The pin rule, from clean.md rather than from memory
+------------------------------------------------------
+phases/clean.md step 1 names exactly two classes a DONE ticket may not be
+pruned under:
+
+  * a live ticket that still names it in `needs:`
+  * an ACTIVE source receipt that still references it -- "the BOARD line is
+    that Work's existence record, and retiring it ahead of the receipt fails
+    the gate with 'active receipt SRC-NNN references missing Work T-NNN'"
+
+Counted with the engine's own `intake.active_receipts(root)` -- not by
+grepping BOARD.md -- because the receipt registry is not on the board:
+
+    active source receipts                   64
+    linked Works                             55
+    linked Works that are DONE               55
+    receipts with unresolved requirements     0
+    receipts in state DISTRIBUTABLE          64  (all of them)
+
+DONE tickets pinned by `needs:`               23
+DONE tickets pinned by receipts               55
+DONE tickets pinned by EITHER (union)         64   (27 168 B)
+DONE tickets prunable                        66
+
+
+4. The corrected arithmetic
+----------------------------
+Two floors, both measured:
+
+  prune every prunable DONE, KEEP all 64 receipts active
+      91 + 4 448 + 27 168          = 31 707 B = 1.94x cap   OVER
+
+  prune every prunable DONE, AFTER retiring the 64 receipts
+      91 + 4 448 + 10 666          = 15 205 B = 0.93x cap   UNDER
+
+The second floor needs only the 23 `needs:`-pinned tickets to survive. Every
+one of those 64 receipts has zero unresolved requirements and every linked
+Work is already DONE -- they are finished bookkeeping, not open dependencies.
+
+The blocker text claimed the floor was 23 119 B and that "only (a) clears
+it, and (a) deletes live `needs:` edges, which trades a soft WARN for
+dangling-needs FAILs". Both halves are wrong: 23 119 B corresponds to no
+configuration measured here, and no `needs:` edge has to be deleted at all.
+
+
+5. The route, in the engine's own words
+----------------------------------------
+clean.md step 1: "Retire the receipt first (`saipen source retire SRC-NNN`),
+or keep the entry." Then prune the 66 unreferenced DONE entries, which is what
+the cap WARN itself asks for.
+
+Nothing here is exotic, and nothing is unrecoverable: BOARD.md and the source
+registry are tracked at HEAD, so every byte is restorable with git.
+
+
+6. Why this was not executed here
+-----------------------------------
+It is a deliberate mutation of the project's provenance ledger, not a code
+change: 64 receipts retired and 66 closed-ticket records removed from the
+board the operator reads on every cold start. Each retirement needs a reason
+class chosen deliberately, and pruning the DONE entries requires confirming
+per-entry that the permanent LOG evidence exists -- clean.md's precondition,
+which is 66 individual checks rather than a bulk assertion.
+
+That is the operator's call and it is the only human step this goal still
+has. The decision T-1382 asked for is not needed; the execution is.
+
+
+7. What an operator run looks like
+------------------------------------
+    saipen source retire SRC-NNN --reason <CLASS> --successor SRC-NNN   (x64)
+    prune the 66 DONE lines whose Work is named by no needs: and by no
+    active receipt, after confirming each has permanent LOG evidence
+    python tools/validate.py --gate core        # expect no board-soft-cap WARN
+
+BOARD.md is tracked at HEAD; git restores every pruned byte if the result is
+not what was wanted.
+
+
+8. A separate defect found on the way, and fixed here
+------------------------------------------------------
+Re-blocking T-1382 refused:
+
+    REFUSE [ILLEGAL_TICKET_LIFECYCLE]
+    reason: block accepts DOING or TODO; T-1382 is under ## BLOCKED
+
+which is correct -- you must unblock before blocking -- so `ticket unblock`
+was tried, and it refused too:
+
+    REFUSE [VALIDATION_FAILED]
+    reason: BOARD compact record has no reachable detail authority -- T-1382:
+    BOARD detail metadata is malformed:
+    .saipen/evidence/t1382/board_softcap_recorrection.txt:
+    Expecting value: line 1 column 1 (char 0)
+
+T-1382's `detail_ref` pointed at a plain-text evidence file. The engine
+json-parses whatever detail_ref names, so a `.txt` there leaves the ticket
+with no reachable detail authority -- and with no verb able to move it out of
+## BLOCKED. Not unblock, not block, not transition. A permanently wedged
+ticket, produced by writing an evidence path into a field that takes a JSON
+record.
+
+Repaired: detail_ref now names the ticket's own compaction sidecar,
+.saipen/recovery/board-compaction/T-1382/T-1382-29c0a257bd302d17e8b0204f.json,
+which is valid JSON, COMMITTED, and lossless. `ticket unblock T-1382` then
+returns UNBLOCK.
+
+Worth checking elsewhere: any other BOARD line whose detail_ref ends in
+something other than .json is wedged the same way.
