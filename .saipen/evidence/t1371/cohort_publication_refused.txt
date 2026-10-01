@@ -1,0 +1,108 @@
+T-1371 / T-1375 -- cohort publication is refused by the engine, and the
+recorded evidence is unreproducible, not merely stale.
+
+SCOPE
+  Both unpublished cohorts were probed read-only. No registry byte was edited.
+
+1. THE ENGINE REFUSES BOTH SHIPS (its own words, dry run, nothing written)
+
+  $ saipen cohort ship C-001 --dry-run --json
+    {"ok": false, "code": "STALE_PLAN",
+     "message": "crew scope path src/fastprompter/main.py changed since the
+                 owning defer (live '753886da1fb24f93', deferred 'c95d578908774edd')",
+     "recovery_required": false}
+
+  $ saipen cohort ship C-069 --dry-run --json
+    {"ok": false, "code": "STALE_PLAN",
+     "message": "crew scope path README.md changed since the owning defer
+                 (live 'fbcfb394cc49fa69', deferred 'fe4fa171993ba340')",
+     "recovery_required": false}
+
+  Both cohorts are READY in the engine's own vocabulary
+  (closure.cohort_readiness -> ready=True, problems=[]). Readiness is not the
+  blocker; byte-identity is.
+
+2. WHY -- release.py::_plan_crew_release (line ~1150) is the refusing code
+
+      for rel, expected in sorted(scope.items()):
+          live_bytes = fp.read_bytes()
+          live = _quick_hash(live_bytes)
+          if live != expected:
+              if not _closure.member_hash_matches(live_bytes, expected):
+                  raise ReleaseRefusal("STALE_PLAN", ...)
+
+  The carrier must own the EXACT deferred bytes. This is a deliberate safety
+  property ("later unreviewed mutation is stale/refuse"), not an oversight.
+
+3. THE ENGINE HAS NO RE-FREEZE PATH
+
+  The complete cohort surface is two operations:
+      closure.py:224   cohort_member_mismatches   (audit)
+      closure.py:261   cohort_scope               (derive batch scope)
+      closure.py:289   cohort_readiness           (readiness)
+      operations.py:7298  cohort_status           (read-only projection)
+      operations.py:7334  cohort_ship             (publish)
+  There is no rebind / refresh / refreeze / reattribute. grep over the engine
+  for such a verb returns nothing.
+
+4. THE RECORDED HASHES ARE UNREPRODUCIBLE, NOT JUST STALE
+
+  Every blob version of every affected path was enumerated across ALL refs
+  (git rev-list --all --objects -- <path>) and hashed with the engine's own
+  journal.hash_bytes:
+
+    path                                    blobs  recorded hash present?
+    README.md                                 271  YES (61f8ae24)
+    tests/test_editor_paste_live_t1269.py      72  YES (4049fc83)
+    pyproject.toml                            313  NO
+    src/fastprompter/main.py                 1245  NO
+    src/fastprompter/ui/editor.py             736  NO
+    tests/test_clipboard_interop_t1269.py      72  NO
+
+  Four of six recorded hashes describe bytes that were NEVER committed to any
+  ref. The members closed with --closure-mode cohort against a dirty tree, so
+  the "reviewed bytes" they recorded never entered git. No future commit can
+  ever satisfy those hashes, published or not.
+
+  Consequence: even if a re-freeze were added, these four paths would have to
+  be re-attributed to whatever they are now -- i.e. to later tickets' work,
+  not to the cohort members' review. That is a truth question, not a hash edit.
+
+5. WHY THE OBVIOUS FIX IS THE FORBIDDEN ONE
+
+  T-1371 carries weak_model: "Would rewrite the recorded hashes to the live
+  values to silence the two failing tests, which hides the real defect."
+
+  That instinct is correct here, and the ODB scan upgrades it: rewriting to
+  live would not merely hide the defect, it would assert that T-1269's review
+  approved src/fastprompter/main.py at 753886da1fb24f93 -- bytes produced by
+  some later ticket. It would manufacture review evidence.
+
+6. ALSO: T-1371's VERIFY CLAUSE IS UNSATISFIABLE AS WRITTEN
+
+  "cohort_member_mismatches(ROOT, C-069) returns [] against the tree the
+  cohort is bound to" -- the cohort is bound to nothing (commit=""), and the
+  predicate reads the LIVE WORKTREE, not a commit. So the clause measures
+  "the tree has not moved since member close", which is not a publication
+  property: any later ticket touching README.md re-breaks it, forever.
+
+  The clause and the weak_model jointly make the ticket unclosable without an
+  engine change or an operator decision.
+
+7. WHAT IS ACTUALLY NEEDED (not derivable inside this project)
+
+  Either (a) the engine gains a cohort re-freeze operation that rebinds a
+  drifted cohort to reviewed current bytes with its own evidence, or
+  (b) the operator accepts C-001 and C-069 as permanently unpublished and
+  scopes T-1371/T-1375 accordingly, or
+  (c) the operator authorizes reconstruction: re-attribute the four
+  unreproducible paths to the tickets that actually wrote them.
+
+  All three live in SAIPEN_HOME or in an operator judgement, not in this repo.
+  Note the parallel to T-1374: both are engine-side capability gaps.
+
+HONEST SCOPE NOTE
+  The untracked tests/test_t1358_cohort_publication.py will stay red (2 of its
+  tests) until one of the three outcomes above happens. It was deliberately
+  left untracked; committing a permanently-failing test is worse than leaving
+  it visible in the worktree. This is reported, not hidden.

@@ -1,0 +1,95 @@
+T-1373 -- CORRECTED. The ticket's stated root cause was wrong.
+
+THE CLAIM AS FILED
+  "Release receipt written by tools/release_provenance.py carries
+   release_commit, but the engine publication predicate only accepts
+   'commit', so every committed release receipt is invisible to closure
+   provenance."
+
+WHAT MEASUREMENT SHOWS
+  The CURRENT engine accepts BOTH spellings. closure._is_published, verbatim
+  from C:/Users/vac34/.agents/skills/saipen/tools/saipen_engine/closure.py:
+
+      # T-1238: `release_commit` is the field the project's OWN receipt writer
+      # emits (tools/release_provenance.py writes `release_commit` and verifies
+      # against it; it never writes a bare `commit`). Checking only `commit` made
+      # every genuine receipt invisible as publication evidence...
+      if record.get("commit") or record.get("release_commit"):
+          return True
+
+  The fallback was added by T-1238 -- one of the very tickets the gate names.
+  So the premise is already fixed in the engine this project should be using.
+
+  Measured, same dict, two engines:
+      home                                   _is_published(release_commit only)
+      AppData/.../saipen/scheduled-source     False     <- 98 modules, pre-T-1238
+      .agents/skills/saipen                   True      <- has the fallback
+
+THE ACTUAL ROOT CAUSE: THREE DIVERGENT ENGINE COPIES ON ONE MACHINE
+  tools/validate.py (the project shim) resolves its home as
+      _HOME = Path(os.environ.get("SAIPEN_HOME", "")) ...
+  and on this machine SAIPEN_HOME=C:\Users\vac34\AppData\Local\saipen\
+  scheduled-source -- a STALE copy. So the project's validator answers from an
+  engine generation that predates the fix.
+
+  Inventory (measured):
+    home                                     closure.py  cohort API  modules  git
+    V:/.../_AI_STUFF_AGENTIC/_SAIPEN          28929 d646  yes        109      7009c0be  <- launcher RUNS this
+    C:/Users/vac34/.agents/skills/saipen      28929 d646  yes        101      (not a repo)
+    AppData/.../saipen/scheduled-source       25237 7200  NO          98      (not a repo)
+
+  bin/saipen.cmd is one line:
+      "C:\...\Python311\python.EXE" "V:\...\_AI_STUFF_AGENTIC\_SAIPEN\tools\saipen.py" %*
+  So the launcher and the validator disagree about which SAIPEN is SAIPEN.
+
+PROOF THE ENGINE HOME ALONE DRIVES THE GATE
+  $ SAIPEN_HOME=.agents/skills/saipen  uv run python tools/validate.py --gate core
+      -> 0 closure-provenance FAILs
+  $ (ambient SAIPEN_HOME=scheduled-source) uv run python tools/validate.py --gate core
+      -> FAIL: closure provenance does not resolve: T-1159/T-1207/T-1223/
+         T-1238/T-803 implementation source 'release:0.8.68' ... no COMMITTED
+         release receipt names '0.8.68'
+
+  Nothing else differs. The receipts are the same bytes in both runs.
+
+THE RECEIPT WAS NEVER WRONG
+  .saipen/kitchen/release_receipt.json names release_commit
+  1d7765b677fe3275cf2cf5914eb73f6b17becbcc. Verified offline:
+      $ git cat-file -t 1d7765b...    -> commit
+      $ git tag --points-at 1d7765b... -> v0.8.68
+  The record is truthful and, under the current engine, visible.
+
+WHAT THE CODE CHANGE IS, THEN
+  tools/release_provenance.py now writes BOTH keys. This is FORWARD
+  COMPATIBILITY, not the fix: it keeps receipts legible to an engine
+  generation that predates the T-1238 fallback. It clears nothing today.
+
+RED/GREEN PAIR (same oracle, same command)
+  uv run pytest tests/test_release_receipt_commit_key_t1373.py
+    revert the writer change -> 1 failed, 4 passed
+        FAILED test_writer_emits_the_commit_key
+    restore                   -> 5 passed
+  The four engine-behaviour tests stay green in BOTH states, which is the
+  correct separation: they test the engine, not the writer.
+
+  The original draft of this test asserted the opposite of the truth -- it
+  claimed the pre-T-1238 engine was current and that the on-disk receipt was
+  invisible. Both claims were false and were rewritten.
+
+SECOND DEFECT THIS FOUND (and it made the suite red)
+  tests/test_t1358_cohort_publication.py hardcodes the skills home. The first
+  draft of THIS file read SAIPEN_HOME, which pointed at the stale copy. Python
+  caches saipen_engine in sys.modules on FIRST import, and pytest imports
+  alphabetically ("test_r..." before "test_t1..."), so this file silently fixed
+  the engine for the entire session. Symptom: the full suite reported 3
+  failures, one more than the known baseline of 2 --
+  test_closure_stage_includes_cohort_registry failed ONLY in a full run and
+  passed in isolation. Pinning this file to the same home restored the
+  baseline to exactly 2.
+
+WHAT REMAINS
+  The gate FAIL clears when SAIPEN_HOME points at a current engine. That is an
+  installation repair (refresh the scheduled-source copy, or unset SAIPEN_HOME
+  so the shim falls back to the skill home) and it lives outside this
+  repository -- the same class as T-1374, which already records three divergent
+  STYLE.md markers across the same three homes. Not derivable here.

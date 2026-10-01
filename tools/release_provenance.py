@@ -356,6 +356,11 @@ def write_receipt(
         "operation": "release_receipt",
         "version": identity["version"],
         "tag": f"v{identity['version']}",
+        # `commit` is the key the SAIPEN closure resolver reads
+        # (closure._is_published / _release_matches). Without it this receipt
+        # is a truthful record that no gate can see, and every DONE line
+        # naming `release:<version>` fails closure provenance.
+        "commit": head,
         "release_commit": head,
         "branch": identity["branch"],
         "source_tree_fingerprint": identity["tree_fingerprint"],

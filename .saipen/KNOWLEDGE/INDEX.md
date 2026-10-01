@@ -1,6 +1,6 @@
 <!-- SAIPEN KNOWLEDGE INDEX v1; generated projection; not authority -->
-source-digest: sha256:b89d8dadd0ba7699ce01141a7825f5c17ffd2ead90f81f507244c1ffab09c32c
-cards: 5
+source-digest: sha256:756fe567236dc2f63f7f1df65481bdd5e5118b413e29f5a10d52b83792103f66
+cards: 6
 legacy: 1
 
 # Knowledge index
@@ -12,6 +12,7 @@ Active cards are retrieval candidates. Superseded cards remain forensic history.
 - cards/manual-reset-offers-contract.md | convention | scope: usage-limits, resets | trigger: adding or changing manual/redeemable reset offers (Codex credits, ZCode Coding Plan cards, Claude campaigns) | active
 - cards/quota-reset-time-contract.md | convention | scope: usage-limits, time | trigger: parsing or rendering provider quota reset timestamps | active
 - cards/reverify-gate-tolerates-retired-paths.md | convention | scope: saipen/evidence, reverify-gates | trigger: writing or re-running a durable reverify gate that scans tracked paths | active
+- cards/saipen-engine-home-binding.md | convention | scope: saipen, testing, tooling | trigger: a test, validator or shim reads the SAIPEN engine, or a gate result disagrees with the code | active
 
 Legacy KNOWLEDGE documents (path and title only; no structured metadata):
 
