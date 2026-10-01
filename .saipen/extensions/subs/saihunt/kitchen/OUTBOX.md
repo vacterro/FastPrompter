@@ -1,7 +1,8 @@
 # OUTBOX
 
 ## HUNT-014: crew SC-2 six-signal sweep @ dc9589d (01.10.26)
-- **status:** ready
+- **status:** stale
+- **staleness:** engine re-verified 01.10.26 @e5888a9: source_head dc9589d and source_tree_fingerprint git-delta-v1:e1402824... no longer match the tree. The package is not collectable; it is marked stale so the instance can be replaced by a producer re-run against current HEAD (T-1376).
 - **summary:** Six-signal sweep at HEAD dc9589d: 2 signals REPRODUCED (tests/test_t1358_cohort_publication.py:74/117 fails on pyproject.toml & README.md C-069 cohort mismatches; orphan untracked test artifact); 4 signals NOT_REPRODUCED.
 - **main_project_refs:** [tests/test_t1358_cohort_publication.py:74, tests/test_t1358_cohort_publication.py:117, .saipen/kitchen/cohort_registry.json, pyproject.toml, README.md]
 - **critical:** true
