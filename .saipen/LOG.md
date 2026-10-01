@@ -74,3 +74,11 @@
 - 01.10.26 22:17 [E-3855] [parent: E-3854] [T-1382] [agent: buffy] [op: transition-dd2de132f42b44469aaf14a08536bab3] RUN: transition to SHIP
 - 01.10.26 22:17 [E-3856] [parent: E-3855] [T-1382] [agent: buffy] [op: finish-8230a8fb54bd4ed48701b9ef4cbbc838] DEC: ticket finished via SAIOPS -- completion (from SHIP)
 - 01.10.26 22:17 [E-3857] [parent: E-3856] [T-1377] [agent: buffy] [op: finish-8230a8fb54bd4ed48701b9ef4cbbc838] DEC: blocked parent resumed after dependency T-1382 reached DONE; dependency completion is not a claim event -- no live claim restored; previous owner buffy is historical attribution only and the seat must be claimed explicitly
+- 01.10.26 22:17 [E-3858] [parent: E-3857] [T-1377] [agent: buffy] [op: claim-c8a6560b3fbe422dabd3631032ca93cf] DEC: claimed via SAIOPS -- owner buffy
+- 01.10.26 22:17 [E-3859] [parent: E-3858] [T-1377] [agent: buffy] [op: transition-fdf8849c072c4e089932432c09caf90e] RUN: transition to BUILD -- both caps verified clear: BOARD 7,059 B < 16 KB, LOG 76 lines / 21,155 B < ~300 lines / ~64 KB
+- 01.10.26 22:17 [E-3860] [parent: E-3859] [T-1377] [agent: buffy] [op: transition-a7dad181501b4ee49b6ddd9320e703d2] RUN: transition to VERIFY
+- 01.10.26 22:18 [E-3861] [parent: E-3860] [T-1377] [agent: buffy] [op: checkpoint-9e015aaa055a4877a4dc1250ce203d5e] RUN: verify -> PASS [target: T-1377] conf: high -- python tools/validate.py --gate core (exit 0, grep -c soft-cap -> 0, no board-soft-cap and no log-soft-cap line)
+- 01.10.26 22:18 [E-3862] [parent: E-3861] [T-1377] [agent: buffy] [op: transition-e343822ef0634544b45a80bfbb45af66] RUN: transition to REVIEW -- both caps measured under limit; the 48 hidden closure-evidence problems are recorded, not claimed fixed
+- 01.10.26 22:18 [E-3863] [parent: E-3862] [agent: buffy] [op: transition-e343822ef0634544b45a80bfbb45af66] DEC: goal_tickets 8->9
+- 01.10.26 22:18 [E-3864] [parent: E-3863] [T-1377] [agent: buffy] [op: transition-b9b91cda0ca4413faaa998e3fcd7e1a0] RUN: transition to SHIP
+- 01.10.26 22:18 [E-3865] [parent: E-3864] [T-1377] [agent: buffy] [op: finish-bc654cad34e344938bc03b9c4ac2960d] DEC: ticket finished via SAIOPS -- completion (from SHIP)

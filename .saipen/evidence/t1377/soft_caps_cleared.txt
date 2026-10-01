@@ -1,0 +1,56 @@
+T-1377 -- protocol memory soft caps cleared
+==========================================
+
+The ticket, as written:
+
+    T-1377 [P3] Protocol memory is far past its own soft caps: BOARD.md is
+    88 KB of which 86 KB is closed-ticket text, LOG.md is 2648 lines /
+    819 KB -- both flagged by validate.py with an explicit instruction to
+    seal the log and scrub DONE at the next CLEAN
+    verify: tools/validate.py --gate core stops reporting board-soft-cap
+            and log-soft-cap WARNs after the seal/scrub
+    needs: T-1382
+
+MEASURED, THEN AND NOW
+-----------------------
+                     ticket text      now            cap
+  BOARD.md          88 KB            7,059 B        ~16 KB
+  LOG.md            2,648 lines      76 lines       ~300 lines
+  LOG.md            819 KB           21,155 B       ~64 KB
+
+  .saipen/logs/ holds 5 sealed LOG-0NN.md files; the active tail continues
+  the same event sequence.
+
+  $ python tools/validate.py --gate core
+    exit 0
+    "Validation complete. Agent is conformant. (72 warning(s))"
+    grep -c soft-cap -> 0
+
+The verify clause is satisfied literally: neither WARN is reported.
+
+The two halves were cleared in different places, and the record should say
+so rather than let the ticket imply one action did both.
+
+  LOG.md -- sealed in this session at commit 06fd6c9, by the clean.md step 4
+  route: move the over-cap tail verbatim by whole lines into
+  `.saipen/logs/LOG-0NN.md` and start a fresh active tail. No sealed history
+  was edited.
+
+  BOARD.md -- T-1382, commit cc66fbc. Two mutations in the order clean.md
+  step 1 requires: 64 terminal source receipts closed first (a DONE ticket an
+  ACTIVE receipt references must not be pruned), then 126 unreferenced DONE
+  entries scrubbed, keeping the 4 cohort members and 2 live `needs:` targets.
+  Full measurement, the reasoning, and what it did NOT fix are in
+  `.saipen/evidence/t1382/board_softcap_discharge.txt`.
+
+  `needs: T-1382` is satisfied: T-1382 is DONE and reverified
+  (`work reverify T-1382 --run "python tools/validate.py --gate core"` ->
+  WORK_REVERIFIED).
+
+ONE THING THIS TICKET DOES NOT CLAIM
+-------------------------------------
+The board scrub removed 48 `KNOWN-LEGACY: closure-evidence` problems because
+those DONE tickets are no longer on the board, not because their closures
+were proven. Their IDs are listed in the T-1382 evidence file. The soft caps
+are clear; 48 unproven closures are recorded rather than resolved. Those are
+different claims and only the first is true.
