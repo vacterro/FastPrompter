@@ -37,38 +37,75 @@ import subprocess
 import sys
 from pathlib import Path
 
-_LAUNCHER_HOME = Path(r"C:\Users\vac34\.agents\skills\saipen").resolve()
-# T-1373: the conformance gate must answer from the SAME engine the launcher
-# runs, or its verdict is about a different program than the one driving the
-# project. `saipen status --json` publishes that home as `cold_route.saipen_home`;
-# it is the default here.
+# T-1373/T-1374: a conformance gate must answer from the SAME engine the
+# launcher runs, or its verdict is about a different program than the one
+# driving the project -- and, worse, a different voice contract than the one
+# the running agent actually read.
 #
-# `SAIPEN_HOME` used to win this lookup. It is an ambient process variable --
-# absent from HKCU and HKLM, from every shell profile, from git config and from
-# the ZAICODE instance config -- so nothing in this project ever chose it, and on
-# this machine it names a pre-T-1238 copy (98 modules, no cohort API) that
-# answers "closure provenance does not resolve" for receipts the real engine
-# accepts. That is a silent divergence: the same tree scored 52 problems through
-# it and 48 through the launcher's engine, differing only in four FAIL lines
-# about a receipt that was never wrong.
+# Three installs live on this machine and all three are "the SAIPEN engine":
 #
-# The knob still exists, under a name that cannot be set by accident, for
-# deliberately validating against another engine generation.
-_HOME = Path(os.environ["SAIPEN_VALIDATE_HOME"]).resolve() if os.environ.get(
-    "SAIPEN_VALIDATE_HOME"
-) else _LAUNCHER_HOME
-_CANONICAL = _HOME / "tools" / "validate.py"
+#   V:\...\_AI_STUFF_AGENTIC\_SAIPEN   109 modules  STYLE marker ded-71fc58de
+#   C:\Users\vac34\.agents\skills\... 101 modules  STYLE marker ded-6b950e75
+#   C:\...\saipen\scheduled-source    98 modules   STYLE marker ded-4ae736e4
+#                                     (pre-T-1238, no cohort API)
+#
+# bin\saipen.cmd is one line and hardcodes the FIRST of those. That file is the
+# only authority for which engine runs the project, so it is read here rather
+# than a path being hardcoded twice and drifting again.
+_LAUNCHER = Path(
+    os.environ.get(
+        "SAIPEN_LAUNCHER",
+        r"C:\Users\vac34\AppData\Local\saipen\scheduled-source\bin\saipen.cmd",
+    )
+)
 
-_stale = os.environ.get("SAIPEN_HOME")
-if _stale and Path(_stale).resolve() != _HOME:
+
+def _engine_home_from_launcher(launcher: Path) -> Path | None:
+    """Return the install that ``launcher`` executes, or None if unreadable.
+
+    The launcher is a single quoted path to ``<home>/tools/saipen.py``.
+    """
+    try:
+        text = launcher.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    m = re.search(r'"([^"]*[\\/]tools[\\/]saipen\.py)"', text)
+    if not m:
+        return None
+    home = Path(m.group(1)).resolve().parent.parent
+    return home if (home / "tools" / "validate.py").is_file() else None
+
+
+_HOME = _engine_home_from_launcher(_LAUNCHER)
+if _HOME is None:
+    # Launcher missing or unparseable: fall back to the documented skill home
+    # rather than guessing a path. WARN either way -- a silent fallback here is
+    # exactly the divergence this code exists to prevent.
+    _HOME = Path(r"C:\Users\vac34\.agents\skills\saipen").resolve()
     print(
-        f"WARN [engine-home-ignored]: SAIPEN_HOME={Path(_stale).resolve()} is set "
-        f"but this gate answers from {_HOME}, the engine the launcher runs "
-        "(`saipen status --json` -> cold_route.saipen_home). SAIPEN_HOME no "
-        "longer binds the conformance gate (T-1373); set SAIPEN_VALIDATE_HOME "
-        "to override deliberately.",
+        f"WARN [launcher-unreadable]: could not read the engine home from "
+        f"{_LAUNCHER}; falling back to {_HOME}",
         file=sys.stderr,
     )
+
+# The knob still exists, under names that cannot be set by accident, for
+# deliberately validating against another engine generation.
+_override = os.environ.get("SAIPEN_VALIDATE_HOME")
+if _override:
+    _HOME = Path(_override).resolve()
+_CANONICAL = _HOME / "tools" / "validate.py"
+
+for _var in ("SAIPEN_HOME", "SAIPEN_VALIDATE_HOME"):
+    _set = os.environ.get(_var)
+    if _set and Path(_set).resolve() != _HOME:
+        print(
+            f"WARN [engine-home-ignored]: {_var}={Path(_set).resolve()} is set "
+            f"but this gate answers from {_HOME}, the engine "
+            f"{_LAUNCHER.name} executes. {_var} does not bind the conformance "
+            "gate (T-1373); unset it, or set SAIPEN_VALIDATE_HOME to override "
+            "deliberately.",
+            file=sys.stderr,
+        )
 
 if not _CANONICAL.is_file():
     print(f"FAIL: canonical SAIPEN validator not found at {_CANONICAL}", file=sys.stderr)

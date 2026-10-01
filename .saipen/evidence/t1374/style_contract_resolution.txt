@@ -1,0 +1,137 @@
+T-1374 -- STATE.md style_contract was unsatisfiable because the gate read the
+wrong install's voice contract
+===========================================================================
+
+Filed as "operator decision required, host config, one line, not
+agent-actionable". Wrong on both counts: the cause is a repo defect, and the
+one-line host remedy proposed in the board record (repoint SAIPEN_HOME at the
+launcher install) does not fix this FAIL at all. See section 5.
+
+
+1. What style_contract compares
+--------------------------------
+`closure` reads STATE.md's `style_contract:` field and compares it to the
+marker digest carried by the STYLE.md of the install doing the check. Three
+installs exist on this machine and each carries a different file:
+
+  V:\___\VAC\__K\__CODE\_AI_STUFF_AGENTIC\_SAIPEN   109 modules  ded-71fc58de
+  C:\Users\vac34\.agents\skills\saipen             101 modules  ded-6b950e75
+  C:\Users\vac34\AppData\Local\saipen\scheduled-source
+                                                    98 modules   ded-4ae736e4
+
+STATE.md:17 records `style_contract: ded-71fc58de`.
+
+
+2. STATE.md is CORRECT, and this was already established
+---------------------------------------------------------
+The prior ticket record for T-1374 says so explicitly, and it is right:
+
+  bin\saipen.cmd is one line --
+    "C:\...\Python311\python.EXE" "V:\...\_SAIPEN\tools\saipen.py" %*
+
+so the engine that runs this project is the FIRST install, the one whose
+STYLE.md carries ded-71fc58de -- exactly what STATE.md records. STATE.md is not
+the defect. It was never the defect. The ticket title ("present in NO file on
+disk") was a false premise and was already corrected in the board record.
+
+
+3. What was actually broken
+----------------------------
+tools/validate.py resolved the canonical validator as:
+
+    _HOME = os.environ.get("SAIPEN_HOME") or C:\Users\vac34\.agents\skills\saipen
+
+Two failure modes in one expression, and this ticket is the second one:
+
+  * SAIPEN_HOME wins, and names the pre-T-1238 install -- the T-1373 defect.
+    Fixed there; the gate no longer reads it.
+  * Even the FALLBACK was wrong. `.agents/skills/saipen` is a third install
+    again (ded-6b950e75), not the one the launcher runs.
+
+So after the T-1373 fix the style_contract FAIL was still there, and the
+install the launcher actually executes was the only one never consulted:
+
+  launcher install (V:\...\_SAIPEN)     style_contract FAIL: 0
+  .agents install                      style_contract FAIL: 1
+
+
+4. The fix
+-----------
+Stop hardcoding a second copy of the answer. Read the one file that decides it.
+
+`_engine_home_from_launcher()` parses bin\saipen.cmd for the quoted
+`...\tools\saipen.py` path, verifies `<home>/tools/validate.py` exists, and
+uses that home. If the launcher is missing or unparseable the shim falls back
+to the documented skill home and says so on stderr -- a silent fallback is the
+exact failure this code exists to prevent. `SAIPEN_LAUNCHER` overrides which
+launcher file is read; `SAIPEN_VALIDATE_HOME` still overrides the engine.
+
+Result on this machine: the gate answers from
+V:\___\VAC\__K\__CODE\_AI_STUFF_AGENTIC\_SAIPEN, the engine saipen.cmd executes.
+
+
+5. Why the proposed one-line host remedy does not work
+-------------------------------------------------------
+The board record proposed repointing SAIPEN_HOME at the launcher install.
+Measured:
+
+  SAIPEN_HOME=scheduled-source   -> 52 FAIL, style_contract FAIL: 1, provenance: 5
+  SAIPEN_HOME=launcher install   -> 48 FAIL, style_contract FAIL: 0, provenance: 0
+
+The remedy works only because it moves the variable the code happens to read
+first. It leaves STATE.md depending on which variable an unrelated process
+happened to export, and it leaves a third install in the picture. With
+SAIPEN_HOME now ignored, setting it to the launcher install changes nothing --
+the gate already reads that install. The remedy was treating the symptom.
+
+
+6. Measurement, with two negative controls that discriminate
+-------------------------------------------------------------
+  python tools/validate.py --gate core
+      exit 0 -- GREEN
+      48 known-legacy closure-evidence lines downgraded, 0 blocking FAIL
+      1 WARN [engine-home-ignored] on stderr naming both homes
+
+  SAIPEN_VALIDATE_HOME=.agents/skills/saipen  (control 1)
+      exit 1, style_contract FAIL returns: 'ded-71fc58de' vs 'ded-6b950e75'
+
+  SAIPEN_VALIDATE_HOME=scheduled-source        (control 2)
+      exit 1, 52 FAIL, closure-provenance FAIL returns
+
+Both controls fire. The override knob works; the default is now the launcher's
+own engine and cannot be redirected by an ambient variable.
+
+This is the ticket's verify clause, satisfied:
+
+  "tools/validate.py --gate core exits 1 on the style_contract FAIL while a
+   reconcile repair rewrites the same field to another value that also FAILs;
+   after the fix the gate is green with the value the launcher writes"
+
+The gate is green, and STATE.md still carries ded-71fc58de -- the value the
+launcher writes. STATE.md was not edited. No STATE.md value could have
+satisfied both engines; that part of the original analysis was correct and is
+why the fix had to be in the gate.
+
+
+7. A side effect worth recording
+----------------------------------
+Answering from the launcher install also changed the closure-evidence count:
+48 instead of 50. The two extra lines the `.agents` install raised (T-1222,
+T-1351) are the same legacy category and are downgraded either way, so the
+verdict did not change -- but the launcher install is the stricter and more
+current of the two, and it is the one that should have been answering.
+
+Also fixed in passing: T-1373's shim hardcoded `.agents/skills/saipen` as
+"_LAUNCHER_HOME", naming the third install "the launcher's". The comment was
+wrong even though the ticket's own problem (ambient SAIPEN_HOME) was correctly
+fixed. Both tickets are fixed by the same change.
+
+
+8. What was NOT done
+---------------------
+The three installs were not reconciled and SAIPEN_HOME was not unset on the
+host. Both are outside this repository: other projects and the launcher read
+those trees, and the ambient variable is inherited by processes this project
+does not own. Removing it is an operator action. It is no longer required for
+this project's gate to be correct -- which is what made this ticket actionable
+here in the first place.
