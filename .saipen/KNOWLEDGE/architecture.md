@@ -5,19 +5,26 @@ code is shaped the way it is. If a claim below no longer matches the code,
 the code or the claim is wrong — find out which.
 
 ## Test harness
-- `uv run pytest tests/ -q`         → unit suite (Qt-free, ~950 tests)
-- `uv run pytest tests_smoke/ -q`   → integration suite (real PyQt6 offscreen,
-  ~740 tests). Canonical order is UNIT first.
-- **Hang prevention (P0)**: pytest is configured with `pytest-timeout` (`timeout = 60`,
+- `.github/workflows/ci.yml` owns the release harness:
+  `uv run python -m compileall -q src FastPrompter.pyw`,
+  `uv run ruff check src/ tests/ tests_smoke/`,
+  `uv run bandit -q -r src/fastprompter -ll`, then
+  `uv run pytest tests/ tests_smoke/ -q`.
+- `tests/` includes real Qt regressions as well as core tests; it is not
+  Qt-free. `tests_smoke/` adds real-window integration coverage. Run the core
+  directory first, as the CI command does; do not rely on historical test counts.
+- **Hang prevention (P0)**: pytest is configured with `pytest-timeout` (`timeout = 180`,
   `timeout_method = "thread"` in `pyproject.toml`). Never run an unbounded suite without
   timeout — subprocesses (`test_lazy_settings_guards.py`), named mutexes (`test_instance_lock.py`),
   or hanging Qt loops could otherwise block indefinitely.
 - **Process contention rule**: Never run parallel test suites or subshell scripts concurrently.
   Single-instance writer locks (`InstanceLock`, named Windows mutexes) and SQLite will contend,
-  causing spurious failures or stalls. If tests freeze, sweep orphan processes via
-  `Get-Process python` and terminate stale holders before restarting.
-- One known pre-existing failure: `test_sound_manager.py::TestVolumeOnTheWinsoundPath`
-  — a winsound module-order leak (T-730 class, proven not-mine by stash).
+  causing spurious failures or stalls. Revalidate the managed process handle and
+  actual mutex owner before a retry. The packaged release probe requires the
+  operator's running FastPrompter to close normally before it can acquire the
+  session mutex; a held mutex is not evidence of a stale process.
+- Historical failing-test names are not current exceptions. Check BOARD and
+  current command output before treating any failure as pre-existing.
 - The `win` smoke fixture is **module-scoped** — tests share one window and
   accumulate state. Clean up data you mutate (prompt_queues, folders,
   silo_folders, pinned) or a later test breaks; run a suspect test in
