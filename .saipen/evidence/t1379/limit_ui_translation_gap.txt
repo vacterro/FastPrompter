@@ -1,0 +1,113 @@
+T-1379 -- how big the Limit UI translation gap actually is, measured
+===============================================================
+Written 2026-10-01, after the code half landed (8a70747) and after a
+follow-up audit found the first pass was structurally incomplete.
+
+(Complements, does not replace, `limit_ui_scope_recompose.txt`, which scoped
+the ticket before any code was written.)
+
+WHAT THE FIRST PASS CLAIMED
+---------------------------
+"157 tr() sites, 142 distinct keys, 126 new en.py keys, 506 tests." True as
+counted. What it did not say is HOW it counted. The wrapper whitelisted UI
+call names and wrapped any string Constant that was a DIRECT argument of
+one. That is a syntactic shortcut, and four shapes do not fit it:
+
+  1. a ternary arm -- `msg = ("..." if cond else "...")` assigns to a
+     local, and the local is later rendered;
+  2. an implicitly concatenated literal spanning two source lines;
+  3. a nested ternary INSIDE a call argument, where the outer argument is
+     itself an IfExp and the literals are its arms, not the argument;
+  4. a literal rendered from a local, never passed to the call at all.
+
+All four are user-facing text in this UI. So "157 sites" was a floor, not a
+total, and the ticket's own verify line already suspected it -- it named
+'All AI accounts hidden (0% usage or no usable 5h window)' as drifted, and
+that string was unwrapped at the time.
+
+THE FIX LANDED THIS PASS
+------------------------
+A second audit reports every string Constant in the five Limit-UI modules
+that is not already inside a tr()/tr_fmt() call, minus docstrings. All four
+shapes above were fixed (c0bb116), 15 keys were added to the en.json kitchen
+master, and inject_translations.py regenerated en.py. The 32 locale packs
+are byte-identical, which is correct: adding a key to the master adds it to
+EN only, and translation is the separate half.
+
+THE GAP THAT IS STILL OPEN, MEASURED
+-------------------------------------
+Re-running the audit on the current tree and filtering out the four classes
+of false positive (docstrings, settings keys like limit_gauges_*, CSS and
+HTML/style fragments, brand and enum names that must NOT be translated):
+
+  literal strings, all five modules                    1221
+  after removing docstrings / settings keys / symbols   ~530
+  after removing CSS, HTML and brand/enum names        374
+  of which genuine user-facing prose                    118 non-HTML
+                                                       + 40 HTML fragments
+                                                       = 158 candidates
+
+The 118 non-HTML strings are the honest remaining count. They are short
+diagnostic/status lines, mostly in limit_settings_dialog.py and
+limit_gauges.py:
+
+  'CLI: not installed -- install it above for exact percentages...'
+  'Status line (default home): connected *'
+  'Refusal journal: quota blocked until'
+  'resets in <1m'
+  'no readable quota window'
+  'Extra Codex homes'
+  'Rate limit reset activated successfully for'
+  ...
+
+The 40 HTML fragments are a different problem with a different shape.
+limit_gauges.py builds ONE long tooltip as a string of HTML fragments:
+
+  limit_gauges.py:807, 857, 873, 880, 893, 894, 904, 906, 910, 912, 930,
+                   938, 947, 959, 1004, 1053, 1069, 1071
+
+Wrapping those individually would be wrong -- you cannot tr() half an HTML
+attribute, and translating '<div style=...>' buys nothing. The right shape
+is to build the tooltip from a template with named, translatable slots (the
+prose goes through tr(), the markup stays literal), which is a refactor of
+that one function, not a mechanical wrap. It is recorded here as its own
+unit of work for exactly that reason.
+
+WHY THIS TICKET CANNOT SIMPLY BE FINISHED BY WRAPPING EVERYTHING
+----------------------------------------------------------------
+Wrapping a string that is a settings KEY, an enum comparison value, a log
+format or a brand name is an active regression: tr() falls back to the key,
+so behaviour is unchanged today, but the key enters the translation
+inventory and 32 packs then carry a 'translation' of an identifier. That is
+how the inventory fills with junk and how a later reviewer stops trusting
+it. So the filter is not optional caution; it is the reason the number is
+158 and not 1221.
+
+WHAT IS PROVEN AND WHAT IS NOT
+------------------------------
+PROVEN by command, this pass:
+  - 15 keys reach en.py through the kitchen (en.json 1694 -> 1709);
+  - the 32 locale .py files are byte-identical after regeneration;
+  - 198 tests pass (68 i18n, 112 Limit UI, 18 inventory);
+  - ruff clean on src/ and tests/.
+
+NOT DONE, and not claimed:
+  - none of the 158 candidates are wrapped yet;
+  - none of the 126 original keys, nor the 15 new ones, are translated into
+    any of the 32 locales -- every locale pack still stands at 1568 keys
+    while en.py is at 1709;
+  - the drifted predecessor key 'All AI accounts hidden (0% usage)' is
+    deliberately KEPT in the inventory. It is no longer emitted by the
+    source, so it is now a dead key. Retiring it is a separate call and was
+    not taken here; a stale-but-present key is harmless, a missing one is
+    not, and the inventory test treats both identically.
+
+THE RECOMMENDED SPLIT
+---------------------
+T-1379 should close the CODE half once the 118 non-HTML candidates are
+wrapped, and should NOT be closed on the TRANSLATION half by this agent
+without a native reviewer: 158 keys x 32 locales is 5056 strings, and the
+repo's own precedent (afc569b, TRANSLATE-011, 112 keys across all locales)
+was a producer collect, not an ad-hoc agent pass. The translation half
+belongs to the saitranslate producer now that T-1376 has unblocked its
+lifecycle -- which is the actual deliverable of this ticket's dependency.
