@@ -1,0 +1,45 @@
+HUNT T-1372 -- Limit subsystem ships untranslated, and one key already drifted from the catalogs.
+
+1) No translation entry point is imported anywhere in the Limit UI.
+   The app's entry point is `from fastprompter.core.translations import tr`
+   (used by timer_dialog.py:63). Occurrences of a real tr( call, counted with a
+   negative lookbehind so `str(` is not counted:
+
+     src/fastprompter/ui/limit_overview.py          0
+     src/fastprompter/ui/limit_gauges.py            0
+     src/fastprompter/ui/limit_settings_dialog.py   0
+     src/fastprompter/ui/limit_hover_card.py        0
+     src/fastprompter/ui/limit_account_selector.py  0
+   (for contrast: timer_dialog.py 209, help_dialog.py 71, settings_builder.py 78)
+
+2) The Limit surface is SHIPPED, not upcoming: limit_gauges.py, limit_overview.py
+   and limit_settings_dialog.py all exist at tag v0.8.69 (a655fdd, published).
+   Only core/interval_presets.py from today's wave is not yet in a tag.
+
+3) One note-row literal was WIDENED in code without touching any catalog, so even
+   adding tr() would not resolve it:
+
+     catalogs (all 33 locales, line 82):
+       'All AI accounts hidden (0% usage)'
+     code (src/fastprompter/ui/limit_overview.py:175):
+       'All AI accounts hidden (0% usage or no usable 5h window)'
+
+   est.py still carries: 'All AI accounts hidden (0% usage)': 'Kõik AI kontod peidetud (0% kasutus)'
+
+4) The new reset-offer vocabulary is absent from every catalog:
+   'No AI accounts detected'  -> 0 of 33 locale files
+   'expires in' / 'expired'   -> 0 of 33 locale files
+   (format_offer_expiry, model.py:508, added in 39fd869)
+
+T-1353 is DONE and claims every shipped UI key is translated in all 33 locales.
+
+5) WHY THE 100% COVERAGE GATE NEVER SAW IT (the part that matters for the fix).
+   tools/i18n_utils.py:collect_tr_keys walks the tree and collects keys ONLY from
+   call nodes whose func is `tr`, `tr_fmt`, or `<expr>.tr` / `<expr>.tr_fmt`
+   (lines 29-53). A user-facing literal that was never wrapped in tr() contributes
+   NO key, so it is invisible to coverage by construction.
+   The Limit UI has zero tr() calls -> zero keys -> the metric T-1353 closed on
+   reports 100% while an entire shipped surface is English-only.
+   A coverage gate over already-wrapped keys cannot detect an unwrapped surface;
+   fixing T-1379 needs either a raw-literal audit for these files or a gate that
+   fails on a user-facing literal in a module with no tr import.

@@ -1,0 +1,19 @@
+machine: Windows 10
+local utc offset now (s): 10800
+naive input           : 2026-10-02T12:00:00
+claude._parse_reset   : 1790931600.0 -> 2026-10-02T09:00:00+00:00
+codex._epoch          : 1790942400.0 -> 2026-10-02T12:00:00+00:00
+delta (s)             : -10800.0   <-- equals the machine offset: True
+claude aware input    : 1790942400.0 (matches codex: True )
+
+contract: .saipen/KNOWLEDGE/cards/quota-reset-time-contract.md -- naive provider output is UTC;
+codex._epoch normalises tzinfo=None to UTC (codex.py:327-328), claude._parse_reset does not (claude.py:832).
+
+Sibling parsers in the SAME package that DO normalise naive -> UTC:
+  codex.py:326-328             if t.tzinfo is None: t = t.replace(tzinfo=_dt.UTC)
+  _antigravity_brain.py:80-81  if parsed.tzinfo is None: parsed = parsed.replace(tzinfo=datetime.UTC)
+  _antigravity_cli.py:156-157  if parsed.tzinfo is None: parsed = parsed.replace(tzinfo=datetime.UTC)
+  _claude_transcripts.py:157-158 if parsed.tzinfo is None: parsed = parsed.replace(tzinfo=datetime.UTC)
+  _freebuff_http.py:209-210    if moment.tzinfo is None: moment = moment.replace(tzinfo=UTC)
+The outlier that does NOT:
+  claude.py:831-832            parsed = datetime.datetime.fromisoformat(value); return parsed.timestamp()

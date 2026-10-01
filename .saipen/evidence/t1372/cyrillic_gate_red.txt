@@ -1,0 +1,37 @@
+HUNT T-1372 -- the CI release gate is RED, and T-1353 is closed DONE.
+
+Full suite (canonical CI command, HEAD ead2bb4 + the T-1372 wave):
+    uv run pytest tests/ tests_smoke/ -q
+    3 failed, 5205 passed, 27 skipped in 2206.71s (0:36:46)
+
+Three failures:
+  tests/test_t1358_cohort_publication.py::test_member_hash_matches_proven_text_normalization
+  tests/test_t1358_cohort_publication.py::test_cohort_member_mismatches_respects_normalization
+        -> already tracked as T-1371 (cohort C-069 never published)
+  tests_smoke/test_app_smoke.py::test_no_cyrillic_in_codebase
+        -> NOT tracked anywhere. This file is the finding.
+
+The rule fails on 9 lines, all of them legitimate Russian samples that the i18n
+contract tooling cannot avoid (accelerator letters, a placeholder sample, and
+explanatory comments naming the languages being compared):
+
+  tests/test_i18n_contract_t1353.py:35   '**__ {текст} __** ({време})',
+  tests/test_i18n_contract_t1353.py:190  # Russian prints Alt on the key, not "Альт"; ...
+  tests/test_i18n_contract_t1353.py:193  for bogus in ("Альт+W", "Tõstuklahv+napsautus", ...):
+  tests/test_i18n_contract_t1353.py:356  # ... TÔI (vi), jeg (sv), minä (fi), К (ru).
+  tools/i18n_contract.py:18              literal ``{текст}`` or raises ``KeyError``.
+  tools/i18n_identical_audit.py:71       #   ... ru put Ж on Bold and К on Italic; ...
+  tools/i18n_identical_audit.py:74       #   RGB 5 packs -> "Colours" / "Värvid" / "Цвета". ...
+  tools/i18n_outlier.py:22               expected to agree letter-for-letter: ... Russian `таблица`
+  tools/validate_saitranslate.py:185     # Italic button shipping as "SAYA" ... and "К" in
+
+All of it is new since the published release:
+  tests/test_i18n_contract_t1353.py   NEW since v0.8.69
+  tools/i18n_contract.py              NEW since v0.8.69
+  tools/i18n_identical_audit.py       NEW since v0.8.69
+  tools/i18n_outlier.py               NEW since v0.8.69
+  tools/validate_saitranslate.py      present at v0.8.69 with 0 Cyrillic lines; HEAD has 1
+
+So the T-1353 wave turned a green release gate red and closed the ticket DONE.
+The rule is a blanket "no Cyrillic outside an allowlist" scan, and it has no
+allowlist entry for the i18n contract tooling that must carry Russian samples.
