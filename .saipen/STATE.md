@@ -1,7 +1,7 @@
 ---
-phase: DONE
-task: none
-next_action: "PHASE SCOUT T-1379"
+phase: SCOUT
+task: T-1377
+next_action: "PHASE SCOUT T-1377"
 blocker: none
 agent: buffy
 saipen_version: 7
@@ -13,13 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3764
+last_event: 3783
 style_contract: ded-71fc58de
-updated: "2026-10-01T18:23:38Z"
-transition_from: SHIP
+updated: "2026-10-01T20:22:00Z"
+transition_from: DONE
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 2
+goal_tickets: 3
 ---
 T-1336 DONE 28.09.26 (E-3328):
 

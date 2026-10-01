@@ -1,0 +1,152 @@
+T-1377 -- memory scrub: BOARD prune + LOG seal
+==============================================
+
+RESULT: half met, and the half that failed is structural, not effort.
+
+  log-soft-cap   CLEARED   (LOG.md 2695 lines / 850984 B -> 2 lines / 2 boundary events)
+  board-soft-cap NOT CLEARED (70593 B vs 16384 B cap) -- see WHY NOT, numbers below
+
+  Gate after all changes: 52 problem(s), 64 warning(s) -- IDENTICAL to the
+  pre-change baseline. Zero new FAIL lines, zero new WARN lines.
+
+
+THE ORACLE
+----------
+An edit to .saipen/BOARD.md, .saipen/LOG.md or an accepted-debt record is a
+memory edit, and memory edits are invisible to the test suite. The oracle here
+is tools/validate.py --gate core. Method:
+
+  1. restore a pristine tree, capture the full FAIL/WARN set      -> baseline
+  2. apply ONE change, re-run the gate
+  3. the change is acceptable iff (new set - baseline set) is EMPTY
+
+Step 3 is the whole discipline. Two of my three first attempts passed the eye
+and failed step 3.
+
+
+WHAT WENT WRONG TWICE (and why the rule above caught it)
+--------------------------------------------------------
+Attempt 1 pruned 145 DONE tickets keeping only `needs:`-referenced ones.
+  RESULT: +20 FAIL. `active receipt SRC-003 references missing Work T-1162`.
+  CAUSE: the intake gate (saipen_engine/intake.py:4476) resolves every active
+  receipt's `linked_work` against board_tickets AND requires the ticket's own
+  `source_receipts` field to name the receipt back. My rule consulted neither.
+  64 active receipts pin 55 closed tickets that may not leave the board.
+
+Attempt 2 added receipt+gate protection but shipped a parser bug.
+  RESULT: +31 FAIL and 125 new WARN; `## DONE appears 0 time(s)`.
+  CAUSE: heading lines inherited the previous line's ticket id, so `## DONE`
+  itself matched the prune set and was deleted -- orphaning every ticket after
+  it. The first dry run reported "DONE tickets: 1" and I read past it.
+  LESSON: a prune script that reports "pruned: 53" has not been validated by
+  anything except its own arithmetic.
+
+
+THE PROTECTED SET (the actual rule, learned from three gates)
+-------------------------------------------------------------
+A closed ticket may leave BOARD.md only when NOTHING still resolves it:
+
+  1. `needs:` in any surviving line        -> validator dangling-needs check
+  2. `linked_work` in any receipt          -> intake bidirectional Work link
+  3. named in a current gate FAIL/WARN     -> pruning must never be the thing
+                                               that makes a complaint vanish
+
+Rule 3 is the one that keeps this honest. Without it the cheapest way to a
+green gate is to delete the tickets the gate is complaining about.
+
+  DONE tickets            : 178 -> 125
+  protected by needs:      29
+  protected by receipts:   55
+  protected by gate:       58   (50 closure-evidence findings + others)
+  pruned                   : 53 records / 55 lines
+  bytes                : 94607 -> 70593
+
+Every kept line is already < 1200 chars, so `saipen ticket compact` correctly
+returns ALREADY_APPLIED on all of them. Compaction is not the lever.
+
+
+WHY board-soft-cap CANNOT BE CLEARED HERE
+-----------------------------------------
+The cap is `board_kb > 16` (validate.py:2686) and it measures the WHOLE file.
+
+Worst case -- retire ALL 64 active source receipts, which is the ONLY sanctioned
+way to unpin their Work tickets (`source retire <SRC-###> --reason <CLASS>
+--successor SRC-###`, and it is an authority act, not a scrub):
+
+  tickets that would still be pinned : 69   (29 by needs: alone)
+  bytes of pinned DONE text          : 30060
+  cap                                : 16384
+
+Even then the board is ~2x over. Reaching 16 KB needs one of:
+  (a) pruning needs:-referenced tickets too, which breaks their dependents;
+  (b) retiring the receipts AND re-scoping the needs: graph (operator, authority);
+  (c) a board-sharding change in the engine (out of this repo).
+
+None is a memory scrub. (b)/(c) are operator decisions -> new ticket.
+
+
+THE LOG SEAL, AND THE COUPLING NOBODY WARNED ME ABOUT
+-----------------------------------------------------
+The seal itself is routine: copy the active tail to logs/LOG-005.md, leave two
+boundary DEC events. Three things had to be got right, each caught by the gate:
+
+  1. TIMESTAMP. I first wrote the boundary lines with datetime.now() (local).
+     The gate FAILed both: "timestamp is 179m ahead of real UTC". LOG stamps are
+     UTC. Real UTC now: python -c "import datetime;print(datetime.datetime.now
+     (datetime.timezone.utc).strftime('%d.%m.%y %H:%M'))"
+  2. PROVENANCE. Hand-written lines have no `[op: ...]` marker, and the gate
+     FAILed them: "a manual structural edit cannot be distinguished from a
+     mechanized one". Emitted through `saipen checkpoint DEC` instead, which
+     assigns the id, the parent, the UTC stamp and the op marker.
+  3. ACCEPTED DEBT -- the real one. AD-000002 (accepted_legacy_debt, authority
+     SRC-047) pins 21 events by (file, line_number, line_sha256). Nineteen of
+     them pointed into .saipen/LOG.md. Rotating the tail moved every one, the
+     pinned hashes stopped resolving, and the finding escalated WARN -> FAIL:
+         WARN  [accepted-legacy-debt] ... registered IMMUTABLE accepted debt
+         FAIL  mechanical provenance [saio] ... lack [op: ...]
+     Repaired with the engine's own sanctioned writer, not by editing the record:
+         python <skill-home>/tools/accept_legacy_debt.py --project-root . \
+           --rebind AD-000002 --expect-before <live sha256[:16]> --reason "..."
+     -> accepted_debt.rebind-619b025b2f92, ok:true,
+        evidence_from [.saipen/LOG.md, logs/LOG-004.md]
+        evidence_to   [logs/LOG-004.md, logs/LOG-005.md]
+
+     `rebind` is deliberately narrower than `register`: the accepted EVENT SET is
+     immutable (a rebind that changed it would be a new acceptance), every hash
+     is recomputed from the live line, and --expect-before is required so the
+     repair can prove which bytes it replaces. The engine documents this exact
+     failure in accepted_debt.py:519: "when a LOG shard is rotated, a live
+     record's evidence stops resolving ... rebind is the domain writer that
+     closes it." Sealing a LOG and rebinding its debt is ONE operation.
+
+
+INCIDENTAL FINDING (feeds T-1373 / T-1374)
+-------------------------------------------
+`saipen checkpoint` refuses with:
+    state-malformed: style_contract 'ded-71fc58de' does not match the installed
+    STYLE.md marker
+...and the marker depends on WHICH engine home you go through:
+
+    .agents/skills/saipen                        -> ded-6b950e75   (current, 109 mods)
+    AppData/Local/saipen/scheduled-source         -> ded-4ae736e4   (stale, 98 mods)
+    STATE.md records                              -> ded-71fc58de
+
+Three divergent homes, three answers, one pre-existing core-gate FAIL. The
+boundary events above were emitted through the scheduled-source launcher because
+that is what the repo's own tools/validate.py binds -- i.e. the stale copy is the
+one the project actually runs against. Same root cause family as the divergent
+STYLE.md markers: this is a host-configuration defect, not a repo defect.
+
+
+REPRODUCED, WITH THE NEGATIVE CONTROLS THAT MATTER
+--------------------------------------------------
+  baseline (pristine)          : 52 problems, 64 warnings
+  after BOARD prune            : 52 problems, 64 warnings, 0 new lines
+  after LOG seal (hand-written): 55 problems  <- 2x UTC, 2x missing [op:], 1x debt
+  after LOG seal + debt rebind : 53 problems  <- 1x missing trailing newline
+  final (newline fixed)        : 52 problems, 64 warnings, 0 new lines
+  log-soft-cap occurrences     : 1 -> 0
+  board-soft-cap occurrences   : 1 -> 1
+
+A seal that only looks green because the debt FAIL was not re-checked would have
+shipped 3 hidden regressions. It did not.

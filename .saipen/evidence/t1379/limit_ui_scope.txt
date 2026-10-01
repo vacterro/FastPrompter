@@ -1,0 +1,53 @@
+T-1379 SCOUT -- measured scope of the Limit UI translation gap
+================================================================
+
+Method: AST walk over the five Limit modules. Docstrings are excluded at the
+node level (not by regex), so a class/function description never counts as a
+user-facing literal. Only literals that start alphanumerically, contain at
+least three ASCII letters, and are not all-caps tokens qualify.
+
+Result: 253 distinct user-facing literals across the five modules, of which
+219 are ABSENT from src/fastprompter/core/i18n/en.py.
+
+Per module (candidates / absent from en.py):
+  limit_account_selector.py          12 /    8
+  limit_gauges.py                    18 /   18
+  limit_hover_card.py                 1 /    1
+  limit_overview.py                  25 /   24
+  limit_settings_dialog.py          197 /  168
+
+Locale packs present: 33 (ar ... zh).
+
+CONSEQUENCE -- why this is not a one-file mechanical fix:
+
+  The catalog is the KEYSTORE, and the key IS the English source string, so
+  wiring tr() alone changes nothing for a non-EN user: tr() falls back to the
+  English source on a miss (core/translations.py docstring). Delivering the
+  ticket's verify clause -- 'every user-facing literal resolves in all 33
+  locale packs' -- needs 219 absent keys x 33 packs = 7227 translated entries.
+
+  That is saitranslate producer work, not a coding change. The existing
+  pipeline (tools/sync_saitranslate.py, extensions/subs/saitranslate) owns
+  exactly this, and T-1376 already records that producer's OUTBOX as failing
+  strict parsing.
+
+SPLIT -- the ticket therefore decomposes into:
+
+  (a) MECHANICAL, completable here: import tr in the five modules and wrap
+      every user-facing literal. English output is byte-identical (EN returns
+      the key), so this is behaviour-preserving and makes the surface
+      translatable for the first time.
+  (b) PRODUCER WORK, not completable here: fill the 219 absent keys across
+      the 33 packs. Belongs to saitranslate.
+
+The one EXCEPTION in (b) is cheap and belongs to (a): the catalog carries
+'All AI accounts hidden (0% usage)' while the code emits
+'All AI accounts hidden (0% usage or no usable 5h window)' -- the key
+DRIFTED, so that one string can never resolve. Re-adding the code's own text
+under its real key is a two-line change.
+
+Red controls are the reason this measurement is trustworthy: the 34 strings
+that DO resolve were counted as present, and docstrings were excluded by AST
+rather than by pattern -- a regex sweep over the same files returned 253
+candidates against this 219, i.e. it inflated the count with 34 docstrings
+and class names.

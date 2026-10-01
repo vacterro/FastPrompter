@@ -1,6 +1,6 @@
 <!-- SAIPEN KNOWLEDGE INDEX v1; generated projection; not authority -->
-source-digest: sha256:756fe567236dc2f63f7f1df65481bdd5e5118b413e29f5a10d52b83792103f66
-cards: 6
+source-digest: sha256:d6cec8d235f682eb31fdaf5a937b8b989d4bafa578e76991c052f0b4eac310e3
+cards: 7
 legacy: 1
 
 # Knowledge index
@@ -9,6 +9,7 @@ Active cards are retrieval candidates. Superseded cards remain forensic history.
 
 - cards/commit-invalidates-closure-receipts.md | convention | scope: saipen/conformance, saipen/ship | trigger: shipping a commit after a CURRENT_PASS, or seeing closure-evidence FAILs across many DONE tickets at once | active
 - cards/desktop-local-time-launcher-boundary.md | convention | scope: launcher, time | trigger: starting FastPrompter from an external desktop launcher | active
+- cards/log-seal-requires-debt-rebind.md | convention | scope: saipen, memory, clean | trigger: sealing .saipen/LOG.md into .saipen/logs/, or pruning BOARD.md ## DONE | active
 - cards/manual-reset-offers-contract.md | convention | scope: usage-limits, resets | trigger: adding or changing manual/redeemable reset offers (Codex credits, ZCode Coding Plan cards, Claude campaigns) | active
 - cards/quota-reset-time-contract.md | convention | scope: usage-limits, time | trigger: parsing or rendering provider quota reset timestamps | active
 - cards/reverify-gate-tolerates-retired-paths.md | convention | scope: saipen/evidence, reverify-gates | trigger: writing or re-running a durable reverify gate that scans tracked paths | active
