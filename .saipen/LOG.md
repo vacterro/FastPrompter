@@ -82,3 +82,4 @@
 - 01.10.26 22:18 [E-3863] [parent: E-3862] [agent: buffy] [op: transition-e343822ef0634544b45a80bfbb45af66] DEC: goal_tickets 8->9
 - 01.10.26 22:18 [E-3864] [parent: E-3863] [T-1377] [agent: buffy] [op: transition-b9b91cda0ca4413faaa998e3fcd7e1a0] RUN: transition to SHIP
 - 01.10.26 22:18 [E-3865] [parent: E-3864] [T-1377] [agent: buffy] [op: finish-bc654cad34e344938bc03b9c4ac2960d] DEC: ticket finished via SAIOPS -- completion (from SHIP)
+- 01.10.26 22:34 [E-3866] [parent: E-3865] [T-1379] [agent: buffy] [op: checkpoint-2627da718acc46fcb971009b411ff7ee] RUN: verify -> PASS [target: T-1379] conf: high -- CODE half only: python -m pytest tests/test_limit_ui_tr_keys_t1379.py (11 passed) plus 506 tests across every suite touching the changed files; ruff clean. 157 tr() sites, 142 distinct keys, 126 added to en.py. The TRANSLATION half (33 locale packs) is NOT done and the ticket stays open for it.
