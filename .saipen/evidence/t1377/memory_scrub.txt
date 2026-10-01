@@ -4,7 +4,7 @@ T-1377 -- memory scrub: BOARD prune + LOG seal
 RESULT: half met, and the half that failed is structural, not effort.
 
   log-soft-cap   CLEARED   (LOG.md 2695 lines / 850984 B -> 2 lines / 2 boundary events)
-  board-soft-cap NOT CLEARED (70593 B vs 16384 B cap) -- see WHY NOT, numbers below
+  board-soft-cap NOT CLEARED (73860 B vs 16384 B cap) -- see WHY NOT, numbers below
 
   Gate after all changes: 52 problem(s), 64 warning(s) -- IDENTICAL to the
   pre-change baseline. Zero new FAIL lines, zero new WARN lines.
@@ -54,12 +54,17 @@ A closed ticket may leave BOARD.md only when NOTHING still resolves it:
 Rule 3 is the one that keeps this honest. Without it the cheapest way to a
 green gate is to delete the tickets the gate is complaining about.
 
-  DONE tickets            : 178 -> 125
+  DONE tickets            : 178 -> 126
   protected by needs:      29
   protected by receipts:   55
   protected by gate:       58   (50 closure-evidence findings + others)
-  pruned                   : 53 records / 55 lines
-  bytes                : 94607 -> 70593
+  protected by cohort:      4   (C-001 T-1269; C-069 T-1352/T-1354/T-1355)
+  pruned                   : 52 records / 53 lines
+  bytes                : 94607 -> 71218
+
+  (The first application of this rule, before cohort membership was added as a
+  fourth protected class, pruned 53 records and landed at 70593 B. That version
+  was wrong and is described under THE REGRESSION THE ORACLE DID NOT CATCH.)
 
 Every kept line is already < 1200 chars, so `saipen ticket compact` correctly
 returns ALREADY_APPLIED on all of them. Compaction is not the lever.
@@ -69,20 +74,35 @@ WHY board-soft-cap CANNOT BE CLEARED HERE
 -----------------------------------------
 The cap is `board_kb > 16` (validate.py:2686) and it measures the WHOLE file.
 
+NOTE: the numbers in this section were measured wrong and have been corrected.
+A later, proper whole-file measurement is in
+.saipen/evidence/t1382/board_softcap_recorrection.txt. Read that one.
+
 Worst case -- retire ALL 64 active source receipts, which is the ONLY sanctioned
 way to unpin their Work tickets (`source retire <SRC-###> --reason <CLASS>
---successor SRC-###`, and it is an authority act, not a scrub):
+--successor SRC-###`, and it is an authority act, not a scrub), then prune every
+unprotected DONE ticket:
 
-  tickets that would still be pinned : 69   (29 by needs: alone)
-  bytes of pinned DONE text          : 30060
-  cap                                : 16384
+  tickets still pinned after that      : 30   (26 by needs: alone, 4 by cohort)
+  bytes of pinned DONE text            : 15876
+  whole-file size (pinned + non-DONE)   : 23119   -> 1.41x the 16384 cap
+  non-DONE bytes alone                 : 7243    -> 0.44x the cap
 
-Even then the board is ~2x over. Reaching 16 KB needs one of:
+So the cap is NOT unreachable -- the gap is 6735 B, not "2x over". The only
+route under it is (a): also delete the 26 needs:-referenced DONE tickets, worth
+12434 B, landing the board at 10685 B. That is a dependency-edge deletion which
+trades a soft WARN for dangling-needs FAILs, i.e. deleting the finding rather
+than fixing it. Options:
   (a) pruning needs:-referenced tickets too, which breaks their dependents;
   (b) retiring the receipts AND re-scoping the needs: graph (operator, authority);
   (c) a board-sharding change in the engine (out of this repo).
 
-None is a memory scrub. (b)/(c) are operator decisions -> new ticket.
+None is a memory scrub. (a)/(b)/(c) are operator decisions -> ticket T-1382.
+
+(Measured on the board as it stood after T-1371/T-1373/T-1374/T-1375 were
+blocked, which added text of its own: the file is 73860 B, not the 71218 B
+immediately after the scrub. The pinned figures above are the ones that matter
+-- they are what a scrub cannot remove.)
 
 
 THE LOG SEAL, AND THE COUPLING NOBODY WARNED ME ABOUT

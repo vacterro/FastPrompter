@@ -1,0 +1,78 @@
+T-1382 -- CORRECTION OF THE BOARD-SOFT-CAP ARITHMETIC
+==================================================
+Written 2026-10-01. Supersedes the figures recorded in the T-1382 board record
+and in .saipen/evidence/t1377/memory_scrub.txt, both of which are WRONG.
+
+The sealed compaction sidecars under .saipen/recovery/board-compaction/T-1382/
+are NOT edited: they are the sha-pinned record of what the ticket said at the
+moment of compaction and are historical truth. This file corrects the claim.
+
+
+THE WRONG CLAIM
+---------------
+  "69 closed tickets stay pinned (29 by needs:, 55 by receipt linked_work)
+   holding 30060 B against the 16384 B cap" ... "~2x over" ... "unreachable".
+
+Two errors, both inflating the problem:
+
+  1. It added the three protected classes (29 + 55 = 84 raw, reported as 69
+     after overlap) but never re-measured the FILE. board-soft-cap is
+     `board_kb > 16` over the WHOLE file (tools/validate.py:2686), not over
+     the pinned subset. Measuring a subset against a whole-file cap is the
+     bug.
+  2. It was measured BEFORE the cohort-membership protection class was added
+     to the prune analysis, so it predates T-1269 being restored.
+
+
+THE MEASUREMENT THAT MATTERS
+----------------------------
+Whole-file size of .saipen/BOARD.md under each scenario, cap = 16384 B.
+
+  (baseline) current tree, nothing retired      73346 B   4.48x
+  (0) retire all 64 active source receipts,
+      then prune every unprotected DONE ticket  23119 B   1.41x   OVER by 6735
+  (a) also prune the 26 needs:-referenced ones   10685 B   0.65x   UNDER by 5699
+
+Component sizes at (0):
+  pinned DONE tickets                       30 (26 by needs: alone, 4 by cohort)
+  bytes of that pinned DONE text         15876
+  non-DONE bytes (headings, TODO, prose)   7243
+  whole file                              23119   = 15876 + 7243
+
+So even a board with ZERO tickets would be 7243 B = 0.44x the cap. The DONE
+tickets are not what puts the board over; the whole pinned set is.
+
+
+WHAT ACTUALLY CHANGES
+---------------------
+The conclusion of T-1382 SURVIVES, but the reason changes and the gap shrinks
+by a factor of ~3.5:
+
+  - The cap is NOT unreachable. The old record said "2x over, no scrub can
+    clear it". Wrong: the worst case is 1.41x, a gap of 6735 B.
+  - The ONLY route to the cap is (a): deleting the 26 tickets that other
+    tickets name in `needs:`. That set is worth 12434 B on its own -- delete
+    it and the board lands at 10685 B with 5699 B of headroom.
+  - (a) is not a scrub, because `needs:` is a live dependency edge. Deleting
+    those 26 makes the validator's dangling-needs check fire on every
+    dependent, i.e. it trades a soft-cap WARN for a hard FAIL plus a
+    fabricated dependency graph. The finding would be silenced, not fixed.
+
+This is the classic "pruning the evidence instead of fixing the finding"
+trade. It stays an OPERATOR DECISION, now with a precise price tag: 26
+tickets, 12434 B, in exchange for clearing a soft cap, and the receipt
+retirement in (0) is separately an authority act.
+
+
+REPRODUCE
+---------
+All four numbers come from prune_board_done.py in the session temp dir, whose
+protected-class logic is the same one that was validated against the four
+gates that actually read BOARD.md (dangling-needs, intake linked_work, current
+gate complaints, and `saipen cohort status` member resolution). The script is
+outside the repo by design: it is a one-shot compaction tool, not product code.
+
+NOTE ON THE GATE: board-soft-cap is a WARN, not a FAIL, and `--gate core`
+currently reports it. Correcting the arithmetic on this ticket cannot clear
+the WARN -- only actually shrinking the board can. This file exists so the
+operator prices (a) correctly before deciding.
