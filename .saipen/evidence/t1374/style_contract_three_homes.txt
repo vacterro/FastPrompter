@@ -1,0 +1,132 @@
+T-1374 -- three divergent STYLE.md markers: the ticket's premise was partly false
+===========================================================================
+
+WHAT THE TICKET SAID
+
+  "the launcher enforces ded-71fc58de (present in NO file on disk), the project
+   validator resolves SAIPEN_HOME=scheduled-source and enforces ded-4ae736e4,
+   and the launcher routes agents to read .agents/skills/saipen/STYLE.md which
+   carries ded-6b950e75"
+
+THE PARENTHETICAL IS WRONG
+
+`ded-71fc58de` IS on disk, and it IS what the launcher enforces, and it IS what
+STATE.md records. Measured, not asserted:
+
+  install                                      saipen/STYLE.md   marker        bytes
+  -------------------------------------------- ----------------- ------------- -----
+  V:/.../_AI_STUFF_AGENTIC/_SAIPEN              present           ded-71fc58de  7452
+  C:/Users/.../saipen/scheduled-source           present           ded-4ae736e4  8173
+  C:/Users/vac34/.agents/skills/saipen           present           ded-6b950e75  7470
+  STATE.md (recorded)                                             ded-71fc58de
+
+  bin/saipen.cmd runs: V:\...\_AI_STUFF_AGENTIC\_SAIPEN\tools\saipen.py
+  SAIPEN_HOME env    : C:\Users\vac34\AppData\Local\saipen\scheduled-source
+
+The marker is not a version string someone typed. It is derived per install
+(state.py:438):
+
+    def style_contract_token(text):
+        body = "\n".join(ln for ln in text.split("\n")
+                         if "style_contract:" not in ln).strip()
+        return "ded-" + hashlib.sha256(body.encode()).hexdigest()[:8]
+
+and state.py:450 states the rule outright: "VERSION, the STATE schema revision
+and the STYLE.md voice marker are properties of the SAIPEN install that is
+EXECUTING, not of whatever path a previous agent happened to persist in
+STATE.saipen_home."
+
+So: three installs really do carry three different STYLE.md files (7452 / 8173 /
+7470 bytes -- different content, not copies). That part of the ticket is right.
+But the launcher's marker is ded-71fc58de, STATE.md records ded-71fc58de, and
+therefore STATE.md is CORRECT for the install the project actually runs. There
+is no phantom token and nothing to reconcile in STATE.md.
+
+
+THE ACTUAL DEFECT
+
+The project's own gate judges STATE.md against a DIFFERENT install than the one
+the launcher runs:
+
+    tools/validate.py:40
+        _HOME = Path(os.environ.get("SAIPEN_HOME", "")).resolve() if ... else None
+        if _HOME is None:
+            _HOME = Path(r"C:\Users\vac34\.agents\skills\saipen").resolve()
+        _CANONICAL = _HOME / "tools" / "validate.py"
+
+SAIPEN_HOME is set machine-wide to scheduled-source, so the shim runs the
+canonical validator from the stale install, which enforces ded-4ae736e4 against
+a state written for ded-71fc58de.
+
+DECISIVE A/B (same tree, same state, one variable changed)
+
+    SAIPEN_HOME=<scheduled-source>              style_contract FAILs: 1
+    SAIPEN_HOME=<the install bin/saipen.cmd runs> style_contract FAILs: 0
+
+The FAIL text under the stale install:
+    STATE.md style_contract 'ded-71fc58de' does not match the installed
+    STYLE.md marker 'ded-4ae736e4'
+
+There is no value of STATE.md.style_contract that satisfies both engines, which
+is exactly what the ticket's verify clause predicted ("a reconcile repair
+rewrites the same field to another value that also FAILs"). Rewriting STATE.md
+to ded-4ae736e4 would satisfy the shim and break the launcher; rewriting it to
+ded-6b950e75 would satisfy neither the launcher nor the validator. So the repair
+is not in STATE.md at all.
+
+
+SECONDARY OBSERVATION (same root cause, strengthens T-1373)
+
+Running the gate through the launcher's install instead of the stale one also
+changes how many known-legacy failures the shim downgrades:
+
+    shim pattern `_KNOWN_LEGACY[2]` = closure-evidence -- ticket T-\d+ is ## DONE
+        matches 50 of 50 baseline FAIL lines
+    KNOWN-LEGACY downgraded, scheduled-source install : 0
+    KNOWN-LEGACY downgraded, launcher install         : 48
+
+Same tree, same documented legacy list, same regex -- the stale install does not
+produce output the shim can recognise as known-legacy, so the downgrade path
+does not fire and 48 documented, authorized legacy items surface as FAILs.
+Recorded as observed (counts measured on this run); not chased further, because
+it is a property of the stale install rather than of this project.
+
+
+WHY THIS IS NOT AGENT-ACTIONABLE
+
+The repair is host configuration: make SAIPEN_HOME name the install the launcher
+executes, or converge the three STYLE.md files into one. Both change what this
+machine believes the voice contract is, and both are outside this repository:
+
+  (a) repoint SAIPEN_HOME at V:/.../_AI_STUFF_AGENTIC/_SAIPEN, matching
+      bin/saipen.cmd. Clears the style_contract FAIL immediately (proved above),
+      and incidentally closes T-1373, whose closure-provenance FAIL has the same
+      cause: tools/validate.py binding a stale engine.
+  (b) converge the three STYLE.md files. Higher blast radius -- the marker is
+      sha256 of the file body, so ANY wording change rewrites the token and
+      invalidates every STATE.md that recorded the old one.
+
+(a) is one environment variable and is strictly better than (b) for this
+project, but it is still the operator's machine, not this repo. Agent cannot
+change it without silently redefining the project's voice contract.
+
+VERIFY CLAUSE (unreachable here, as written)
+
+  "tools/validate.py --gate core exits 1 on the style_contract FAIL while a
+   reconcile repair rewrites the same field to another value that also FAILs;
+   after the fix the gate is green with the value the launcher writes"
+
+  The first half is now PROVEN: the reconcile repair does indeed produce another
+  value that also FAILs, and the gate is NOT green under the stale install.
+  The second half needs SAIPEN_HOME repaired. Until then the honest terminal
+  state is BLOCKED with (a) as the one-line remedy.
+
+
+SAME DEFECT AS T-1373 -- RECORDED, NOT COINCIDENCE
+
+  T-1373  tools/validate.py binds the stale engine  -> wrong closure verdict
+  T-1374  tools/validate.py binds the stale STYLE.md -> wrong style_contract verdict
+
+  One cause, two symptoms. Both are cured by the same one-line host change (a).
+  T-1373's evidence already carries the closure side; this file carries the
+  style side. They should be closed together, by the same operator action.
