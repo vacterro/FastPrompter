@@ -3,10 +3,10 @@
     "SRC-074:R001": {
       "actionable": true,
       "class": "requirement",
-      "disposition": "UNKNOWN",
-      "evidence": null,
+      "disposition": "VERIFIED",
+      "evidence": "T-1372 closed with verification evidence in LOG: verify -> PASS [target: T-1372] conf: high -- uv run python .saipen/evidence/t1372/verify_findings.py reported 9/9 filed findings REPRODUCED, exit 0; the known-good control (adding a tr import to limit_overview.py) flipped T-1379 to NOT REPRODUCING and exit 1",
       "text": "saihunt: hunt for defects, debt, and improvement targets in FastPrompter",
-      "verification": null,
+      "verification": "the Work this request created reached its own verification gate; see the T-1372 VERIFY cycle in .saipen/LOG.md",
       "work": "T-1372"
     }
   },

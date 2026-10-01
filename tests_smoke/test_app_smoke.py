@@ -3608,6 +3608,19 @@ def test_no_cyrillic_in_codebase():
                     "tests/test_master_mute_i18n_t1244.py",
                     "tests/test_reset_queue_card_t1279.py")):
                 continue
+            # The i18n CONTRACT tooling (T-1380): these files exist to compare
+            # locale packs letter-for-letter and to assert accelerator
+            # mappings, so the RU samples and RU placeholders they carry ARE the
+            # subject under test, not stray prose. Same class as the dictionaries
+            # and duration tables above — input data, and the contract cannot be
+            # proven without it.
+            if norm.endswith((
+                    "tools/i18n_contract.py",
+                    "tools/i18n_identical_audit.py",
+                    "tools/i18n_outlier.py",
+                    "tools/validate_saitranslate.py",
+                    "tests/test_i18n_contract_t1353.py")):
+                continue
             with open(f, encoding="utf-8") as fh:
                 for i, line in enumerate(fh, 1):
                     if cyr.search(line):
