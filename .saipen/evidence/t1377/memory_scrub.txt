@@ -150,3 +150,48 @@ REPRODUCED, WITH THE NEGATIVE CONTROLS THAT MATTER
 
 A seal that only looks green because the debt FAIL was not re-checked would have
 shipped 3 hidden regressions. It did not.
+
+
+THE REGRESSION THE ORACLE DID NOT CATCH (and the lesson is the point)
+---------------------------------------------------------------------
+Commit 06fd6c9 passed the gate at baseline. It was still wrong.
+
+Picking up T-1375 afterwards surfaced it:
+    $ saipen cohort status C-001 --json
+      "ready": false,
+      "problems": ["T-1269 is not on BOARD"]
+
+The prune had deleted the `- [x] T-1269` record itself. `--gate core` never
+noticed, because `cohort status` is not part of the core gate. So my oracle was
+correct about everything it measured and blind to a whole command surface I had
+changed. A green gate proved the gate was green; it did not prove the tree was
+intact.
+
+Fourth reference class, now in the prune rule:
+  4. cohort membership in .saipen/kitchen/cohort_registry.json
+     -> `saipen cohort status` refuses a member that is not on the board.
+
+Re-pruned from the pristine backup with cohort members protected:
+    protected cohorts: 4   (C-001: T-1269; C-069: T-1352, T-1354, T-1355)
+    kept 126 / pruned 52 / 94607 -> 71218 B
+    C-001 -> ready: true, problems: []
+    C-069 -> ready: true, problems: []
+    gate: 52 problems, 64 warnings, zero new lines
+
+THE LESSON, STATED PLAINLY
+--------------------------
+Three separate times in this ticket the change passed the tool I was checking
+and was still wrong: a prune that passed the eye and broke 20 receipts, a parser
+that passed its own arithmetic and deleted the ## DONE heading, and a scrub that
+passed --gate core and deleted a live cohort member.
+
+The rule that actually held was not "run the gate". It was: enumerate EVERY way
+the thing being changed can be referenced, protect all of them, and then ask
+which of those references the oracle you are about to run actually covers. When
+the answer is "not all of them", the uncovered ones have to get their own check
+before the change ships -- here, `cohort status` on both registries.
+
+I caught this one only because the NEXT ticket happened to exercise the
+affected command. That is luck, not a process. The durable fix is to treat
+"which surfaces read this file?" as part of writing the edit, not as something
+the gate is assumed to answer.

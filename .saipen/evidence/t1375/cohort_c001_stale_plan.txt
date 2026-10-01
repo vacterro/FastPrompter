@@ -1,0 +1,86 @@
+T-1375 -- C-001 is unpublished, and the engine refuses to publish it
+================================================================
+
+STATE (measured, not inferred)
+
+  $ saipen cohort status C-001 --json
+    publication_status : pending
+    commit             : ""
+    release_op_id      : ""
+    version            : ""
+    tag                : ""
+    members            : ["T-1269"]
+    ready              : true
+    problems           : []
+
+  C-069 is identical: publication_status pending, empty commit/release_op_id,
+  members T-1352 / T-1354 / T-1355, ready true, problems []. That is the shared
+  root cause T-1371 records; T-1375 exists only because T-1371 scoped C-069
+  alone and would otherwise close with C-001 left unpublished.
+
+THE BLOCKER
+
+  $ saipen cohort ship C-001
+    REFUSE [STALE_PLAN]
+    reason: crew scope path src/fastprompter/main.py changed since the owning
+            defer (live '753886da1fb24f93', deferred 'c95d578908774edd')
+
+The cohort was frozen with a hash per scoped path. The live tree has moved on
+every one of them since. _plan_crew_release (release.py) recomputes live hashes
+and refuses rather than ship a release whose carrier no longer describes the
+tree -- the refusal is correct and must not be worked around by re-recording
+hashes to match whatever the tree happens to be today.
+
+WHY THERE IS NO WAY FORWARD FROM INSIDE THIS REPO
+
+The entire cohort surface is two verbs:
+
+    cohort status <C-###>
+    cohort ship  <C-###>
+
+There is no re-freeze, no rebind, no refresh, no amend. Once a cohort's recorded
+hashes disagree with the tree, it is permanently un-publishable through the
+engine. Confirming the surface:
+
+    $ saipen ticket --help | tr ',' '\n' | grep cohort
+    cohort status <C-###>
+    cohort ship <C-###>
+
+This is the same dead end T-1371 found for C-069, and it is worse than "stale":
+for C-069, 4 of 6 recorded hashes correspond to no blob that exists in any ref
+of this repository, so that cohort cannot be re-derived even in principle --
+those bytes were never committed. For C-001 the hashes are merely stale, so a
+human who accepts "ship C-001 against today's tree" could record that intent --
+but only the engine may write the record, and the engine offers no verb for it.
+
+WHAT AN OPERATOR HAS TO DECIDE
+
+  (a) ACCEPT AND RE-RECORD: declare C-001 (and C-069) published against the
+      current tree. Requires a new engine verb to re-freeze, or a hand edit of
+      .saipen/kitchen/cohort_registry.json -- which the release path may reject
+      as an unprovenanced carrier, and which would be exactly the kind of
+      hand-written provenance this protocol exists to prevent.
+  (b) REBUILD: close C-001/C-069 as never-published and re-run the cohort with
+      fresh member hashes from the current tree. Loses the historical link
+      between the cohort and the work it closed.
+  (c) LEAVE PENDING: accept that some closed cohorts were never published,
+      record that as a known terminal state, and stop treating
+      publication_status: pending as a defect for them.
+
+None of these is agent-actionable: each decides what the release ledger asserts
+about the past, which is the operator's call, not a cleanup.
+
+VERIFY CLAUSE
+
+  .saipen/kitchen/cohort_registry.json shows both C-001 and C-069
+  terminal-published, OR T-1371 is re-scoped to cover both.
+
+Neither arm is reachable here. The ticket is BLOCKED, not DONE.
+
+SIDE FINDING (belongs to T-1377, recorded there)
+
+  The first `cohort status C-001` returned "T-1269 is not on BOARD" -- caused by
+  the T-1377 BOARD prune, which had deleted a live cohort member. Fixed by
+  adding cohort membership as a fourth protected reference class and re-pruning
+  from the pristine backup. C-001 now reports ready: true, problems: [].
+  Note that --gate core never reported this; cohort status is outside it.
