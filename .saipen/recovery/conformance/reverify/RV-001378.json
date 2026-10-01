@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-10-01T22:17:20Z",
+  "evidence_class": "executed",
+  "findings_digest": "caae8d626b3bcc34586ed6522015a52fe6ef311de333d2ece196232d07850445",
+  "gate": "core",
+  "integrity_digest": "32f3e9d84af2be25",
+  "journal_op_id": "reverify.d52df6d374b1",
+  "original_closure": {
+    "claim_time": "2026-10-01T22:17:06Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-3856",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [],
+  "problem_count": 0,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001378",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "cc66fbc350f89f865ba07ba3970667af868ddbaf",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "verdict": "PASS",
+  "verification": [
+    {
+      "command": "python tools/validate.py --gate core",
+      "duration_ms": 2434,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 9270,
+      "output_digest": "f3975c622da5fa46",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python tools/validate.py --gate core"
+    ],
+    "findings_digest": "caae8d626b3bcc34586ed6522015a52fe6ef311de333d2ece196232d07850445",
+    "gate": "core"
+  },
+  "verification_contract_digest": "5712e9dfead427a8",
+  "verifier": "buffy",
+  "warning_count": 72,
+  "work": "T-1382"
+}
