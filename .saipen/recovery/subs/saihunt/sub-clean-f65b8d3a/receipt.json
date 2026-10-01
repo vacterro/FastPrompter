@@ -1,0 +1,15 @@
+{
+  "archive_instance": ".saipen/recovery/subs/saihunt/sub-clean-f65b8d3a/instance",
+  "files": {
+    "BOARD.md": "9faef9432e146cde",
+    "LOG.md": "7f519a22ac8d5a77",
+    "STATE.md": "32d7e9cfc0072635",
+    "kitchen/OUTBOX.md": "4d219b0244ef0362"
+  },
+  "instance_tree_hash": "delete-tree-sha256:77f4a07c8b7c0456b44894e261504541bbd75549626891f886d1737e4843bcc7",
+  "manifest_before_hash": "70284681f3918c0a",
+  "name": "saihunt",
+  "op_id": "sub-clean-f65b8d3a",
+  "operation": "sub_clean",
+  "source_instance": ".saipen/extensions/subs/saihunt"
+}

@@ -1,0 +1,48 @@
+{
+  "agent": "buffy",
+  "created_at": "2026-10-01T22:47:53Z",
+  "evidence_class": "executed",
+  "findings_digest": "e77127005b44d7e5785ed0bf6c777dc0361916cef36dbbf19c681cd2773965da",
+  "gate": "core",
+  "integrity_digest": "493fbbd2c39a06ad",
+  "journal_op_id": "reverify.8ef2bb49047f",
+  "original_closure": {
+    "claim_time": "2026-10-01T22:47:34Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-3878",
+    "owner": "buffy"
+  },
+  "own_problem_keys": [],
+  "problem_count": 0,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001380",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "d8be163bace3c00f3b0a5b9d7898f7053fb1a105",
+  "source_tree_fingerprint": "git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195",
+  "verdict": "PASS",
+  "verification": [
+    {
+      "command": "python \"V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN/tools/validate.py\" --gate core",
+      "duration_ms": 3474,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 8292,
+      "output_digest": "0a10d01e164a2c6f",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python \"V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN/tools/validate.py\" --gate core"
+    ],
+    "findings_digest": "e77127005b44d7e5785ed0bf6c777dc0361916cef36dbbf19c681cd2773965da",
+    "gate": "core"
+  },
+  "verification_contract_digest": "cbdc3e331383871a",
+  "verifier": "buffy",
+  "warning_count": 67,
+  "work": "T-1376"
+}

@@ -1,0 +1,141 @@
+# OUTBOX
+
+## HUNT-014: crew SC-2 six-signal sweep @ dc9589d (01.10.26)
+- **status:** stale
+- **staleness:** engine re-verified 01.10.26 @e5888a9: source_head dc9589d and source_tree_fingerprint git-delta-v1:e1402824... no longer match the tree. The package is not collectable; it is marked stale so the instance can be replaced by a producer re-run against current HEAD (T-1376).
+- **summary:** Six-signal sweep at HEAD dc9589d: 2 signals REPRODUCED (tests/test_t1358_cohort_publication.py:74/117 fails on pyproject.toml & README.md C-069 cohort mismatches; orphan untracked test artifact); 4 signals NOT_REPRODUCED.
+- **main_project_refs:** [tests/test_t1358_cohort_publication.py:74, tests/test_t1358_cohort_publication.py:117, .saipen/kitchen/cohort_registry.json, pyproject.toml, README.md]
+- **critical:** true
+- **severity:** P1
+- **producer:** saihunt
+- **source_head:** dc9589d89fb77890a7917cdb372a5ec5fea2f9da
+- **source_tree_fingerprint:** git-delta-v1:e1402824009700e971174ca5184088e3878b30ae9fc31159853daae2a39e7eef
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** all six HUNT signals at dc9589d: tests (pytest), commit verification, stale markers, silent failure, symmetry, orphan artifacts
+- **payload:** []
+- **verified:** PASS -- pytest tests/test_t1358_cohort_publication.py reproduces 2 failures (test_member_hash_matches_proven_text_normalization line 74 and test_cohort_member_mismatches_respects_normalization line 117); full tests/ collection clean (4167 tests collected); ruff check src/ tests/ clean; compileall clean; rg TODO/FIXME/HACK in src clean
+- **instructions:** Evidence for SC-2 at dc9589d. saitest independently reproduce test_t1358_cohort_publication failure; Core reconcile C-069 cohort_registry member hashes or test assertions with post-T-1358 commits (README gallery rebuild ccdbeb3 & pyproject.toml freeze a655fdd), and commit or dispose untracked test.
+- **details:**
+  1. Signal 1 (failing tests): REPRODUCED.
+     `tests/test_t1358_cohort_publication.py` fails on lines 74 and 117.
+     - Line 74: `assert closure.member_hash_matches(pyproject_bytes, recorded_crlf_hash)` fails because live `pyproject.toml` (hash `3eedf7cf1da61657` LF / `386fd37a1d0a7b39` CRLF) does not match recorded hash `2bf394ee164bf134`.
+     - Line 117: `closure.cohort_member_mismatches(ROOT, c069)` returns 2 mismatches for C-069:
+       * T-1354 `README.md`: recorded `fe4fa171993ba340`, live `fbcfb394cc49fa69` (modified by commit `ccdbeb3`).
+       * T-1355 `pyproject.toml`: recorded `2bf394ee164bf134`, live `3eedf7cf1da61657`.
+  2. Signal 2 (commits unverified in LOG): NOT_REPRODUCED. All commits dc9589d..693587d tracked in LOG E-3703..E-3727.
+  3. Signal 3 (stale TODO/FIXME/HACK): NOT_REPRODUCED. Zero markers in src/.
+  4. Signal 4 (silent failures): NOT_REPRODUCED. ruff clean, compileall clean, exception handlers verified.
+  5. Signal 5 (symmetry gaps): NOT_REPRODUCED. interval_notifs and timer_dialog bind identically to DAYPART_CHIME_RULES.
+  6. Signal 6 (dead code, orphan files): REPRODUCED. `tests/test_t1358_cohort_publication.py` is untracked in git despite T-1358 marked DONE on BOARD.
+
+## HUNT-013: crew SC-2 sweep @ 551ac7c (31.08.26) - crew epoch
+- **status:** stale
+- **summary:** Current-source six-signal sweep at HEAD 551ac7c (crew epoch with v0.8.66 closure: Wave-6 persistence T-1166/T-1168, Alt+F T-1167, launcher T-1161). All six signals clean: unit suite green (1748 passed 1 skipped), zero TODO/FIXME/HACK in persistence scope, no unverified commits, no new silent-failure or symmetry candidates, no orphan files, no failing tests.
+- **main_project_refs:** [src/fastprompter/core/state.py, src/fastprompter/main.py, tests/test_wave6_coordinator.py, tests/test_launcher_reliability.py]
+- **critical:** false
+- **severity:** P3
+- **producer:** saihunt
+- **source_head:** 551ac7ca81174e853cb6603820ec9b445f0ead6c
+- **source_tree_fingerprint:** git-delta-v1:9539ecf0ffaca2181d8abd735f691aa9f67422bdc1f6a6ab3c86db43066a1248
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** all six HUNT signals at 551ac7c: tests, commit verification, stale markers, silent failure, symmetry, orphan artifacts
+- **payload:** []
+- **verified:** PASS -- pytest tests/ 1748 passed 1 skipped; rg TODO/FIXME/HACK src/fastprompter/core/state.py + main.py clean; git tree carries only attributable .saipen state + user 1.md; concurrency seam repeated 50x clean; compileall PASS
+- **instructions:** Evidence for SC-2 at 551ac7c. No defect signals; no patch required. Core may proceed to SC-3.
+
+## HUNT-012: crew SC-2 sweep @ 40a0213 (27.08.26) — pie-menu insert fix
+- **status:** reviewed
+- **summary:** Current-source six-signal sweep at HEAD 40a0213 (pie-menu Shift+F15 direct-insert fix + OUTBOX grammar repairs). All six signals clean: unit suite green, zero TODO/FIXME/HACK in src, no unverified commits, no new silent-failure or symmetry candidates, no orphan files, no failing tests.
+- **main_project_refs:** [src/fastprompter/main.py]
+- **critical:** false
+- **severity:** P3
+- **producer:** saihunt
+- **source_head:** 40a021365f3641d52924ef2e3bb415aee1ee6d98
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** all six HUNT signals at 40a0213: tests, commit verification, stale markers, silent failure, symmetry, orphan artifacts
+- **payload:** []
+- **verified:** PASS -- pytest tests/ 1657 passed 1 skipped; rg TODO/FIXME/HACK src clean; git tree clean (only runtime .saipen/cache state); except-pass sites pre-audited T-1030 unchanged
+- **instructions:** Evidence for SC-2 at 40a0213. No defect signals; no patch required. Core may proceed to SC-3.
+
+## HUNT-007: crew SC-2 re-sweep @ 3232878 (23.08.26)
+- **status:** reviewed
+- **summary:** Re-sweep after source mutation (f3801af→3232878: T-1043 theme token compliance + T-1041 Cyrillic test exemption). Delta audited — theme QSS + test exemptions only, no new defect signals. All six signals still clean at the new HEAD: unit 1511 green, zero TODO/FIXME/HACK in src, no orphan files, no unverified commits, no new silent-failure or symmetry candidates beyond the already-fixed ones.
+- **critical:** false
+- **producer:** saihunt
+- **source_head:** 32328787efe6596b8ca6de774a791d786815fa1e
+- **source_tree_fingerprint:** git-delta-v1:c66baf69a8306f3b95dfc7badb5f72b088f8de8408e933efadc4d149721a1195
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** 6 signals x delta audit of 3232878 vs f3801af
+- **payload:** none
+- **verified:** PASS -- delta commits enumerated (3232878 = themes.py QSS + test_app_smoke exemptions); pytest tests/ 1511 pass 1 skip; rg sweep clean
+- **instructions:** Evidence for SC-2 at 3232878. Prior finding T-1043/T-1041 shipped; no new work required.
+
+## HUNT-008: broken root test artifact blocks default collection
+- **status:** reviewed
+- **summary:** The repository-root `test_timers_patch.py` is syntactically invalid, so default pytest collection cannot complete when the root test pattern includes it.
+- **main_project_refs:** [test_timers_patch.py:32]
+- **critical:** true
+- **severity:** P1
+- **producer:** saihunt
+- **source_head:** 3d0d79ed11b3e257892440ce3994a4bbbfa86cef
+- **source_tree_fingerprint:** git-delta-v1:4466d0c339b905ec3c36047da9f344f9c21402a32cf01eef911803b2bc29b381
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** failing-test signal (bounded compile/collection probe); commit verification; TODO/FIXME/HACK scan; silent-failure scan; save/load and start/stop symmetry spot-check; orphan-artifact scan
+- **payload:** []
+- **verified:** PASS -- `python -m py_compile test_timers_patch.py` reproduces `SyntaxError` at line 32; the focused current-feature suite reached 76% before the headless app-smoke process stopped responding and was terminated; `pytest --collect-only tests tests_smoke` collects the declared suites but does not validate the extra root file.
+- **instructions:** saitest must independently reproduce the root-file collection failure; Core should either remove the accidental root artifact or repair/move it into a valid test; rerun default `pytest -q` afterward.
+- **details:**
+  The file ends mid-comment/code (`ame = str(...) and description = str(...)`) at line 32. This is not a product-path failure, but it makes a normal repository-wide pytest invocation fail before tests can run if root discovery is enabled. Verdict: **REPRODUCED**.
+
+## HUNT-009: unreferenced root patch scripts
+- **status:** reviewed
+- **summary:** Eighteen root-level `patch*.py` scripts have zero repository references and look like abandoned one-off mutation tooling.
+- **main_project_refs:** [patch.py, patch_board.py, patch_links.py, patch_main_reading_links.py, patch_paths_tests.py, patch_t1013.py, patch_test_links.py, patch_themes.py, patch_timer_dialog.py, patch_timer_dialog_tests.py, patch_timer_dialog_tests2.py, patch_timer_dialog_tests3.py, patch_timer_dialog_tests4.py, patch_timer_dialog_tests5.py, patch_timers_from_dict.py, patch_timers_limit.py, patch_timers_todict.py]
+- **critical:** false
+- **severity:** P2
+- **producer:** saihunt
+- **source_head:** 3d0d79ed11b3e257892440ce3994a4bbbfa86cef
+- **source_tree_fingerprint:** git-delta-v1:4466d0c339b905ec3c36047da9f344f9c21402a32cf01eef911803b2bc29b381
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** dead-code/orphan signal; repository reference search; no mutation performed
+- **payload:** []
+- **verified:** PASS -- each listed filename has zero `rg` references outside itself and is not tracked by Git; no script was executed.
+- **instructions:** Core should decide whether these are recoverable user work artifacts; if not, archive/remove them through an explicit cleanup ticket, then rerun the orphan scan.
+- **details:**
+  The scripts are outside `src/`, are ignored/untracked, and are not imported, documented, or invoked by project tooling. Because they may contain recoverable patch history, this is a report only. Verdict: **REPRODUCED**.
+
+## HUNT-011: post-patch current-source sweep
+- **status:** stale
+- **legacy:** true
+- **summary:** Current source re-sweep confirms collection and settings UI are fixed; only the previously observed unreferenced ignored patch scripts remain as a cleanup candidate.
+- **main_project_refs:** [src/fastprompter/main.py:7145, test_timers_patch.py, patch.py, patch_board.py, patch_links.py, patch_main_reading_links.py, patch_paths_tests.py, patch_t1013.py, patch_test_links.py, patch_themes.py, patch_timer_dialog.py, patch_timer_dialog_tests.py, patch_timer_dialog_tests2.py, patch_timer_dialog_tests3.py, patch_timer_dialog_tests4.py, patch_timer_dialog_tests5.py, patch_timers_from_dict.py, patch_timers_limit.py, patch_timers_todict.py]
+- **critical:** false
+- **severity:** P2
+- **producer:** saihunt
+- **source_head:** 3d0d79ed11b3e257892440ce3994a4bbbfa86cef
+- **source_tree_fingerprint:** git-delta-v1:b9a0dd789d38af44dab2d83936761ef9d22e14d08449950b4815f6140cbcd576
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** all six HUNT signals after UI/root-test fixes; default collection; focused settings/theme regression; orphan reference scan
+- **payload:** []
+- **verified:** PASS -- AST parse and `pytest -q test_timers_patch.py` -> `1 passed`; default `pytest -q --collect-only` -> `2536 tests collected` with no collection error; focused UI/theme suite -> `47 passed`; 18 ignored root `patch*.py` scripts still have zero repository references and are untracked. Verdict: collection **NOT_REPRODUCED**; stale marker **NOT_REPRODUCED**; silent failure **NOT_REPRODUCED**; symmetry gap **NOT_REPRODUCED**; orphan artifact **REPRODUCED**.
+- **instructions:** Core may collect this cleanup hypothesis; do not delete the ignored scripts without explicit artifact disposition. No further product patch required from HUNT.
+- **details:**
+  This package is a fresh source-bound recheck after T-1053. The root test artifact now parses and runs; the Editor settings geometry passes. The remaining orphan signal is intentionally non-destructive and preserves possible recovery history. Verdict: **REPRODUCED** only for the orphan-artifact signal; all other signals **NOT_REPRODUCED**.
+
+## HUNT-010: remaining signals did not produce a new confirmed defect
+- **status:** reviewed
+- **summary:** The other four HUNT signals produced no additional new finding in this bounded pass.
+- **main_project_refs:** [src/fastprompter/core/project_sync.py, src/fastprompter/core/typecheck.py, src/fastprompter/core/timers.py]
+- **critical:** false
+- **severity:** P2
+- **producer:** saihunt
+- **source_head:** 3d0d79ed11b3e257892440ce3994a4bbbfa86cef
+- **source_tree_fingerprint:** git-delta-v1:4466d0c339b905ec3c36047da9f344f9c21402a32cf01eef911803b2bc29b381
+- **role_revision:** sha256:4edb04181cb07e0946afd06fbe711166fa9dcc403e56b52e9be3844f0a71b0a5
+- **coverage:** commit verification; stale marker scan; silent-failure scan; symmetry spot-check; current feature regression tests
+- **payload:** []
+- **verified:** PASS -- current source identity stable; no new tracked TODO/FIXME/HACK in product code; exception handlers are non-empty or intentional cleanup paths; focused typecheck/sync/timer tests had passed in the preceding hardening run. Verdicts: commit verification **NOT_REPRODUCED**; stale marker **NOT_REPRODUCED**; silent failure **NOT_REPRODUCED**; symmetry gap **NOT_REPRODUCED**.
+- **instructions:** no integration; keep HUNT-008 and HUNT-009 as the actionable findings and let downstream roles validate them.
+- **details:**
+  Existing broad exception handling and preset TODO text were inspected as intentional behavior or documentation/test fixtures, not ticketed as defects without a reproducible failure. Verdict: **NOT_REPRODUCED**.
