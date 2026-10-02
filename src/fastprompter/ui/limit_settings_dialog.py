@@ -308,8 +308,8 @@ class LimitSettingsDialog(QDialog):
         fill_row.setSpacing(6)
         fill_row.addWidget(QLabel(tr('Bars show')))
         self.cmb_fill = QComboBox()
-        self.cmb_fill.addItem(tr('Remaining left (drains like fuel)'), tr('remaining'))
-        self.cmb_fill.addItem(tr('Used up (grows like progress)'), tr('used'))
+        self.cmb_fill.addItem(tr('Remaining left (drains like fuel)'), 'remaining')
+        self.cmb_fill.addItem(tr('Used up (grows like progress)'), 'used')
         fill_index = self.cmb_fill.findData(
             str(self.data.get("limit_gauges_fill", "remaining")))
         self.cmb_fill.setCurrentIndex(max(0, fill_index))
@@ -564,9 +564,9 @@ class LimitSettingsDialog(QDialog):
         row2.setSpacing(6)
         row2.addWidget(QLabel(tr('Style')))
         self.cmb_style = QComboBox()
-        self.cmb_style.addItem(tr('Bars'), tr('bars'))
-        self.cmb_style.addItem(tr('Dots'), tr('dots'))
-        self.cmb_style.addItem(tr('Stacked'), tr('stack'))
+        self.cmb_style.addItem(tr('Bars'), 'bars')
+        self.cmb_style.addItem(tr('Dots'), 'dots')
+        self.cmb_style.addItem(tr('Stacked'), 'stack')
         self.cmb_style.setToolTip(
             tr('Bars: one thin vertical bar per quota window, side by side.\nDots: the same windows as pie-filled dots.\nStacked: one horizontal bar per window, stacked bottom-up in a single column (up to 4 tall), so an account takes one bar of width however many windows it reports.'))
         index = self.cmb_style.findData(
@@ -2304,7 +2304,7 @@ class LimitSettingsDialog(QDialog):
             box_h_lay = QVBoxLayout(box_h)
             for h in healed:
                 lbl = QLabel(f"✓ {h}")
-                lbl.setStyleSheet(tr("color: #4caf50; font-weight: bold;"))
+                lbl.setStyleSheet("color: #4caf50; font-weight: bold;")
                 box_h_lay.addWidget(lbl)
             lay.addWidget(box_h)
 

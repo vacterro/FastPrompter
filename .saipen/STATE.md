@@ -1,7 +1,7 @@
 ---
-phase: DONE
-task: none
-next_action: "PHASE SCOUT T-1384"
+phase: BUILD
+task: T-1384
+next_action: "PHASE BUILD T-1384"
 blocker: none
 agent: buffy
 saipen_version: 7
@@ -13,10 +13,10 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 3897
+last_event: 3899
 style_contract: ded-71fc58de
-updated: "2026-10-01T23:29:16Z"
-transition_from: SHIP
+updated: "2026-10-01T23:52:46Z"
+transition_from: SCOUT
 execution_intent: goal
 goal_waves: 0
 goal_tickets: 12

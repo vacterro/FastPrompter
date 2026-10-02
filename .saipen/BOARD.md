@@ -1,8 +1,8 @@
 # ASP Board
 
 ## DOING
+- [/] T-1384 [P2] 241 canonical keys from the Limit-UI tr() wrapping are absent from all 32 locale packs (7712 strings); validate_saitranslate.py reports 241 MISSING from every locale and coverage_pct 86.7 vs a stated 100.0 | verify: python tools/validate_saitranslate.py reports 0 canonical keys MISSING and coverage_pct agreeing with the key counts, for all 32 locale packs; every merged pair passes tools/i18n_contract.py via tools/i18n_apply_campaign.py --apply | owner: buffy | claim_time: 2026-10-01T23:52:46Z
 ## TODO
-- [ ] T-1384 [P2] 241 canonical keys from the Limit-UI tr() wrapping are absent from all 32 locale packs (7712 strings); validate_saitranslate.py reports 241 MISSING from every locale and coverage_pct 86.7 vs a stated 100.0 | verify: python tools/validate_saitranslate.py reports 0 canonical keys MISSING and coverage_pct agreeing with the key counts, for all 32 locale packs; every merged pair passes tools/i18n_contract.py via tools/i18n_apply_campaign.py --apply
 
 ## DONE
 - [x] T-1383 [P2] Review SubSaipen hypothesis saihunt/HUNT-001: sub sync/spawn/adopt source the shared contract from STATE.saipen_home, so every worker is provisioned from a home the... | verify: Independently reproduce or reject hypothesis, record Core disposition, apply no package patch during intake; package_identity=sha256:4340bd8ec000911576f43696d868cfbd5a439a77a280be044c76841d505dc6ff; producer=saihunt;... [detail_ref: .saipen/recovery/board-compaction/T-1383/T-1383-a29cef0cd633d17dff8879b3.json] | owner: buffy | claim_time: 2026-10-01T23:29:10Z | detail_ref: .saipen/recovery/board-compaction/T-1383/T-1383-a29cef0cd633d17dff8879b3.json | closure_mode: own_patch

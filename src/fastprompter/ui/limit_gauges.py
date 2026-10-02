@@ -386,7 +386,7 @@ class LimitGauges(QWidget):
 
         rows = self._reset_rows()
         action = collections.namedtuple(
-            "ResetMenuAction", tr('account snapshot offers activate open_url'))
+            "ResetMenuAction", "account snapshot offers activate open_url")
         out = []
         for row in rows:
             activate = any(o.redeemable_in_fastprompter for o in row.offers)
