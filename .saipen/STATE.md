@@ -1,7 +1,7 @@
 ---
-phase: DONE
-task: none
-next_action: "saipen continue"
+phase: SHIP
+task: T-1398
+next_action: "PHASE SHIP T-1398"
 blocker: none
 agent: buffy
 saipen_version: 8
@@ -13,13 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 4113
+last_event: 4121
 style_contract: ded-71fc58de
-updated: "2026-10-02T07:33:57Z"
-transition_from: SHIP
+updated: "2026-10-02T07:53:30Z"
+transition_from: REVIEW
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 8
+goal_tickets: 9
 ---
 T-1336 DONE 28.09.26 (E-3328):
 
