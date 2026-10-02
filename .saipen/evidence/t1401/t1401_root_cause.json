@@ -34,7 +34,12 @@
     "result": "writer_gate ACCEPT (0 errors) / core_gate REJECT -> conclusion DISAGREE",
     "negative_control": "the same ledger with reproduced=y passes BOTH gates, so the disagreement is a property of the line, not of the harness"
   },
-  "the_consequence": "`saipen improve sweep <cycle> <RUN-N/IMP-NNN> CONFIRMED --ticket <T> --report <r> --reproduced n` is a legal, unrefused command. It commits. The project then reds its own conformance gate, and the duplicate guard (improve.py:1004-1010) makes the line permanent. The state is reachable and inescapable, which is the definition of a trap rather than of a guardrail.",
+  "the_consequence": "The writer's own pre-commit gate does not reject the line, so nothing in the write path stands between `saipen improve sweep <cycle> <RUN-N/IMP-NNN> CONFIRMED --ticket <T> --report <r> --reproduced n` and a committed ledger that reds the project's own conformance gate. The duplicate guard (improve.py:1004-1010) then makes the line permanent. The state is reachable and inescapable, which is the definition of a trap rather than of a guardrail.",
+  "what_is_measured_and_what_is_inferred": {
+    "measured": "improve.validate_sweep returns no errors on the exact bytes that validate.py's CONFIRMED arm reds. Both gates were run on the real committed ledger, with a passing negative control.",
+    "inferred": "that a FRESH report at the current HEAD would carry the line through the write. It was not executed, because the only command available to reach the reproduced/ticket validation on this cycle is refused earlier by the T-619 stale-evidence check (improve.py:918 precedes the reproduced check at improve.py:961). Building a fresh strict cycle to observe the commit was judged not worth the scaffolding.",
+    "not_established": "how the existing SWEEP.md:4 line came to be. It may have been written by an older writer, or by hand. Nothing in the record says, and this evidence does not claim otherwise."
+  },
   "the_minimum_fix": "one clause in validate_sweep, mirroring the core gate: a line whose disposition is CONFIRMED must carry reproduced=y, else error. That makes the writer refuse the trap before it is set, and every existing ledger line becomes either already-legal or a genuine corruption to be reported by validate rather than by an agent's guess.",
   "the_second_half_of_the_fix": "even with the clause, a ledger written by an OLDER writer can still hold the state. The amend verb the ticket proposes remains the only exit for those, and the migration should refuse silently rather than auto-correct -- a value that changed must say who measured it.",
   "what_this_does_not_change": "T-1394, T-1398 and T-1400 are independent engine findings and remain exactly as filed."
