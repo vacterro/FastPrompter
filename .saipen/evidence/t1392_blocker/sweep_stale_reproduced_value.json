@@ -1,0 +1,46 @@
+{
+  "subject": "why the core sweep FAIL on SWEEP.md:4 cannot be repaired from inside the protocol, measured rather than assumed",
+  "the_failing_line": {
+    "file": ".saipen/improve/imp-vacterro-fastprompter-20261002-2/SWEEP.md",
+    "line": 4,
+    "text": "- RUN-1/IMP-002 [CONFIRMED] T-1392 report=buffy-02/saipen_improve_SAIPEN.md reproduced=n",
+    "validator_rule": "tools/validate.py:4281-4286 -- every CONFIRMED line must carry reproduced=y",
+    "message": "an unverified finding cannot authorize a ticket"
+  },
+  "the_new_fact": {
+    "claim_in_the_report": "IMP-002: 81 of 106 allowlist keys are excused in a minority of locales while the majority translate them, and no instrument ever re-reads them",
+    "measured_on_the_current_tree": {
+      "locales": 32,
+      "keys_with_at_least_one_verdict": 106,
+      "minority_side_keys": 81,
+      "excused_count_range": [1, 12],
+      "translated_count_range": [20, 31],
+      "total_verdicts_in_allowlist": 999
+    },
+    "verdict": "the finding reproduces EXACTLY, on every number it states",
+    "consequence": "reproduced=n on line 4 is not a judgement the sweep made and still stands -- it is a stale factual record. Today's measurement contradicts it. The ticket it authorizes, T-1392, exists and is implemented.",
+    "measurement_recipe": "for each locale in .saipen/saitranslate/locales/*.json except en: a key in tools/i18n_verified_identical.json[lang] is 'excused', a key whose pack value differs from en.json is 'translated'; a key is minority-side when 1 <= excused_count < translated_count"
+  },
+  "three_measured_refusals": [
+    {
+      "attempt": "saipen improve sweep imp-vacterro-fastprompter-20261002-2 RUN-1/IMP-002 CONFIRMED --reproduced y --ticket T-1392",
+      "code": "VALIDATION_FAILED",
+      "detail": "write_sweep_entry refuses: report identity is required -- a sweep disposition must name its exact report"
+    },
+    {
+      "attempt": "the same with --report buffy-02/saipen_improve_SAIPEN.md",
+      "code": "VALIDATION_FAILED",
+      "detail": "write_sweep_entry refuses CONFIRMED on stale evidence: source_head b2fb798e6659... != current HEAD 6d9f2c2f4299...; stale CONFIRMED stays forbidden (T-619)"
+    },
+    {
+      "attempt": "the same from a report fresh at the current HEAD",
+      "code": "unreachable",
+      "detail": "improve.py:1004-1010 refuses any finding_ref already present for an equivalent report key: 'write_sweep_entry refuses: a disposition for RUN-1/IMP-002 in buffy-02/saipen_improve_SAIPEN.md already exists in the ledger'"
+    }
+  ],
+  "why_the_third_refusal_is_a_design_not_a_bug": "improve.py:2829 states the intent in words: 'Existing sweep entries and report bytes are immutable; never re-sweep an already disposed finding.' The append-only design is deliberate, and appending a corrected duplicate does not help: validate.py:4265 iterates EVERY line, so the stale line keeps failing no matter what is appended after it.",
+  "what_is_actually_missing": "there is no way to correct a sweep field whose truth has changed. reproduced is a MEASUREMENT recorded once, but it is validated per line forever, against a value no party is allowed to revise. A finding that did not reproduce when the sweep ran, and does reproduce now, has no exit.",
+  "the_minimum_engine_change": "an amend verb on write_sweep_entry -- same journaled write, same base_hash conflict detection, same validate_sweep over the PROPOSED text, but keyed on the finding_ref instead of refusing it, and permitted only to change reproduced/ticket/disposition on a line that names a finding the amender re-measured, with the amender's measurement recorded in the entry",
+  "why_not_hand_edited": "SWEEP.md is a project file, so a direct edit would silence the FAIL immediately. It would also overwrite a historical record with a value the sweeper never decided, which is the exact forgery the validator rule exists to prevent. The rule is right; the repair surface is missing.",
+  "operator_decision": "either authorise the engine amend verb, or accept a permanent CURRENT_FAIL on the conformance gate, or authorise a one-time documented ledger correction with the measurement attached"
+}
