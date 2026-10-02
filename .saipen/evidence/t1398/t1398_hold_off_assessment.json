@@ -1,0 +1,42 @@
+{
+  "ticket": "T-1398",
+  "question": "the blocker says ENGINE-SIDE, HELD OFF because the SAIPEN repo carries a large dirty tree. That rationale was dissolved for T-1394 by re-measurement. Does it dissolve here too?",
+  "answer": "the DIRTY-TREE rationale dissolves, and the hold-off survives on a different and stronger ground",
+  "the_rationale_is_superseded": {
+    "what_it_said": "the SAIPEN repo has 1750+ dirty tracked files and another live session's uncommitted work; editing it would sweep their work into a commit",
+    "what_re_measurement_shows": "tools/saipen_engine/journal.py -- the only file resolve_conflict lives in -- is CLEAN against HEAD. The dirty set is 1735 .saipen evidence paths plus documentation. A path-limited commit touches only the edited file.",
+    "so": "I am no longer holding off because of the dirty tree. That reason was true of T-1394's first draft and false by the time I acted on it, and the same measurement applies here."
+  },
+  "why_the_hold_off_survives_anyway": {
+    "the_change_is_not_a_routing_label": "T-1394's fix chose which command to NAME. Nothing about the engine's behaviour or safety changed; the refusal, the status and the evidence were identical before and after. T-1398's fix would change WHAT THE ENGINE DOES at the point where it currently refuses, on a path whose whole purpose is to never write without authority.",
+    "the_refusal_is_deliberate_and_load_bearing": "_resolve_conflict_locked runs _run_verifier BEFORE the settlement write, and NEEDS_REPAIR returns before _atomic_json(journal.manifest, ...) and before journal.mark('RESOLVED'). The ordering means a resolve can never mark a journal RESOLVED over a repository the verifier has just called invalid. That is the safety property the whole path exists to provide.",
+    "the_proposed_change_would_weaken_it": "the natural fix -- settle first, verify after -- inverts exactly that guard. A journal would be marked RESOLVED on the strength of a verification that had not yet run and might fail, and the operator would be told the conflict was settled before anyone knows the repository is valid. That is a correctness/safety regression in a shared engine, not a labelling improvement.",
+    "the_alternative_is_a_new_verb": "the receipt's other suggestion -- a third resolution class that reconciles instead of re-verifies -- is new public API surface with new semantics (what does it write, what evidence does it produce, is it reversible, does it bypass the writer lock, does it need its own preflight arm). It needs its own design, its own threat model and its own tests. There is no conventional default to take here.",
+    "and_there_is_a_real_precedent_against": "OPS.md documents recovery as ROLL-FORWARD and CONFLICT-SAFE, with an explicit rule that a semantically invalid recovered state is CONFLICT and never VERIFIED/COMMITTED. A third class that settles an invalid state into RESOLVED would contradict a written contract in the protocol docs, not merely a code comment.",
+    "the_downstream_consumer": "NEEDS_REPAIR is in disposition.py's _RECONCILE_CODES -- the engine treats it as a signal that reconciliation work is outstanding, not as a dead end. A new settlement path has to keep that circuit honest for every consumer of the code, none of which are in this project.",
+    "blast_radius": "this engine is installed and shared, and another session is live in the same repo right now. A semantic change to conflict settlement affects every project on this machine, not just FastPrompter."
+  },
+  "what_the_standing_authority_actually_covers": "the direction to resolve autonomously and take the conventional engineering default was scoped to unblocking T-1394. It is a direction about ordinary engineering judgement: naming the right route, choosing the standard library, matching the codebase idiom. It is not a mandate to redesign a safety contract in a shared engine on the strength of my own reading of it. Choosing between 'weaken the guard', 'add new public API to a safety path', and 'change the code', and picking the third on my own initiative, is a decision with consequences that outlive this session and this project.",
+  "what_i_did_instead": "re-ran the T-1398 intersection harness against the FIXED engine to confirm T-1394's change did not alter this state, then recorded this assessment so the hold-off rests on the real reason rather than on a rationale already shown to be false",
+  "t1398_state_re_measured_after_the_t1394_fix": {
+    "conclusion": "DEADLOCK_NO_ROUTE_SETTLES -- unchanged",
+    "why_it_was_never_in_scope_for_the_t1394_fix": "that conflict is DIVERGENT (LOG.md's live bytes match neither its before nor its after hash), so both before and after the fix it routes to 'saipen recover resolve', never to the bare recover. T-1394's change only widened the route for the clean-partial-apply shape.",
+    "routes": {
+      "bare_recover": "RECOVERY_CONFLICT -- unfinished target .saipen/LOG.md has unexpected bytes; refuse to guess",
+      "accept_live": "NEEDS_REPAIR -- STATE proposed last_event 3 != LOG tail 5",
+      "replan": "NEEDS_REPAIR -- same reason"
+    },
+    "what_a_real_project_does_here": "hand-edit .saipen/STATE.md so last_event matches the LOG tail, or hand-edit the journal. There is no supported command. This is worth knowing before it happens, and it is now recorded with the diagnosis corrected."
+  },
+  "the_diagnosis_is_corrected": {
+    "what_the_earlier_receipt_said": "the shared defect is verifier-before-settle ordering, i.e. 'the repair is gated on the thing it exists to fix'",
+    "what_the_code_actually_shows": "that ordering is deliberate and correct -- it is what prevents marking a journal RESOLVED over a repository just found invalid. The receipt proposed inverting a safety guard on the reading that it was an oversight.",
+    "the_real_gap": "neither accept_live nor replan nor bare recover can express 'complete the unapplied STATE.md target from its staged bytes while preserving the third party's LOG line'. The state needs a verb that reconciles, and no such verb exists. That is a missing capability, not a mis-ordered guard."
+  },
+  "what_a_human_decision_looks_like": [
+    "add a third resolution class (reconcile) -- needs a design: what it writes, what evidence it records, whether it is reversible, how it interacts with the writer lock and preflight, and a threat model for the case where the third party's write is authoritative",
+    "keep the guard and document the manual recovery -- cheapest, leaves the trap in place",
+    "have the verifier distinguish 'invalid because of this conflict' from 'invalid for an unrelated reason' -- narrower than a new verb, but still a semantic change to a shared safety path"
+  ],
+  "recommendation": "if this is to be fixed, it should be an owned change to the SAIPEN protocol with its own ticket in the SAIPEN repo, not a side effect of a FastPrompter finding. The blast radius is every project using this engine."
+}
