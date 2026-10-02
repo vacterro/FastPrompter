@@ -1,0 +1,41 @@
+{
+  "ticket": "T-1401",
+  "subject": "sharper root cause -- the writer's pre-commit gate and the conformance gate disagree about what a legal SWEEP line is, so the protocol manufactures the state it forbids",
+  "why_this_is_sharper_than_the_ticket_as_filed": "the ticket as filed says the value can never be corrected. That is the symptom. The cause is that the correction is forbidden because the line was never illegal to write: write_sweep_entry validated the line before committing and passed it.",
+  "the_two_gates": {
+    "writer_gate": {
+      "function": "improve.validate_sweep",
+      "called_from": "improve.py:1030-1036 -- write_sweep_entry validates its PROPOSED text before _journaled_write, and raises 'refuses its own proposed SWEEP ledger' on any error",
+      "what_it_checks": [
+        "the file opens with '# SWEEP'",
+        "each line matches the ledger grammar (disposition, ticket, report=, reproduced=)",
+        "the disposition is in the closed set",
+        "a report identity is present",
+        "a ticket reference is present",
+        "a reproduced value is present",
+        "finding_ref is well formed",
+        "no duplicate (finding_ref, report) composite identity"
+      ],
+      "what_it_does_not_check": "the CONFIRMED arm of the core rule -- that a CONFIRMED disposition carries reproduced=y. There is no such clause in validate_sweep.",
+      "verdict_on_the_target_line": "ACCEPT, errors = []"
+    },
+    "core_gate": {
+      "function": "the CONFIRMED arm of the core sweep scan in tools/validate.py",
+      "site": "validate.py:4265-4286",
+      "rule": "if disposition == CONFIRMED and reproduced != 'y': FAIL 'an unverified finding cannot authorize a ticket'",
+      "verdict_on_the_target_line": "REJECT"
+    }
+  },
+  "the_measured_disagreement": {
+    "harness": ".saipen/evidence/t1401/t1401_gate_disagreement.py",
+    "receipt": ".saipen/evidence/t1401/t1401_gate_disagreement.json",
+    "input": "the real committed ledger bytes of .saipen/improve/imp-vacterro-fastprompter-20261002-2/SWEEP.md, not a synthetic ledger",
+    "target_line": "- RUN-1/IMP-002 [CONFIRMED] T-1392 report=buffy-02/saipen_improve_SAIPEN.md reproduced=n",
+    "result": "writer_gate ACCEPT (0 errors) / core_gate REJECT -> conclusion DISAGREE",
+    "negative_control": "the same ledger with reproduced=y passes BOTH gates, so the disagreement is a property of the line, not of the harness"
+  },
+  "the_consequence": "`saipen improve sweep <cycle> <RUN-N/IMP-NNN> CONFIRMED --ticket <T> --report <r> --reproduced n` is a legal, unrefused command. It commits. The project then reds its own conformance gate, and the duplicate guard (improve.py:1004-1010) makes the line permanent. The state is reachable and inescapable, which is the definition of a trap rather than of a guardrail.",
+  "the_minimum_fix": "one clause in validate_sweep, mirroring the core gate: a line whose disposition is CONFIRMED must carry reproduced=y, else error. That makes the writer refuse the trap before it is set, and every existing ledger line becomes either already-legal or a genuine corruption to be reported by validate rather than by an agent's guess.",
+  "the_second_half_of_the_fix": "even with the clause, a ledger written by an OLDER writer can still hold the state. The amend verb the ticket proposes remains the only exit for those, and the migration should refuse silently rather than auto-correct -- a value that changed must say who measured it.",
+  "what_this_does_not_change": "T-1394, T-1398 and T-1400 are independent engine findings and remain exactly as filed."
+}

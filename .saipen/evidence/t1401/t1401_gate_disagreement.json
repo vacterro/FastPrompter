@@ -1,0 +1,31 @@
+{
+  "harness": "t1401_gate_disagreement.py",
+  "ticket": "T-1401",
+  "question": "can write_sweep_entry commit a ledger line that validate.py reds?",
+  "ledger_under_test": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\improve\\imp-vacterro-fastprompter-20261002-2\\SWEEP.md",
+  "target_line": "- RUN-1/IMP-002 [CONFIRMED] T-1392 report=buffy-02/saipen_improve_SAIPEN.md reproduced=n",
+  "control_line": "- RUN-1/IMP-002 [CONFIRMED] T-1392 report=buffy-02/saipen_improve_SAIPEN.md reproduced=y",
+  "cases": [
+    {
+      "case": "real-ledger (reproduced=n)",
+      "writer_gate_validate_sweep_errors": [],
+      "writer_gate_verdict": "ACCEPT",
+      "core_gate_verdicts": [
+        "line 4: RUN-1/IMP-002 CONFIRMED with reproduced=n"
+      ],
+      "core_gate_verdict": "REJECT",
+      "the_gates_agree": false
+    },
+    {
+      "case": "negative-control (reproduced=y)",
+      "writer_gate_validate_sweep_errors": [],
+      "writer_gate_verdict": "ACCEPT",
+      "core_gate_verdicts": [],
+      "core_gate_verdict": "ACCEPT",
+      "the_gates_agree": true
+    }
+  ],
+  "method": "both gates run on the real committed bytes; the writer gate is improve.validate_sweep as imported from the install, the core gate is the CONFIRMED arm of validate.py transcribed verbatim",
+  "negative_control": "the reproduced=y control must pass both gates; if it did not, the harness would be reporting a disagreement that is really its own bug",
+  "conclusion": "DISAGREE"
+}
