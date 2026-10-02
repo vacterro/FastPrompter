@@ -1858,7 +1858,18 @@
     "window": "okno",
     "cache present": "pamięć podręczna jest obecna",
     "live": "na żywo",
-    "{name} until {when}": "{name} do {when}"
+    "{name} until {when}": "{name} do {when}",
+    "default home": "domyślny katalog domowy",
+    "signed in": "zalogowany",
+    "yes": "tak",
+    "no": "nie",
+    "config folder": "folder konfiguracji",
+    "config file": "plik konfiguracji",
+    "desktop only": "tylko pulpit",
+    "configured": "skonfigurowany",
+    "auto sibling": "automatyczne rodzeństwo",
+    "home": "katalog domowy",
+    "fresh": "aktualne"
   },
   "missing_keys": 0
 }

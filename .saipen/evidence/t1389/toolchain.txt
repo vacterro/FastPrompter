@@ -1,0 +1,19 @@
+Master keys count from en.json: 1862
+Master superset OK: 1861 shipped keys kept, 1 new key(s) added.
+Updated en.py
+Generated 32 language .py modules in i18n package.
+Updated _container.py with all builtin language codes.
+Updated __init__.py with NATIVE_NAMES.
+
+=== INJECTION PREPARATION COMPLETE ===
+inject RC=0
+wrote 32865 words -> src\fastprompter\core\typecheck_ui_vocab.py
+vocab RC=0
+  🇻🇳 VI  : 1862 keys | 100.0% coverage
+  🇨🇳 ZH  : 1862 keys | 100.0% coverage
+\n--- Translated Docs Summary ---
+  DOCS DE: 16 markdown docs translated
+  DOCS EST: 16 markdown docs translated
+  DOCS JA: 16 markdown docs translated
+  DOCS RU: 16 markdown docs translated
+\nSTATUS: VALIDATION PASSED with 1 warning(s) - no structural errors

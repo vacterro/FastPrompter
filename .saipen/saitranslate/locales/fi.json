@@ -1858,7 +1858,18 @@
     "window": "ikkuna",
     "cache present": "välimuisti käytössä",
     "live": "live",
-    "{name} until {when}": "{name} asti {when}"
+    "{name} until {when}": "{name} asti {when}",
+    "default home": "oletuskoti",
+    "signed in": "kirjautunut",
+    "yes": "kyllä",
+    "no": "ei",
+    "config folder": "asetuskansio",
+    "config file": "asetustiedosto",
+    "desktop only": "vain työpöytä",
+    "configured": "määritetty",
+    "auto sibling": "automaattinen sisarkansio",
+    "home": "kotikansio",
+    "fresh": "ajan tasainen"
   },
   "missing_keys": 0
 }

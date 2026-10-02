@@ -1858,7 +1858,18 @@
     "window": "pencere",
     "cache present": "önbellek mevcut",
     "live": "canlı",
-    "{name} until {when}": "{name} {when} tarihine kadar"
+    "{name} until {when}": "{name} {when} tarihine kadar",
+    "default home": "varsayılan ana dizin",
+    "signed in": "oturum açıldı",
+    "yes": "evet",
+    "no": "hayır",
+    "config folder": "yapılandırma klasörü",
+    "config file": "yapılandırma dosyası",
+    "desktop only": "yalnızca masaüstü",
+    "configured": "yapılandırılmış",
+    "auto sibling": "otomatik kardeş",
+    "home": "ana dizin",
+    "fresh": "güncel"
   },
   "missing_keys": 0
 }

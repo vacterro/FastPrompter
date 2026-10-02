@@ -1858,7 +1858,18 @@
     "window": "vindue",
     "cache present": "cache er til stede",
     "live": "live",
-    "{name} until {when}": "{name} til {when}"
+    "{name} until {when}": "{name} til {when}",
+    "default home": "standardhjem",
+    "signed in": "logget ind",
+    "yes": "ja",
+    "no": "nej",
+    "config folder": "konfigurationsmappe",
+    "config file": "konfigurationsfil",
+    "desktop only": "kun skrivebord",
+    "configured": "konfigureret",
+    "auto sibling": "automatisk søskende",
+    "home": "hjem",
+    "fresh": "aktuel"
   },
   "missing_keys": 0
 }

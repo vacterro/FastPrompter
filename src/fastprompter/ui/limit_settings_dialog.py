@@ -127,6 +127,19 @@ def _desktop_window_name(key: str) -> str:
                 base_key(key), tr("window"))
 
 
+def _home_kind_label(kind: str) -> str:
+    """How a Claude home was found, as a word rather than a source_kind.
+
+    `AccountRef.source_kind` is an identifier -- "auto_sibling",
+    "desktop_only". The settings rows painted it straight into the label, so a
+    non-English user read an internal token where a description belonged. Same
+    reasoning as `_win_label`: a kind this table does not know must not leak.
+    """
+    return {"config_dir": tr("config folder"), "config_file": tr("config file"),
+            "desktop_only": tr("desktop only"), "configured": tr("configured"),
+            "auto_sibling": tr("auto sibling")}.get(kind, tr("home"))
+
+
 class LimitSettingsDialog(QDialog):
     def __init__(self, main_win):
         super().__init__(main_win)
@@ -1791,7 +1804,8 @@ class LimitSettingsDialog(QDialog):
             else:
                 btn_quick.hide()
         account = state.get("account") or {}
-        who = account.get("name") or account.get("email") or "signed in"
+        who = (account.get("name") or account.get("email")
+               or tr("signed in"))
         if not state.get("state_found"):
             label.setText(tr("Freebuff: Desktop state not found at {path}").format(
                 path=state.get('state_path') or '?'))
@@ -2159,10 +2173,11 @@ class LimitSettingsDialog(QDialog):
         lines = [detected_summary(len(rows))]
         for row in rows:
             badge = badges.get(row["key"], "")
-            origin = "default home" if row["is_default"] else row["kind"]
-            creds = "yes" if row["has_credentials"] else "no"
+            origin = (tr("default home") if row["is_default"]
+                      else _home_kind_label(row["kind"]))
+            creds = tr("yes") if row["has_credentials"] else tr("no")
             if not row["bridge_connected"]:
-                bridge = "no"
+                bridge = tr("no")
             elif row["bridge_has_cache"]:
                 bridge = tr("yes (cache present)")
             else:
@@ -2170,11 +2185,17 @@ class LimitSettingsDialog(QDialog):
             badge_text = f" [{badge}]" if badge else ""
             name = row["name"]
             path = row["path"]
+            # `quota data:` takes the provider's own "fresh"/"stale"/
+            # "unavailable" token, so it needs the same treatment as the kinds.
+            data = tr(row["data_state"] or "unavailable")
+            # Not a tr() key: this line carries no words, only the three
+            # already-translated values and their separators. A key here
+            # would earn 29 byte-identical allowlist verdicts and translate
+            # nothing.
             lines.append(f"  {name}{badge_text} · {origin} · {path}")
             lines.append(tr("      credentials: {creds} · status line: {bridge}"
                          " · quota data: {state}").format(
-                             creds=creds, bridge=bridge,
-                             state=row['data_state']))
+                             creds=creds, bridge=bridge, state=data))
         return lines
 
     def _refresh_claude_accounts(self):
@@ -2208,7 +2229,8 @@ class LimitSettingsDialog(QDialog):
             # Only worth the two extra lines once a second account exists; on a
             # single-account machine this block stays invisible.
             for home in homes:
-                role = "default" if home["is_default"] else home["kind"]
+                role = (tr("default home") if home["is_default"]
+                        else _home_kind_label(home["kind"]))
                 bridge = (tr("status line connected") if home["bridge_connected"]
                           else tr("status line not connected \u00b7 read via CLI"))
                 lines.append(tr("Home ({role}): {path} \u00b7 {bridge}").format(

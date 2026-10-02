@@ -1858,7 +1858,18 @@
     "window": "okno",
     "cache present": "vyrovnávacia pamäť je k dispozícii",
     "live": "naživo",
-    "{name} until {when}": "{name} do {when}"
+    "{name} until {when}": "{name} do {when}",
+    "default home": "predvolený domov",
+    "signed in": "prihlásený",
+    "yes": "áno",
+    "no": "nie",
+    "config folder": "priečinok konfigurácie",
+    "config file": "súbor konfigurácie",
+    "desktop only": "len pracovná plocha",
+    "configured": "nakonfigurované",
+    "auto sibling": "automatický súrozenec",
+    "home": "domovský priečinok",
+    "fresh": "aktuálne"
   },
   "missing_keys": 0
 }

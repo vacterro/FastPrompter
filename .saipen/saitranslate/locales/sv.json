@@ -1858,7 +1858,18 @@
     "window": "fönster",
     "cache present": "cache finns",
     "live": "live",
-    "{name} until {when}": "{name} till {when}"
+    "{name} until {when}": "{name} till {when}",
+    "default home": "standardhem",
+    "signed in": "inloggad",
+    "yes": "ja",
+    "no": "nej",
+    "config folder": "konfigurationsmapp",
+    "config file": "konfigurationsfil",
+    "desktop only": "endast skrivbord",
+    "configured": "konfigurerad",
+    "auto sibling": "automatiskt syskon",
+    "home": "hem",
+    "fresh": "färsk"
   },
   "missing_keys": 0
 }

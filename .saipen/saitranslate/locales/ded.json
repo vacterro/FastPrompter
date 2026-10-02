@@ -1858,7 +1858,18 @@
     "window": "окно",
     "cache present": "кэш есть",
     "live": "живо",
-    "{name} until {when}": "{name} до {when}"
+    "{name} until {when}": "{name} до {when}",
+    "default home": "главная папка",
+    "signed in": "вход выполнен",
+    "yes": "ага",
+    "no": "не",
+    "config folder": "папка настроек",
+    "config file": "файл настроек",
+    "desktop only": "только настольный",
+    "configured": "настроен",
+    "auto sibling": "авто-ближник",
+    "home": "папка",
+    "fresh": "актуальный"
   },
   "missing_keys": 0
 }

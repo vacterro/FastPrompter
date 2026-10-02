@@ -1858,7 +1858,18 @@
     "window": "prozor",
     "cache present": "predmemorija je prisutna",
     "live": "uživo",
-    "{name} until {when}": "{name} do {when}"
+    "{name} until {when}": "{name} do {when}",
+    "default home": "zadani dom",
+    "signed in": "prijavljen",
+    "yes": "da",
+    "no": "ne",
+    "config folder": "mapa konfiguracije",
+    "config file": "datoteka konfiguracije",
+    "desktop only": "samo radna površina",
+    "configured": "konfigurirano",
+    "auto sibling": "automatski proračun",
+    "home": "dom",
+    "fresh": "svježe"
   },
   "missing_keys": 0
 }

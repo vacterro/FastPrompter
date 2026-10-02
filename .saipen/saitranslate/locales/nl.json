@@ -1858,7 +1858,18 @@
     "window": "venster",
     "cache present": "cache aanwezig",
     "live": "live",
-    "{name} until {when}": "{name} tot {when}"
+    "{name} until {when}": "{name} tot {when}",
+    "default home": "standaard thuismap",
+    "signed in": "aangemeld",
+    "yes": "ja",
+    "no": "nee",
+    "config folder": "configuratiemap",
+    "config file": "configuratiebestand",
+    "desktop only": "alleen bureublad",
+    "configured": "geconfigureerd",
+    "auto sibling": "automatische broer",
+    "home": "thuismap",
+    "fresh": "actueel"
   },
   "missing_keys": 0
 }

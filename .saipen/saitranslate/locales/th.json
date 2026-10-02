@@ -1858,7 +1858,18 @@
     "window": "หน้าต่าง",
     "cache present": "มีแคช",
     "live": "สด",
-    "{name} until {when}": "{name} จนถึง {when}"
+    "{name} until {when}": "{name} จนถึง {when}",
+    "default home": "โฮมเริ่มต้น",
+    "signed in": "เข้าสู่ระบบแล้ว",
+    "yes": "ใช่",
+    "no": "ไม่",
+    "config folder": "โฟลเดอร์การตั้งค่า",
+    "config file": "ไฟล์การตั้งค่า",
+    "desktop only": "เฉพาะเดสก์ท็อป",
+    "configured": "กำหนดค่าแล้ว",
+    "auto sibling": "พี่น้องอัตโนมัติ",
+    "home": "โฮม",
+    "fresh": "ล่าสุด"
   },
   "missing_keys": 0
 }

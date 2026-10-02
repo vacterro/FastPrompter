@@ -1858,7 +1858,18 @@
     "window": "fereastră",
     "cache present": "cache prezent",
     "live": "live",
-    "{name} until {when}": "{name} până la {when}"
+    "{name} until {when}": "{name} până la {when}",
+    "default home": "folder implicit",
+    "signed in": "autentificat",
+    "yes": "da",
+    "no": "nu",
+    "config folder": "folder de configurare",
+    "config file": "fișier de configurare",
+    "desktop only": "doar desktop",
+    "configured": "configurat",
+    "auto sibling": "frate automat",
+    "home": "folder",
+    "fresh": "actual"
   },
   "missing_keys": 0
 }

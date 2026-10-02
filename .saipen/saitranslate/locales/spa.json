@@ -1858,7 +1858,18 @@
     "window": "ventana",
     "cache present": "caché presente",
     "live": "en vivo",
-    "{name} until {when}": "{name} hasta {when}"
+    "{name} until {when}": "{name} hasta {when}",
+    "default home": "inicio predeterminado",
+    "signed in": "con sesión iniciada",
+    "yes": "sí",
+    "no": "no",
+    "config folder": "carpeta de configuración",
+    "config file": "archivo de configuración",
+    "desktop only": "solo escritorio",
+    "configured": "configurado",
+    "auto sibling": "hermano automático",
+    "home": "carpeta",
+    "fresh": "actualizado"
   },
   "missing_keys": 0
 }

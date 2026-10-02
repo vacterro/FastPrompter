@@ -1858,7 +1858,18 @@
     "window": "cửa sổ",
     "cache present": "đã có bộ nhớ đệm",
     "live": "trực tiếp",
-    "{name} until {when}": "{name} đến {when}"
+    "{name} until {when}": "{name} đến {when}",
+    "default home": "thư mục mặc định",
+    "signed in": "đã đăng nhập",
+    "yes": "có",
+    "no": "không",
+    "config folder": "thư mục cấu hình",
+    "config file": "tệp cấu hình",
+    "desktop only": "chỉ trên máy tính",
+    "configured": "đã cấu hình",
+    "auto sibling": "anh em tự động",
+    "home": "thư mục",
+    "fresh": "mới nhất"
   },
   "missing_keys": 0
 }

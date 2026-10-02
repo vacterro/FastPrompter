@@ -1858,7 +1858,18 @@
     "window": "窗口",
     "cache present": "缓存已存在",
     "live": "实时",
-    "{name} until {when}": "{name} 至 {when}"
+    "{name} until {when}": "{name} 至 {when}",
+    "default home": "默认主目录",
+    "signed in": "已登录",
+    "yes": "是",
+    "no": "否",
+    "config folder": "配置文件夹",
+    "config file": "配置文件",
+    "desktop only": "仅桌面端",
+    "configured": "已配置",
+    "auto sibling": "自动同级目录",
+    "home": "主目录",
+    "fresh": "最新"
   },
   "missing_keys": 0
 }

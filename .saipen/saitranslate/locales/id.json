@@ -1858,7 +1858,18 @@
     "window": "jendela",
     "cache present": "cache tersedia",
     "live": "langsung",
-    "{name} until {when}": "{name} sampai {when}"
+    "{name} until {when}": "{name} sampai {when}",
+    "default home": "beranda utama",
+    "signed in": "masuk",
+    "yes": "ya",
+    "no": "tidak",
+    "config folder": "folder konfigurasi",
+    "config file": "berkas konfigurasi",
+    "desktop only": "khusus desktop",
+    "configured": "dikonfigurasi",
+    "auto sibling": "saudara otomatis",
+    "home": "beranda",
+    "fresh": "segar"
   },
   "missing_keys": 0
 }

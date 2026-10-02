@@ -1858,7 +1858,18 @@
     "window": "Fenster",
     "cache present": "Cache vorhanden",
     "live": "live",
-    "{name} until {when}": "{name} bis {when}"
+    "{name} until {when}": "{name} bis {when}",
+    "default home": "Standard-Heimat",
+    "signed in": "angemeldet",
+    "yes": "ja",
+    "no": "nein",
+    "config folder": "Konfigurationsordner",
+    "config file": "Konfigurationsdatei",
+    "desktop only": "nur Desktop",
+    "configured": "konfiguriert",
+    "auto sibling": "automatischer Geschwisterpfad",
+    "home": "Heimat",
+    "fresh": "aktuell"
   },
   "missing_keys": 0
 }

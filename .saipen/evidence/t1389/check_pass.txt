@@ -1,0 +1,8 @@
+labels: [('config_dir', 'config folder'), ('config_file', 'config file'), ('desktop_only', 'desktop only'), ('configured', 'configured'), ('auto_sibling', 'auto sibling'), ('some_future_kind', 'home')]
+sv: default home='standardhem' configured='konfigurerad' signed in='inloggad' home='hem'
+de: config folder='Konfigurationsordner' auto sibling='automatischer Geschwisterpfad'
+data_state sv: fresh='färsk' stale='inaktuell' unavailable='otillgänglig'
+packs checked: 32   keys checked: 11
+BINDING (T-1390, active language SV): translations.tr('home') -> 'home', translations.tr('home','SV') -> 'hem'
+
+PASS: no source_kind or data_state token reaches a label as an identifier, all 11 new keys resolve in all 32 packs, and an unknown kind falls back to a translatable word.

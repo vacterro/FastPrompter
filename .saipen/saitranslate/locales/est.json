@@ -1858,7 +1858,18 @@
     "window": "aken",
     "cache present": "vahemälu olemas",
     "live": "otse",
-    "{name} until {when}": "{name} kuni {when}"
+    "{name} until {when}": "{name} kuni {when}",
+    "default home": "vaikeim kaust",
+    "signed in": "sisse logitud",
+    "yes": "jah",
+    "no": "ei",
+    "config folder": "konfiguratsioonikaust",
+    "config file": "konfiguratsioonifail",
+    "desktop only": "ainult töölaud",
+    "configured": "seadistatud",
+    "auto sibling": "automaatiline õde",
+    "home": "kaust",
+    "fresh": "värske"
   },
   "missing_keys": 0
 }

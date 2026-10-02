@@ -1858,7 +1858,18 @@
     "window": "חלון",
     "cache present": "מטמון קיים",
     "live": "חי",
-    "{name} until {when}": "{name} עד {when}"
+    "{name} until {when}": "{name} עד {when}",
+    "default home": "תיקיית בית ברירת מחדל",
+    "signed in": "מחובר",
+    "yes": "כן",
+    "no": "לא",
+    "config folder": "תיקיית תצורה",
+    "config file": "קובץ תצורה",
+    "desktop only": "שולחן עבודה בלבד",
+    "configured": "מוגדר",
+    "auto sibling": "אח אוטומטי",
+    "home": "תיקייה",
+    "fresh": "עדכני"
   },
   "missing_keys": 0
 }

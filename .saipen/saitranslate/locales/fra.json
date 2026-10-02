@@ -1858,7 +1858,18 @@
     "window": "fenêtre",
     "cache present": "cache présent",
     "live": "en direct",
-    "{name} until {when}": "{name} jusqu'à {when}"
+    "{name} until {when}": "{name} jusqu'à {when}",
+    "default home": "dossier par défaut",
+    "signed in": "connecté",
+    "yes": "oui",
+    "no": "non",
+    "config folder": "dossier de configuration",
+    "config file": "fichier de configuration",
+    "desktop only": "bureau uniquement",
+    "configured": "configuré",
+    "auto sibling": "frère automatique",
+    "home": "dossier",
+    "fresh": "à jour"
   },
   "missing_keys": 0
 }

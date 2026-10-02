@@ -1858,7 +1858,18 @@
     "window": "finestra",
     "cache present": "cache presente",
     "live": "live",
-    "{name} until {when}": "{name} fino a {when}"
+    "{name} until {when}": "{name} fino a {when}",
+    "default home": "cartella predefinita",
+    "signed in": "connesso",
+    "yes": "sì",
+    "no": "no",
+    "config folder": "cartella di configurazione",
+    "config file": "file di configurazione",
+    "desktop only": "solo desktop",
+    "configured": "configurato",
+    "auto sibling": "gemello automatico",
+    "home": "cartella",
+    "fresh": "aggiornato"
   },
   "missing_keys": 0
 }

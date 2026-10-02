@@ -1858,7 +1858,18 @@
     "window": "вікно",
     "cache present": "кеш є",
     "live": "наживо",
-    "{name} until {when}": "{name} до {when}"
+    "{name} until {when}": "{name} до {when}",
+    "default home": "домашня тека за замовчуванням",
+    "signed in": "виконано вхід",
+    "yes": "так",
+    "no": "ні",
+    "config folder": "тека конфігурації",
+    "config file": "файл конфігурації",
+    "desktop only": "лише застосунок",
+    "configured": "налаштований",
+    "auto sibling": "автоматичний близнець",
+    "home": "домашня тека",
+    "fresh": "актуальні"
   },
   "missing_keys": 0
 }

@@ -1858,7 +1858,18 @@
     "window": "창",
     "cache present": "캐시 있음",
     "live": "실시간",
-    "{name} until {when}": "{name} ~ {when}"
+    "{name} until {when}": "{name} ~ {when}",
+    "default home": "기본 홈",
+    "signed in": "로그인됨",
+    "yes": "예",
+    "no": "아니요",
+    "config folder": "설정 폴더",
+    "config file": "설정 파일",
+    "desktop only": "데스크톱 전용",
+    "configured": "설정됨",
+    "auto sibling": "자동 형제",
+    "home": "홈",
+    "fresh": "최신"
   },
   "missing_keys": 0
 }

@@ -1,0 +1,16 @@
+base: HEAD
+  who= fallback        PRESENT (defect)
+  origin default       PRESENT (defect)
+  creds yes/no         PRESENT (defect)
+  bridge no            PRESENT (defect)
+  role default         PRESENT (defect)
+  data_state token     PRESENT (defect)
+
+NEGATIVE CONTROL OK: the pre-fix tree at HEAD trips 6 raw-site checks, 1 helper check and 6 missing-key checks.
+  - pre-fix module has no _home_kind_label at all
+  - raw/untranslated site survives at HEAD: who= fallback
+  - raw/untranslated site survives at HEAD: origin default
+  - raw/untranslated site survives at HEAD: creds yes/no
+  - raw/untranslated site survives at HEAD: bridge no
+  - raw/untranslated site survives at HEAD: role default
+  - raw/untranslated site survives at HEAD: data_state token

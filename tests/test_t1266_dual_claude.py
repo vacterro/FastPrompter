@@ -617,7 +617,11 @@ class TestDetectionSummary:
         first, second = _two_accounts(fake_home)
         body = "\n".join(_lines([first, second], {}))
         assert "default home" in body
-        assert "auto_sibling" in body
+        # The row must name the kind as a word a user can read. It used to
+        # assert "auto_sibling" in body, which required the internal
+        # AccountRef.source_kind token to leak into the label -- T-1389.
+        assert "auto sibling" in body
+        assert "auto_sibling" not in body
 
     def test_credentials_are_reported_present_or_absent_never_read(
             self, fake_home):

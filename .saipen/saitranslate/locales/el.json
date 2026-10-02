@@ -1858,7 +1858,18 @@
     "window": "παράθυρο",
     "cache present": "η προσωρινή μνήμη υπάρχει",
     "live": "ζωντανά",
-    "{name} until {when}": "{name} έως {when}"
+    "{name} until {when}": "{name} έως {when}",
+    "default home": "προεπιλεγμένος κατάλογος",
+    "signed in": "συνδεδεμένος",
+    "yes": "ναι",
+    "no": "όχι",
+    "config folder": "φάκελος διαμόρφωσης",
+    "config file": "αρχείο διαμόρφωσης",
+    "desktop only": "μόνο επιφάνεια εργασίας",
+    "configured": "διαμορφωμένο",
+    "auto sibling": "αυτόματος αδελφός",
+    "home": "κατάλογος",
+    "fresh": "ενημέρα"
   },
   "missing_keys": 0
 }

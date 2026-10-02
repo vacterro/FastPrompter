@@ -1858,7 +1858,18 @@
     "window": "ablak",
     "cache present": "gyorsítótár elérhető",
     "live": "élő",
-    "{name} until {when}": "{name} {when}-ig"
+    "{name} until {when}": "{name} {when}-ig",
+    "default home": "alapértelmezett kezdőmappa",
+    "signed in": "bejelentkezve",
+    "yes": "igen",
+    "no": "nem",
+    "config folder": "konfigurációs mappa",
+    "config file": "konfigurációs fájl",
+    "desktop only": "csak asztal",
+    "configured": "beállítva",
+    "auto sibling": "automatikus testvér",
+    "home": "mappa",
+    "fresh": "friss"
   },
   "missing_keys": 0
 }

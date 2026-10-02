@@ -1858,7 +1858,18 @@
     "window": "okno",
     "cache present": "mezipaměť je přítomna",
     "live": "živě",
-    "{name} until {when}": "{name} do {when}"
+    "{name} until {when}": "{name} do {when}",
+    "default home": "výchozí domovská složka",
+    "signed in": "přihlášeno",
+    "yes": "ano",
+    "no": "ne",
+    "config folder": "složka konfigurace",
+    "config file": "soubor konfigurace",
+    "desktop only": "pouze plocha",
+    "configured": "nastaveno",
+    "auto sibling": "automatický sourozenec",
+    "home": "domovská složка",
+    "fresh": "aktuální"
   },
   "missing_keys": 0
 }

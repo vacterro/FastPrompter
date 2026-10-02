@@ -1858,7 +1858,18 @@
     "window": "прозорец",
     "cache present": "кешът е наличен",
     "live": "на живо",
-    "{name} until {when}": "{name} до {when}"
+    "{name} until {when}": "{name} до {when}",
+    "default home": "началната папка по подразбиране",
+    "signed in": "вход",
+    "yes": "да",
+    "no": "не",
+    "config folder": "папка с настройки",
+    "config file": "файл с настройки",
+    "desktop only": "само настолен",
+    "configured": "конфигуриран",
+    "auto sibling": "автоматичен ближник",
+    "home": "домашна папка",
+    "fresh": "актуални"
   },
   "missing_keys": 0
 }

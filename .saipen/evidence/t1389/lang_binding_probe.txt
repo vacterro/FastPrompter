@@ -1,0 +1,6 @@
+translations.current_lang = SV
+engine.get_language()    = SV
+translations.tr("spend")          -> spend
+i18n.tr("spend")                  -> utgifter
+i18n.tr("spend", "SV")            -> utgifter
+translations.tr("spend", "SV")    -> utgifter

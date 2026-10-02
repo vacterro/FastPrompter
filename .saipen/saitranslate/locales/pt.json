@@ -1858,7 +1858,18 @@
     "window": "janela",
     "cache present": "cache presente",
     "live": "ao vivo",
-    "{name} until {when}": "{name} até {when}"
+    "{name} until {when}": "{name} até {when}",
+    "default home": "pasta predefinida",
+    "signed in": "com sessão iniciada",
+    "yes": "sim",
+    "no": "não",
+    "config folder": "pasta de configuração",
+    "config file": "ficheiro de configuração",
+    "desktop only": "apenas ambiente de trabalho",
+    "configured": "configurado",
+    "auto sibling": "irmão automático",
+    "home": "pasta",
+    "fresh": "atualizado"
   },
   "missing_keys": 0
 }

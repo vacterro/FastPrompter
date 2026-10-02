@@ -1858,7 +1858,18 @@
     "window": "window",
     "cache present": "cache present",
     "live": "live",
-    "{name} until {when}": "{name} until {when}"
+    "{name} until {when}": "{name} until {when}",
+    "default home": "default home",
+    "signed in": "signed in",
+    "yes": "yes",
+    "no": "no",
+    "config folder": "config folder",
+    "config file": "config file",
+    "desktop only": "desktop only",
+    "configured": "configured",
+    "auto sibling": "auto sibling",
+    "home": "home",
+    "fresh": "fresh"
   },
   "missing_keys": 0
 }

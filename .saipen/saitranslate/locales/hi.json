@@ -1858,7 +1858,18 @@
     "window": "विंडो",
     "cache present": "कैश मौजूद है",
     "live": "लाइव",
-    "{name} until {when}": "{name} {when} तक"
+    "{name} until {when}": "{name} {when} तक",
+    "default home": "डिफ़ॉल्ट होम",
+    "signed in": "साइन इन किया गया",
+    "yes": "हाँ",
+    "no": "नहीं",
+    "config folder": "कॉन्फ़िग फ़ोल्डर",
+    "config file": "कॉन्फ़िग फ़ाइल",
+    "desktop only": "केवल डेस्कटॉप",
+    "configured": "कॉन्फ़िग किया गया",
+    "auto sibling": "स्वतः सह-निवास",
+    "home": "होम",
+    "fresh": "ताज़ा"
   },
   "missing_keys": 0
 }

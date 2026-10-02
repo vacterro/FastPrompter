@@ -1858,7 +1858,18 @@
     "window": "نافذة",
     "cache present": "ذاكرة التخزين المؤقت موجودة",
     "live": "مباشر",
-    "{name} until {when}": "{name} حتى {when}"
+    "{name} until {when}": "{name} حتى {when}",
+    "default home": "المجلد الرئيسي الافتراضي",
+    "signed in": "تم تسجيل الدخول",
+    "yes": "نعم",
+    "no": "لا",
+    "config folder": "مجلد الإعدادات",
+    "config file": "ملف الإعدادات",
+    "desktop only": "سطح المكتب فقط",
+    "configured": "مُعدّ",
+    "auto sibling": "شقيق تلقائي",
+    "home": "مجلد",
+    "fresh": "حديث"
   },
   "missing_keys": 0
 }
