@@ -1,8 +1,8 @@
 ---
 phase: DONE
 task: none
-next_action: "PHASE SCOUT T-1386"
-blocker: none
+next_action: "WAIT: destructive-op -- run 'saipen rebind-home V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN' to make the V: install canonical, or update C:\\Users\\vac34\\.agents\\skills\\saipen from git until it carries the install-identity gate, because STATE currently names that older tree and three installs all stamp VERSION 8.0.1"
+blocker: "T-1386 is the only open ticket and no agent-safe action remains: it rewrites the protocol's identity record on a host running other sessions, and the engine's first offered remedy is unavailable because the STATE-named install predates the gate. Not pushed -- no push authorization was given."
 agent: buffy
 saipen_version: 7
 saipen_home: "C:/Users/vac34/.agents/skills/saipen"
