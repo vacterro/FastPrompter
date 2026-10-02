@@ -46,6 +46,13 @@ MD_LINK_RE = re.compile(r'(?<!!)\[([^\]]+)\]\(([^)]+)\)')
 # a control hanging.
 INLINE_HOVER_GRACE_MS = 200
 
+# T-1403: an image pill OWNS its Copy control. The lane is a fixed square
+# inside the pill's right edge, reserved in the pill's text geometry at ALL
+# times so the filename cannot shift when hover starts. Ordinary links keep
+# the external occupancy search (``_inline_copy_rect``) untouched.
+IMAGE_COPY_INSET = 3   # px between the Copy square and the pill's right edge
+IMAGE_COPY_GAP = 2     # px of clear space between the filename and the lane
+
 
 def _mid_top(rect, size):
     """Top edge that vertically centres a ``size`` box inside ``rect``."""
@@ -1775,7 +1782,11 @@ class VaultTextEdit(QTextEdit):
 
     def _inline_copy_rect(self, block, target_rect):
         """T-1339: THE one occupancy-aware placement authority for the hover
-        Copy control, shared by links and images.
+        Copy control of an ordinary LINK.
+
+        T-1403: links only. An image's Copy is a fixed lane inside its own
+        pill (``_image_copy_lane_rect``) and must never come through here --
+        this search is what made the image icon wander.
 
         A slot is acceptable only when it does not intersect visible text and
         lies fully inside the viewport on BOTH axes (T-1349). Priority:
@@ -1989,11 +2000,58 @@ class VaultTextEdit(QTextEdit):
         top = r_start.top() + (r_start.height() - height) // 2
         return QRect(r_start.left(), top, max(40, width), height)
 
+    def _image_copy_lane_rect(self, pill):
+        """T-1403: THE image Copy geometry authority -- a fixed square INSIDE
+        the pill, pinned to its right edge and centred on its row.
+
+        This is deliberately NOT ``_inline_copy_rect``. That helper is
+        occupancy-adaptive: right, left, the free tail of a nearest visual row,
+        a vertical slot, then the viewport edge -- so an image Copy's position
+        was a function of the prose around it, the wrapping and the viewport
+        width. The operator saw it as a detached icon on the left of the pill,
+        "randomly" placed (screenshot shape measured at a 210 px left and
+        35 px below displacement). An image Copy is part of the pill, so its
+        position must be part of the pill too.
+
+        Depends ONLY on the pill rect and the row height, never on surrounding
+        text, other rows or free viewport space. Paint, hover, press, release
+        and hit test all read this one function, so they cannot disagree --
+        the class of bug this ticket exists to close.
+
+        ponytail: the square is ``pill.height() - 2`` tall, which is centred
+        exactly by the integer division below. If a future row height ever
+        exceeds what a pill can usefully carry, revisit the sizing here rather
+        than letting the lane grow.
+        """
+        size = max(8, pill.height() - 2)
+        left = pill.right() - IMAGE_COPY_INSET - size + 1
+        top = pill.top() + (pill.height() - size) // 2
+        return QRect(left, top, size, size)
+
     def _image_copy_rect(self, block, pill):
-        """Rect of the Copy control for an image pill. T-1338: delegates to the
-        one shared visual-line-aware placement authority, so image and link
-        Copy geometry (and the viewport clamp) can never diverge again."""
-        return self._inline_copy_rect(block, pill)
+        """Rect of the Copy control for an image pill.
+
+        T-1403: the pill owns its Copy, so this is the fixed internal lane.
+        ``block`` is kept in the signature because the placement search it used
+        to delegate to needed it -- nothing else does.
+        """
+        return self._image_copy_lane_rect(pill)
+
+    def _image_pill_text_rect(self, pill):
+        """T-1403: the area the pill's filename is drawn and elided in.
+
+        The Copy lane is reserved here ALWAYS, not only while the icon is
+        shown, so revealing Copy cannot reflow the label. The pill is never
+        widened to make room: a narrow pill elides the filename harder, which
+        is the right trade because stable interaction geometry is primary and
+        the filename is secondary.
+        """
+        lane = self._image_copy_lane_rect(pill)
+        reserve = 4 + lane.width() + IMAGE_COPY_GAP
+        # A very short pill cannot give the lane half its own width; clamp so
+        # the text rect never goes negative and the filename just disappears.
+        reserve = min(reserve, max(0, pill.width() // 2 - 4))
+        return pill.adjusted(4, 0, -reserve, 0)
 
     def _image_copy_at(self, pos):
         """(path, rect) for the VISIBLE image Copy control under ``pos``, else
@@ -2390,6 +2448,10 @@ class VaultTextEdit(QTextEdit):
              to its token, so without time the crossing is impossible;
           4. on grace expiry, clear.
 
+        T-1403 splits step 3/4 by kind: an image Copy is a fixed lane INSIDE
+        its own pill, so leaving the pill clears at once and never arms the
+        grace timer. Links keep steps 3-4 unchanged.
+
         Links resolve in every view (copyable wherever they render); image
         pills only where they are painted (``_image_pills_enabled``).
         """
@@ -2397,6 +2459,13 @@ class VaultTextEdit(QTextEdit):
         if token is not None:
             self._stop_inline_hover_grace()
             self._set_inline_hover(*token)
+            return
+        # T-1403: an image's Copy lane sits INSIDE its pill, so the pointer
+        # never has to cross a dead gap to reach it and the temporal grace
+        # buys nothing here: leaving the pill hides the control at once. Links
+        # still need it -- their Copy really is placed elsewhere.
+        if self._hover_inline_kind == "image":
+            self._clear_inline_hover()
             return
         if self._inline_hover_zone_contains(pos):
             self._stop_inline_hover_grace()
@@ -2424,7 +2493,7 @@ class VaultTextEdit(QTextEdit):
                         path = os.path.realpath(os.path.abspath(
                             url.toLocalFile()))
                         return ("image", block, path, pill,
-                                self._inline_copy_rect(block, pill))
+                                self._image_copy_lane_rect(pill))
         for m in MD_LINK_RE.finditer(text):
             for frag in self._link_glyph_rects(block, m):
                 if frag.contains(pos):
@@ -5917,16 +5986,20 @@ class VaultTextEdit(QTextEdit):
                                 # stayed narrow -- pointer and pixels disagreed
                                 # about where the button was. Asking the hit
                                 # test for its own rect is the whole fix.
-                                btn_rect = QRectF(self._image_pill_rect(block, m_img))
+                                pill = self._image_pill_rect(block, m_img)
+                                btn_rect = QRectF(pill)
 
                                 painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
                                 painter.setBrush(QColor("#1e1e1e"))
                                 painter.setPen(QColor("#5a4a2a"))
                                 painter.drawRoundedRect(btn_rect, 4, 4)
 
-                                # Draw icon and text
+                                # Draw icon and text. T-1403: the filename area
+                                # reserves the Copy lane permanently, so the
+                                # label is already elided before the lane and
+                                # cannot jump when hover reveals the icon.
                                 painter.setPen(QColor("#D9B340"))
-                                btn_text_rect = btn_rect.adjusted(4, 0, -4, 0)
+                                btn_text_rect = QRectF(self._image_pill_text_rect(pill))
                                 painter.setFont(self.font())
 
                                 # Get the basename or fallback

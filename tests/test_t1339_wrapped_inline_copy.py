@@ -289,8 +289,15 @@ def test_wrapped_image_stays_single_row_pill(tmp_path):
         copy = ed._hover_inline_copy_rect
         assert copy is not None
         _assert_in_viewport(ed, copy)
-        # trailing prose stays free
-        trailing = _prose_rect(ed, block, "trailing prose")
-        assert not copy.intersects(trailing)
+        # T-1403: Copy is a lane INSIDE the pill, so it can no longer dodge the
+        # row below. What must hold instead is that Copy never EXTENDS the
+        # pill: the pill geometry is identical whether or not the hover is
+        # armed, and the lane is pinned inside it. (This pill's own 150 px
+        # wrapped fallback already overhangs the next visual row -- measured
+        # at 71x2 px independently of Copy -- so that overhang is pill
+        # geometry, not Copy placement.)
+        assert ed._image_pill_rect(block, m) == pill
+        assert pill.contains(copy)
+        assert copy.right() <= pill.right()
     finally:
         ed.close()

@@ -5,12 +5,13 @@ from pathlib import Path
 import pytest
 from PyQt6.QtCore import QRect, QUrl
 from PyQt6.QtGui import QFont, QTextCursor, QTextLayout
-from test_t1339_wrapped_inline_copy import (
+from test_t1339_wrapped_inline_copy import (  # noqa: E402
     MD_IMAGE_RE,
     _editor_live,
     _flush,
-    _prose_rects,
 )
+
+from fastprompter.ui.editor import IMAGE_COPY_INSET  # noqa: E402
 
 
 @pytest.mark.parametrize("points", [8, 9, 14])
@@ -31,9 +32,18 @@ def test_image_copy_clears_all_wrapped_prose(tmp_path, points, target_length, wi
         copy = ed._hover_inline_copy_rect
         assert copy is not None
         assert ed.viewport().rect().contains(copy)
-        assert not copy.intersects(pill)
-        for prose in _prose_rects(ed, block, "trailing prose"):
-            assert not copy.intersects(prose), f"Copy {copy} covers prose {prose}"
+        # T-1403: an IMAGE copy is a fixed lane inside its pill, not a slot
+        # searched for free space, so it is not asserted clear OF the pill any
+        # more. What the matrix still has to prove is that the surrounding
+        # prose -- length, wrapping, viewport width, font size -- cannot move
+        # it: same fixed inset from the pill's right edge, same row, every
+        # time. The link-side tests below keep the collision assertions.
+        assert pill.contains(copy)
+        assert pill.right() - copy.right() == IMAGE_COPY_INSET
+        assert abs(copy.center().y() - pill.center().y()) <= 1
+        # and it still never reaches the pill's right edge, so it cannot have
+        # been pushed into the row's free tail by the trailing prose
+        assert copy.right() < pill.right()
         assert Path(ed._image_copy_at(copy.center())[0]) == Path(QUrl(target).toLocalFile())
     finally:
         ed.close()

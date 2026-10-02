@@ -25,11 +25,15 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 import pytest
-from PyQt6.QtCore import QEvent, QMimeData, Qt, QUrl
+from PyQt6.QtCore import QEvent, QMimeData, QPoint, Qt, QUrl
 from PyQt6.QtGui import QColor, QImage, QPixmap, QTextCursor
 from PyQt6.QtWidgets import QApplication
 
-from fastprompter.ui.editor import MD_IMAGE_RE, VaultTextEdit
+from fastprompter.ui.editor import (
+    IMAGE_COPY_INSET,
+    MD_IMAGE_RE,
+    VaultTextEdit,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -178,9 +182,15 @@ def _png(tmp_path, name="pic.png", color="green"):
     return str(path)
 
 
-def test_image_copy_button_sits_beside_the_pill(tmp_path):
-    """The Copy control must not share a single pixel with the pill it
-    annotates. T-1337: it is hover-only, so arm the hover on the pill first."""
+def test_image_copy_lane_lives_inside_the_pill(tmp_path):
+    """T-1403: the Copy control is a fixed lane INSIDE the pill it annotates,
+    pinned to the pill's right edge and centred on its row.
+
+    It used to be asserted to sit clear of the pill on the right. That was the
+    external-control model, and it is exactly what made the image icon look
+    detached: the occupancy search picked left, another row or the viewport
+    edge depending on the prose around it. An image's Copy is part of its pill.
+    T-1337: Copy is hover-only, so arm the hover on the pill first."""
     ed = _editor(tmp_path)
     try:
         path = _png(tmp_path)
@@ -195,8 +205,9 @@ def test_image_copy_button_sits_beside_the_pill(tmp_path):
         ed._update_inline_hover(pill.center())   # reveal the hover control
         button = ed._hover_inline_copy_rect
         assert button is not None
-        assert not pill.intersects(button)
-        assert button.left() > pill.right()
+        assert pill.contains(button)
+        assert pill.right() - button.right() == IMAGE_COPY_INSET
+        assert abs(button.center().y() - pill.center().y()) <= 1
         hit = ed._image_copy_at(button.center())
         assert hit is not None
         assert os.path.normcase(hit[0]) == os.path.normcase(
@@ -236,8 +247,11 @@ def test_drawn_pill_is_the_clickable_pill(tmp_path):
         ed.close()
 
 
-def test_image_copy_button_ignores_the_pill_itself(tmp_path):
-    """The pill opens; only the button 6 px to its right copies."""
+def test_image_copy_lane_is_the_only_copying_part_of_the_pill(tmp_path):
+    """T-1403: the pill now holds two regions. The right-hand Copy lane
+    copies; the filename half of the same pill still opens the image. The
+    old test asserted the button was outside the pill entirely, which no
+    longer describes the interaction."""
     ed = _editor(tmp_path)
     try:
         ed.setPlainText(f"![]({_png(tmp_path)})")
@@ -247,8 +261,17 @@ def test_image_copy_button_ignores_the_pill_itself(tmp_path):
         block = ed.document().findBlockByNumber(0)
         match = MD_IMAGE_RE.search(block.text())
         pill = ed._image_pill_rect(block, match)
-        assert ed._image_copy_at(pill.center()) is None
-        assert ed.image_hit_at(pill.center()) is not None
+        lane = ed._image_copy_lane_rect(pill)
+        ed._update_inline_hover(pill.center())
+
+        # the filename half: an image hit, and NOT the Copy lane
+        label = QPoint(pill.left() + 4, pill.center().y())
+        assert ed._image_copy_at(label) is None
+        assert ed.image_hit_at(label) is not None
+
+        # the lane: the Copy control, and still inside the pill
+        assert ed._image_copy_at(lane.center()) is not None
+        assert pill.contains(lane)
     finally:
         ed.close()
 

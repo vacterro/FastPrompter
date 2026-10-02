@@ -28,7 +28,11 @@ from PyQt6.QtCore import QPoint  # noqa: E402
 from PyQt6.QtGui import QTextDocument  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QComboBox  # noqa: E402
 
-from fastprompter.ui.editor import MD_IMAGE_RE, VaultTextEdit  # noqa: E402
+from fastprompter.ui.editor import (  # noqa: E402
+    IMAGE_COPY_INSET,
+    MD_IMAGE_RE,
+    VaultTextEdit,
+)
 from fastprompter.ui.markdown_highlighter import MarkdownHighlighter  # noqa: E402
 
 _APP = QApplication.instance() or QApplication([])
@@ -278,6 +282,11 @@ def test_hovering_an_image_reveals_copy_bound_to_that_image(tmp_path):
         assert os.path.normcase(ed._hover_inline_target) == os.path.normcase(
             os.path.realpath(path))
         assert ed._hover_inline_copy_rect is not None
-        assert not pill.intersects(ed._hover_inline_copy_rect)
+        # T-1403: an image's Copy is a fixed lane INSIDE its pill, at a fixed
+        # inset from the pill's right edge. It used to be asserted NOT to touch
+        # the pill -- that external placement is what left the operator with a
+        # detached icon on the wrong side.
+        assert pill.contains(ed._hover_inline_copy_rect)
+        assert pill.right() - ed._hover_inline_copy_rect.right() == IMAGE_COPY_INSET
     finally:
         ed.close()
