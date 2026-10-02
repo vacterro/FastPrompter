@@ -1,0 +1,7 @@
+active=SV  limit_gauges.tr('weekly')        -> 'veckovis'
+active=SV  limit_settings_dialog.tr('window') -> 'fönster'
+active=EN  tr('weekly')                   -> 'weekly'
+legacy RU  tr('Exit')                     -> 'Выход'
+modules audited for import-time tr(): 5
+
+PASS: a bare tr() now follows the selected language in the usage-limit modules, an explicit lang still wins, and an unbound app is unchanged.

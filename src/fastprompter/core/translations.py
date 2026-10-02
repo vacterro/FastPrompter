@@ -15,6 +15,7 @@ EN<-RU map for its no-Cyrillic guard.
 """
 
 from fastprompter.core import i18n as _i18n
+from fastprompter.core.i18n import _engine as _i18n_engine
 
 current_lang = "EN"  # legacy module attribute; kept for import compatibility
 
@@ -54,8 +55,14 @@ _DATA = {
 
 
 
-def tr(text: str, lang: str = "EN") -> str:
+def tr(text: str, lang: str | None = None) -> str:
     """Translate a string to the given language.
+
+    `lang` omitted means "whatever the user picked": the active language set
+    by `set_language`, then the legacy `current_lang` global. Defaulting to
+    EN instead -- which this did until T-1390 -- silently made every bare
+    `tr()` call in a UI module English-only, because only main.py passes an
+    explicit language. See `_compat.tr`, which resolved it this way already.
 
     EN (or empty) returns the source text unchanged. RU prefers the legacy
     `_DATA` and falls back to the i18n pack. Every other language is served
@@ -63,7 +70,7 @@ def tr(text: str, lang: str = "EN") -> str:
     """
     if not text:
         return text
-    target = (lang or "EN").upper()
+    target = (lang or _i18n_engine.get_language() or current_lang or "EN").upper()
     if target == "EN":
         return text
 

@@ -1,0 +1,5 @@
+core/usage_limits/model.py -> import-time bare tr(): []
+ui/limit_account_selector.py -> import-time bare tr(): []
+ui/limit_gauges.py -> import-time bare tr(): []
+ui/limit_overview.py -> import-time bare tr(): []
+ui/limit_settings_dialog.py -> import-time bare tr(): []

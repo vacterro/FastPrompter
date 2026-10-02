@@ -1,0 +1,11 @@
+loaded: V:\_TEMP_\tmpzxwdu68x\core\translations.py
+tr() signature at HEAD: lang default = 'EN'
+base: HEAD
+
+NEGATIVE CONTROL OK: the pre-fix tr() at HEAD trips 6 of the probes.
+  - with SV active, bare tr('weekly') -> 'weekly', expected 'veckovis'
+  - with SV active, bare tr('window') -> 'window', expected 'fönster'
+  - with SV active, bare tr('home') -> 'home', expected 'hem'
+  - with SV active, bare tr('config folder') -> 'config folder', expected 'konfigurationsmapp'
+  - with SV active, bare tr('fresh') -> 'fresh', expected 'färsk'
+  - tr(key, None) did not fall back to the active language
