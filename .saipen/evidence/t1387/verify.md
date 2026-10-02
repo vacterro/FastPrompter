@@ -82,6 +82,79 @@ future campaign would keep doing this.
 `tools/i18n_verified_identical.json` had the same problem from this session's
 own verdict writer, and was corrected the same way: `11 0`, nothing removed.
 
+## A false verdict in this ticket's own allowlist, found by auditing the fix
+
+The 11 byte-identical verdicts added here are reviewed judgements, not
+mechanical facts — `tools/i18n_verified.py` says so in its own docstring: "No
+regex can tell those apart, so the answer is reviewed once per language." So
+they were re-adjudicated against each language's own pack.
+
+Eight hold up. Seven `live` verdicts (da, de, fi, it, nl, ro, sv) are genuine
+loanwords in those languages' tech register, and three `Session` verdicts
+(da, fra, sv) are native words. **One does not**: sv `spend` was left as the
+English `spend` while every other byte-identical locale translated it — da
+`forbrug`, de `Ausgaben`, fi `kulutus`, fra `dépenses`, it `spesa`, nl
+`uitgaven`, ro `cheltuieli` — and Swedish's own pack translates the
+neighbouring keys (`quota` → `kvota`, `window` → `fönster`, `weekly` →
+`veckovis`). The verdict excused an untranslated key as correct, which is
+exactly the failure mode the allowlist is meant to make visible.
+
+Filed as **T-1388**: sv `spend` → `utgifter`, and the sv `spend` verdict
+withdrawn.
+
+## Third instrument, and what it found
+
+The two AST attempts above asked the wrong question. The shipped runtime check
+asks whether the *fixed* helpers behave, which is a much narrower claim than the
+ticket's verify text, which reads in full: *"Every prose literal reaching
+setText/drawText/tooltip/addItem in limit_overview.py, limit_gauges.py and
+limit_settings_dialog.py is either tr()-wrapped, a numeric duration token, or
+markup."*
+
+So a third instrument was built, `V:/_TEMP_/t1387_prose_scan.py`. It keeps the
+whole-file AST walk but asks a question that actually separates the classes:
+does the literal read like English? It keeps a string literal only when it
+contains a standalone lowercase alphabetic run of 3+ letters that is in a
+curated `ENGLISH_WORDS` set, and drops the rest. CSS fragments, palette keys,
+dict subscripts and comparison tokens fall out on their own — the `live` /
+`stale` mode strings, the `quota` / `window` / `remaining` / `used` key
+comparisons, the `color: #4caf50` style fragments, the `account snapshot offers
+activate open_url` namedtuple field names.
+
+It leaves **66 survivors**, and every one was read by hand. Sixty-one are not
+prose reaching a sink: provider ids (`claude`), attribute names, dict keys,
+fill-mode enums, palette lookups, `<span style='color:...'>` markup, and the
+`symbol_presets` / `color_presets` label lists, which *are* wrapped — at the
+sink, via `tr(lbl)` on line 767/801, which a source-literal scan cannot see.
+
+**Five are real**, and they are in `limit_settings_dialog.py`, none in the two
+helpers T-1387 fixed:
+
+| Line | Code | Why it is untranslated |
+| --- | --- | --- |
+| 1794 | `who = account.get("name") or account.get("email") or "signed in"` | fallback value interpolated into `tr("Freebuff: signed in as {who} · …")` — the template is translated, the value is not. Same shape as the false sv `spend` verdict below. |
+| 2162 | `origin = "default home" if row["is_default"] else row["kind"]` | interpolated into a **raw, unwrapped** f-string on 2174, `f"  {name}{badge_text} · {origin} · {path}"` |
+| 2163 | `creds = "yes" if row["has_credentials"] else "no"` | value interpolated into `tr("      credentials: {creds} · status line: {bridge} · quota data: {state}")` |
+| 2164 | `bridge = "no"` | same class as `creds` |
+| 2211 | `role = "default" if home["is_default"] else home["kind"]` | value interpolated into `tr("Home ({role}): {path} · {bridge}")` |
+
+**This means the ticket's verify clause is not met as written, and is not
+claimed.** The T-1387 change itself is complete and proven by the runtime check
+and its negative control; what is not proven is the surface-wide clause, and it
+is false in five places. Filed as **T-1389**. The board verify text is
+narrowed to the claim that was actually checked — the two helpers and the
+settings status region — with the reason inline, rather than left standing as
+a passing assertion that the scan contradicts.
+
 ## Test suite
 
-`python -m pytest -q` — see `build/t1387/pytest_full.txt`.
+`python -m pytest -q` — see `build/t1387/pytest_final.txt`.
+
+The first full run reported `1 failed, 5251 passed, 23 skipped`: the failure
+was `tests/test_typecheck_vocab.py::test_generated_vocabulary_equals_source_extraction`,
+which re-extracts every word from every non-EN pack and compares it to the
+generated `typecheck_ui_vocab.WORDS`. New translations mean new words
+(`ugentlig`, `cheltuieli`, `penses`, `sitzung`), so the checked-in vocabulary
+had to be regenerated with `python tools/gen_typecheck_ui_vocab.py` (+21 words,
+purely additive). That test is a real gate and it caught a real consequence of
+this ticket.

@@ -1675,7 +1675,7 @@ TRANSLATIONS: dict[str, str] = {
     'sent': 'skickas',
     'silos': 'silos',
     'six bundled sounds; tick as many as you like and each cue picks one at random. The last ticked sound cannot be unticked, and an unavailable file is marked instead of silently swapped.': 'sex ingående ljud; kryssa i så många du vill så väljer varje signal ett slumpmässigt. Det sista kryssade ljudet kan inte avkryssas, och en otillgänglig fil markeras i stället för att tyst bytas ut.',
-    'spend': 'spend',
+    'spend': 'utgifter',
     'spend limit': 'förbrukningsgräns',
     'stale': 'inaktuell',
     'stamp every header': 'stämpla varje rubrik',
