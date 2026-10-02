@@ -1,0 +1,51 @@
+{
+  "ticket": "T-1395",
+  "subject": "the supersession selection predicate and the refusal message, quoted from the install",
+  "copies": {
+    "home": "V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN/tools/improve.py",
+    "launcher": "C:/Users/vac34/AppData/Local/saipen/scheduled-source/tools/improve.py"
+  },
+  "the_selection_predicate": {
+    "function": "improve._replacement_for",
+    "home_lineno": 3121,
+    "launcher_lineno": 3082,
+    "docstring": "The first CURRENT_COMPLETE same-role same-scope replacement seat, or None.",
+    "filters_in_order": [
+      "record['class'] != 'CURRENT_COMPLETE' -> skip",
+      "record['seat_id'] == stale['seat_id'] -> skip",
+      "record['role'] != stale['role'] -> skip",
+      "_field(candidate_text, 'context_scope') == source_scope -> require"
+    ],
+    "phase_in_predicate": "none",
+    "consequence": "the predicate is (class, identity, role, context_scope). A seat report may carry any extra field it likes; none of them can reject a candidate."
+  },
+  "the_refusal_message": {
+    "site": "improve.reconcile_cycle, the STALE_COMPLETE loop",
+    "home_lineno": 3214,
+    "launcher_lineno": 3174,
+    "text": "reconcile refuses: stale COMPLETE seat {seat_id} has no current same-scope replacement seat; create one with `saipen improve --new-seat --role {role}`, complete its audit against the current tree, then run reconcile again",
+    "names_scope": true,
+    "names_phase": false,
+    "precision": "the message says 'same-scope' in prose and never names the field `context_scope`. The ticket's weak_model clause ('Nothing in the message mentions context_scope') is therefore literally true and practically misleading: the message does name the constraint, in the words a reader would use."
+  },
+  "classification": {
+    "STALE_COMPLETE_determined_by": "improve.classify_cycle_seat, via validate_bound_report(require_runs=True, require_fresh=True, cycle_active=True) failing and derive_status reporting no unswept finding",
+    "phase_in_classifier": "none",
+    "seat_fields_the_code_actually_reads": [
+      "seat_id",
+      "role",
+      "availability",
+      "retire_reason",
+      "replacement_seat",
+      "report_path",
+      "report_status",
+      "context_scope",
+      "report_status == 'complete'",
+      "zero committed RUNs (_un_audited_report)"
+    ],
+    "there_is_no_phase_field_on_a_seat": true
+  },
+  "verdict": "NOT_REPRODUCED",
+  "why": "Both clauses of the ticket rest on a phase concept that improve seats do not have. The selection predicate has no phase term, the classifier has no phase term, and the module carries exactly three occurrences of the word 'phase' in 197176 bytes, all of them about the phase_docs file inventory. The refusal message does name the constraint the ticket says it hides ('same-scope'), so the weak_model loop is also not reachable by reading the message in order.",
+  "the_live_defect_is_elsewhere": "The message names the role and the scope but not context_scope's value. An operator who creates the replacement seat without setting context_scope to the stale seat's exact string gets the identical refusal with no hint of what mismatched. That is a message-precision gap, not a missing phase restriction, and it is worth an operator-visible note rather than a P2 engine ticket."
+}

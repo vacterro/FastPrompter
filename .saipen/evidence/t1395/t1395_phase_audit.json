@@ -1,0 +1,128 @@
+{
+  "harness": "t1395_phase_audit.py",
+  "ticket": "T-1395",
+  "claim_under_test": "a stale COMPLETE seat can only be superseded by a replacement minted in the same phase",
+  "method": "AST-locate every function that can choose or apply a supersession replacement, then count case-insensitive 'phase' occurrences in each body and in the module as a whole.",
+  "negative_control": "the whole-module count must be non-zero and fully explained by the phase_docs inventory lines; otherwise a zero path count would prove nothing. See t1395_control.py for the stronger inversion.",
+  "copies": [
+    {
+      "path": "V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN/tools/improve.py",
+      "bytes": 197176,
+      "whole_module_phase_occurrences": 3,
+      "whole_module_occurrences": [
+        {
+          "line": 1192,
+          "text": "`saipen/` and is `required:true`, plus every `phase_docs.files[]` member."
+        },
+        {
+          "line": 1240,
+          "text": "for phase in inventory.get(\"phase_docs\", {}).get(\"files\", []):"
+        },
+        {
+          "line": 1241,
+          "text": "rels.append(f\"saipen/phases/{phase}\")"
+        }
+      ],
+      "supersession_path": {
+        "classify_cycle_seat": {
+          "present": true,
+          "lineno": 3018,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "_replacement_for": {
+          "present": true,
+          "lineno": 3121,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "reconcile_cycle": {
+          "present": true,
+          "lineno": 3156,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "resolve_stale_complete_seat": {
+          "present": true,
+          "lineno": 2552,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "retire_seat": {
+          "present": true,
+          "lineno": 2914,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "verify_cycle": {
+          "present": true,
+          "lineno": 2750,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        }
+      },
+      "phase_refs_in_supersession_path": 0,
+      "unaccounted_phase_occurrences": []
+    },
+    {
+      "path": "C:/Users/vac34/AppData/Local/saipen/scheduled-source/tools/improve.py",
+      "bytes": 185614,
+      "whole_module_phase_occurrences": 3,
+      "whole_module_occurrences": [
+        {
+          "line": 1180,
+          "text": "`saipen/` and is `required:true`, plus every `phase_docs.files[]` member."
+        },
+        {
+          "line": 1228,
+          "text": "for phase in inventory.get(\"phase_docs\", {}).get(\"files\", []):"
+        },
+        {
+          "line": 1229,
+          "text": "rels.append(f\"saipen/phases/{phase}\")"
+        }
+      ],
+      "supersession_path": {
+        "classify_cycle_seat": {
+          "present": true,
+          "lineno": 2979,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "_replacement_for": {
+          "present": true,
+          "lineno": 3082,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "reconcile_cycle": {
+          "present": true,
+          "lineno": 3117,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "resolve_stale_complete_seat": {
+          "present": true,
+          "lineno": 2513,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "retire_seat": {
+          "present": true,
+          "lineno": 2875,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        },
+        "verify_cycle": {
+          "present": true,
+          "lineno": 2711,
+          "phase_ref_count": 0,
+          "phase_refs": []
+        }
+      },
+      "phase_refs_in_supersession_path": 0,
+      "unaccounted_phase_occurrences": []
+    }
+  ],
+  "verdict": "NOT_REPRODUCED"
+}

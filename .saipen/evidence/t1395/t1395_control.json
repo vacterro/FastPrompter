@@ -1,0 +1,19 @@
+{
+  "control": "t1395_control.py",
+  "purpose": "prove the phase audit can report a non-zero",
+  "injection": "if _field(candidate_text, \"phase\") != _field(source_text, \"phase\"):\n            continue",
+  "injection_target": "_replacement_for",
+  "scratch_copy": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\.saipen\\evidence\\t1395\\control_improve_scratch.py",
+  "real_installs_written_to": [],
+  "whole_module_phase_occurrences": 4,
+  "phase_refs_in_supersession_path": 1,
+  "unaccounted_phase_occurrences": [],
+  "_replacement_for_phase_refs": [
+    {
+      "line": 3142,
+      "text": "if _field(candidate_text, \"phase\") != _field(source_text, \"phase\"):"
+    }
+  ],
+  "audit_is_live": true,
+  "control_passed": true
+}
