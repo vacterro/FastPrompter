@@ -1,0 +1,47 @@
+{
+  "ticket": "T-1400",
+  "disposition": "RETRACTED -- NOT_REPRODUCED as stated",
+  "the_ticket_claimed": "a bare `saipen recover` settles a CONFLICT that refuses, contradicting the documented contract and doing so silently",
+  "what_the_execution_measured": {
+    "harness": ".saipen/evidence/t1400/t1400_divergent_conflict.py",
+    "receipt": ".saipen/evidence/t1400/t1400_divergent_conflict.json",
+    "setup": "scratch project, four public-CLI steps: init, ticket add, claim, a controlled BUILD transition (control arm, no lock, ok=true), then a second transition with .saipen/STATE.md held open so os.replace fails with WinError 5 -- the same transient T-1394 names. That yields a real CONFLICT. A third-party line is then appended to .saipen/LOG.md, an ALREADY-APPLIED target, so its live bytes match neither expected_before nor planned_after.",
+    "the_state_is_genuinely_divergent": "recover inspect reports conflicting_locations ['.saipen/LOG.md'] and actual_hash 0c36ca72a8a999bb against before 42bc78a9b0c99df8 and after 489cf15bfa462863",
+    "the_bare_recover_answer": {
+      "ok": false,
+      "code": "RECOVERY_CONFLICT",
+      "recovery_required": true,
+      "detail": "unfinished target .saipen/LOG.md has unexpected bytes ... refuse to guess",
+      "names_the_op": true,
+      "op_stays_CONFLICT": "status_before CONFLICT, status_after CONFLICT",
+      "third_party_line_survived": true
+    },
+    "conclusion": "REFUSED"
+  },
+  "why_this_matches_the_documented_contract": "OPS.md:109 promises recover 'REFUSEs a conflict with the op named and evidence preserved rather than hiding it'. The measured answer is ok=false, the op is named, and the third party's bytes are still on disk afterwards. All three clauses hold. The clause that was supposed to be violated is not violated.",
+  "where_the_refusal_actually_comes_from": "not from the discarded conflict set. `_recover_locked` re-derives each unfinished target's classification from live bytes (journal.py:3187-3587) and the per-target hash comparison emits 'refuse to guess'. The `_conflicts` bind at journal.py:4431 and saipen.py:3090 is dead code -- see t1400_discarded_conflict_set.json -- but it is causally inert for this contract: the binding that IS read, `pending`, drives the loop, and the refusal is produced per target from the bytes.",
+  "the_benign_case_explains_the_ticket": "the one recorded bare recover that settled (T-1398's run, .saipen/evidence/t1398/repro_run3.json, settle.bare_recover = ok/RECOVERED, recovered listing the op) had conflicting_locations: [] and every target's live bytes matching either expected_before or planned_after. Settling that loses nothing, and it named the op, which is the ticket's own second branch. The ticket appears to have generalised from that sample to the divergent case, where the behaviour is the opposite.",
+  "what_survives_of_the_finding": {
+    "severity": "P3 hygiene, not a P1 protocol defect",
+    "a": "`auto_recover_pending` (journal.py:4418) and `_recover` (saipen.py:2644) bind `_conflicts` from the scan and never read it. Measured: 2 discarded binds across both engine copies, negative control passes.",
+    "b": "auto_recover_pending's docstring says 'A conflict stops the run with the conflicting op named and its evidence preserved'. Measured false for the settled case: the run is not stopped. True for the divergent case.",
+    "c": "OPS.md:109's unconditional 'REFUSEs a conflict' overstates the same way: the refusal is conditional on divergent bytes, and the doc does not say so.",
+    "the_one_line_fix": "delete the unused `_conflicts` unpacking (use `_` or index past it) and reword the docstring to say a conflict with divergent bytes stops the run; a conflict whose live bytes still match the plan settles by re-derivation and names the op. No behaviour change."
+  },
+  "what_is_measured_and_what_is_inferred": {
+    "measured": [
+      "the divergent-conflict bare recover refuses, names the op, preserves the bytes and leaves status CONFLICT",
+      "the control arm of the same harness transitions cleanly, so the path and the harness are sound",
+      "2 discarded `_conflicts` binds by AST, negative control passed",
+      "the settled bare recover in T-1398's run had conflicting_locations []"
+    ],
+    "inferred": [
+      "that the per-target hash comparison is the refusal's implementation -- read from the source at journal.py:3187-3587 and confirmed by the message text 'refuse to guess', not traced to a line hit at runtime"
+    ],
+    "not_established": [
+      "whether some input shape makes the divergent refusal itself fail; only one divergence shape (one applied target, one appended line) was exercised"
+    ]
+  },
+  "why_not_fixed_here": "all of it lives in the SAIPEN engine repo, which has 1750 dirty tracked files and another live session's uncommitted work. A one-line delete there would be swept into their commit. Recorded as a P3 instead of being applied blind.",
+  "engine_is_untouched": "every step was the public CLI in a subprocess with --project-root pointed at a scratch tree under build/t1400/scratch. No engine file was opened for writing."
+}

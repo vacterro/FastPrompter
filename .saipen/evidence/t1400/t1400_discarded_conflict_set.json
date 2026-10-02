@@ -1,0 +1,48 @@
+{
+  "harness": "t1400_discarded_conflict_set.py",
+  "ticket": "T-1400",
+  "claim_under_test": "the bare `saipen recover` path computes the CONFLICT subset and discards it, so the refusal OPS.md:109 promises has no code behind it",
+  "method": "AST walk of both engine copies: for every function, collect Name nodes with Store and Load context; report any conflict-named name that is stored and never loaded.",
+  "copies": {
+    "saipen.py": [
+      {
+        "function": "_recover",
+        "function_lineno": 2644,
+        "bound_name": "_conflicts",
+        "bound_at_lines": [
+          3090
+        ],
+        "read_back": false
+      }
+    ],
+    "journal.py": [
+      {
+        "function": "auto_recover_pending",
+        "function_lineno": 4418,
+        "bound_name": "_conflicts",
+        "bound_at_lines": [
+          4431
+        ],
+        "read_back": false
+      }
+    ]
+  },
+  "total_discarded_binds": 2,
+  "negative_control": {
+    "injection": "_conflicts_seen = len(_conflicts)",
+    "injection_target": "journal.py auto_recover_pending",
+    "scoped_to": "the bound name `_conflicts`, not the enclosing function",
+    "other_binds_the_injection_introduced": [
+      {
+        "bound_name": "_conflicts_seen",
+        "bound_at_lines": [
+          4432
+        ]
+      }
+    ],
+    "flagged_before_injection": true,
+    "auto_recover_pending_still_flagged": false,
+    "control_passed": true
+  },
+  "verdict": "CONFIRMED"
+}
