@@ -1,0 +1,55 @@
+{
+  "ticket": "T-1394",
+  "disposition": "CONFIRMED -- as filed, and the cost is larger than the ticket states",
+  "the_ticket_claimed": "a transient filesystem error during a protocol write is escalated to a blocking content conflict, contradicting the contract and doing so silently",
+  "what_is_measured": {
+    "harness": ".saipen/evidence/t1394/t1394_transient_lock_escalation.py",
+    "receipt": ".saipen/evidence/t1394/t1394_transient_lock_escalation.json",
+    "how_the_transient_error_is_forced": ".saipen/STATE.md is opened with open(path,'r+b') and held for the duration of one CLI subprocess call, then closed. Win32 opens without FILE_SHARE_DELETE by default, so os.replace on that target fails with WinError 5 -- the same failure an antivirus scanner, a search indexer or a second writer produces. No timing race is involved and the lock is provably gone before the next step.",
+    "control": "the same transition with no lock returns TRANSITIONED, so the path and the harness are sound",
+    "the_full_session": [
+      {"step": "transition VERIFY with the lock held", "code": "CONFLICT", "recovery_required": true, "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied"},
+      {"step": "lock released; the IDENTICAL command retried, same bytes, nothing else changed", "code": "RECOVERY_CONFLICT", "detail": "unresolved conflict ... blocks new mutation", "canonical_next_command": "saipen recover resolve <op> --resolution <accept_live|replan>"},
+      {"step": "the route the engine itself named: accept_live", "code": "NEEDS_REPAIR", "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 4"},
+      {"step": "the other named route: replan", "code": "NEEDS_REPAIR", "detail": "identical message"},
+      {"step": "the route the engine does NOT name: bare saipen recover", "code": "RECOVERED", "ok": true},
+      {"step": "retry the original transition", "code": "TRANSITIONED", "ok": true}
+    ],
+    "operator_session_shape": "4 commands where 1 was intended; 2 of the 4 are spent on the branch the engine itself named"
+  },
+  "the_two_branches_are_the_same_answer": {
+    "oserror": ["3054: except OSError as exc:", "3055:     journal.mark(\"CONFLICT\")", "3058:     \"code\": \"CONFLICT\",", "3060:     \"recovery_required\": True,"],
+    "content_mismatch": ["3064: if after != target[\"after_hash\"]:", "3065:     journal.mark(\"CONFLICT\")", "3068:     \"code\": \"CONFLICT\",", "3070:     \"recovery_required\": True,"],
+    "reading": "ten lines apart in journal.py, byte-identical in every field a caller can branch on. The only textual difference is the detail string: 'action failed: <OSError>' versus 'action left <hash>, expected <hash>'."
+  },
+  "what_the_ticket_missed": {
+    "the_real_cost_is_not_the_label": "calling an I/O failure a content conflict costs three extra commands for a condition that was over before the retry. That is real but survivable.",
+    "the_unrecoverable_cost_is_the_routing": "the RECOVERY_CONFLICT refusal carries canonical_next_command naming `recover resolve --resolution <accept_live|replan>`. Measured in this very state, BOTH of those routes answer NEEDS_REPAIR. The bare `saipen recover` -- the one route that settles it -- is named nowhere in any answer. So the engine routes the operator, by its own canonical command, into the dead-end branch and away from the working one.",
+    "and_that_is_T_1398": "T-1398 measured the same dead-end in the same shape and found it is total when a third party has also written an applied target. T-1394 is therefore not merely cosmetic: it is the most likely way a normal Windows session walks into T-1398's deadlock, and it hands the operator a map to the one route that cannot get them out."
+  },
+  "recurrence": "any Windows process holding a short lock on a protocol target -- an antivirus scanner, a search indexer, an editor with the file open, or a second session on the same tree. These are routine, not adversarial, and none of them indicates contention over content.",
+  "the_minimum_fix": {
+    "preferred": "one line at journal.py:3055 -- mark the journal CONFLICT as today (the op IS half-applied, so refusing to proceed is correct) but give the refusal a canonical_next_command that names the bare `saipen recover`, which re-derives each target from live bytes and settles the clean case without a human. This changes no safety property: it only stops the engine from recommending a branch measured not to work.",
+    "the_larger_alternative": "return a distinct code from the OSError branch (for example IO_BLOCKED with recovery_required false) so that a plain retry works, because the bytes may be perfectly fine. This is better UX but it changes admission semantics, and a genuinely half-applied op must not admit a new mutation -- so it needs its own design, not a one-liner.",
+    "which_to_choose": "the preferred fix. The engine's refusal is right; only its advice is wrong."
+  },
+  "what_is_measured_and_what_is_inferred": {
+    "measured": [
+      "the OSError branch returns code CONFLICT and recovery_required true, identical literals to the content-mismatch branch ten lines below",
+      "the lock is released before the retry, and the identical command is still refused with RECOVERY_CONFLICT",
+      "canonical_next_command on that refusal names recover resolve --resolution accept_live|replan",
+      "both named routes answer NEEDS_REPAIR in this state",
+      "the bare saipen recover answers RECOVERED and the retry then succeeds",
+      "the control arm transitions cleanly"
+    ],
+    "inferred": [
+      "that an antivirus scanner or indexer produces the same WinError 5 -- standard Win32 behaviour for a handle without FILE_SHARE_DELETE, and the reason T-1398's harness uses it, but not observed from an actual scanner in this run"
+    ],
+    "not_established": [
+      "how often this fires in a real project; no incident log in this repository counts it",
+      "whether the engine would eventually self-heal if the operator simply kept retrying; the retry is refused outright, so nothing was observed"
+    ]
+  },
+  "why_not_fixed_here": "the change is in the SAIPEN engine repo (journal.py:3054 and the refusal's canonical_next_command in saipen.py). That repo has 1750 dirty tracked files and another live session's uncommitted work; editing it would sweep that work into a commit. Measured and filed; the patch is not applied blind.",
+  "engine_is_untouched": "every step is the public CLI in a subprocess with --project-root pointed at build/t1394/scratch. journal.py was read, never written."
+}

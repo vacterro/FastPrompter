@@ -1,0 +1,162 @@
+{
+  "scratch_root": "build\\t1394\\scratch",
+  "init": {
+    "ok": true,
+    "code": "INIT_COMPLETED",
+    "project_root": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\scratch",
+    "identity": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\scratch\\.saipen\\IDENTITY.md",
+    "state": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\scratch\\.saipen\\STATE.md",
+    "board": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\scratch\\.saipen\\BOARD.md",
+    "log": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\scratch\\.saipen\\LOG.md",
+    "saipen_home": "V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN",
+    "route": "saipen start '<the first goal>'",
+    "mailbox": {
+      "ok": false,
+      "code": "MAILBOX_ATTACH_SKIPPED",
+      "detail": "a mailbox is already bound or SAIMAIL is not installed"
+    }
+  },
+  "ticket": {
+    "ok": true,
+    "code": "TICKET_ADDED",
+    "op_id": "ticket-5a56729a78624981aff41000e76bda9f",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "ticket": "T-1",
+    "event_id": "E-1"
+  },
+  "claim": {
+    "ok": true,
+    "code": "CLAIMED",
+    "op_id": "claim-591d2936ef3a4628842996592309f4c7",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "ticket": "T-1",
+    "event_id": "E-2",
+    "phase": "SCOUT",
+    "next_action": "PHASE SCOUT T-1"
+  },
+  "control": {
+    "step": "control",
+    "ok": true,
+    "code": "TRANSITIONED",
+    "recovery_required": false,
+    "canonical_next_command": null,
+    "detail": ""
+  },
+  "control_ok": true,
+  "step3_locked": {
+    "step": "locked transition (OSError branch)",
+    "ok": false,
+    "code": "CONFLICT",
+    "recovery_required": true,
+    "canonical_next_command": null,
+    "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1394\\\\scratch\\\\.saipen\\\\.STATE.md.8ce28a05cb83482eaa550fe010621a98.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1394\\\\s"
+  },
+  "lock_released_before_retry": true,
+  "step4_retry": {
+    "step": "retry, no lock",
+    "ok": false,
+    "code": "RECOVERY_CONFLICT",
+    "recovery_required": true,
+    "canonical_next_command": "saipen recover resolve transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 --resolution <accept_live|replan>",
+    "detail": "unresolved conflict transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 blocks new mutation; look with `saipen recover inspect transition-f7a6fe3b35e14a62a9742e6f8bfe18e7` and settle it with `saipen recover resolve transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 --resolut"
+  },
+  "step5_canonical_routes": {
+    "the_engine_named_this": "saipen recover resolve transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 --resolution <accept_live|replan>",
+    "accept_live": {
+      "step": "canonical: accept_live",
+      "ok": false,
+      "code": "NEEDS_REPAIR",
+      "recovery_required": null,
+      "canonical_next_command": null,
+      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 4"
+    },
+    "replan": {
+      "step": "canonical: replan",
+      "ok": false,
+      "code": "NEEDS_REPAIR",
+      "recovery_required": null,
+      "canonical_next_command": null,
+      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 4"
+    },
+    "canonical_routes_settle": false,
+    "the_engine_named_a_route_that_works": false
+  },
+  "step6_recover": {
+    "step": "unnamed: bare recover",
+    "ok": true,
+    "code": "RECOVERED",
+    "recovery_required": false,
+    "canonical_next_command": null,
+    "detail": ""
+  },
+  "step7_retry_again": {
+    "step": "retry after recover",
+    "ok": true,
+    "code": "TRANSITIONED",
+    "recovery_required": false,
+    "canonical_next_command": null,
+    "detail": ""
+  },
+  "op_id": "transition-f7a6fe3b35e14a62a9742e6f8bfe18e7",
+  "source": {
+    "oserror_branch": {
+      "first_line": 3054,
+      "block": [
+        "3054:         except OSError as exc:",
+        "3055:             journal.mark(\"CONFLICT\")",
+        "3056:             return {",
+        "3057:                 \"ok\": False,",
+        "3058:                 \"code\": \"CONFLICT\",",
+        "3059:                 \"op_id\": op_id,",
+        "3060:                 \"recovery_required\": True,",
+        "3061:                 \"detail\": f\"target {target['path']} action failed: {exc}\",",
+        "3062:             }"
+      ]
+    },
+    "content_mismatch_branch": {
+      "first_line": 3064,
+      "block": [
+        "3064:         if after != target[\"after_hash\"]:",
+        "3065:             journal.mark(\"CONFLICT\")",
+        "3066:             return {",
+        "3067:                 \"ok\": False,",
+        "3068:                 \"code\": \"CONFLICT\",",
+        "3069:                 \"op_id\": op_id,",
+        "3070:                 \"recovery_required\": True,",
+        "3071:                 \"detail\": f\"target {target['path']} action left {after!r}, \"",
+        "3072:                 f\"expected {target['after_hash']!r}\","
+      ]
+    }
+  },
+  "the_escalation": {
+    "an_oserror_reports": {
+      "ok": false,
+      "code": "CONFLICT",
+      "recovery_required": true
+    },
+    "it_is_indistinguishable_from_a_content_conflict": true,
+    "the_condition_lasted_only_as_long_as_the_lock": true,
+    "did_the_state_outlive_it": true
+  },
+  "operator_session_shape": {
+    "intended": 1,
+    "measured": 4,
+    "commands": [
+      "transition VERIFY",
+      "recover resolve --resolution accept_live|replan   <- named by the engine",
+      "recover                                        <- the one that works, unnamed",
+      "transition VERIFY"
+    ]
+  },
+  "conclusion": "ESCALATION_OUTLIVES_THE_CONDITION"
+}
