@@ -1,0 +1,34 @@
+{
+  "state_saipen_home": "V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN",
+  "isdir": true,
+  "entries": [
+    ".claude",
+    ".codenomad",
+    ".freebuff",
+    ".git",
+    ".gitattributes",
+    ".github",
+    ".gitignore",
+    ".pytest_cache",
+    ".recovery",
+    ".ruff_cache",
+    ".saipen",
+    ".workbuddy-ai"
+  ],
+  "is_git_repo": true,
+  "git_head": "fb91135a fix(engine): ship the accumulated tools/ code delta as one unit",
+  "git_remote": "https://github.com/vacterro/saipen.git",
+  "git_dirty_count": 1748,
+  "launcher_copy": {
+    "path": "C:\\Users\\vac34\\AppData\\Local\\saipen\\scheduled-source\\tools\\validate.py",
+    "bytes": 564598,
+    "version": "8.0.1"
+  },
+  "home_copy": {
+    "path": "V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN\\tools\\validate.py",
+    "bytes": 570636,
+    "version": "8.0.1",
+    "mtime": 1790901615.6010256
+  },
+  "byte_identical": false
+}

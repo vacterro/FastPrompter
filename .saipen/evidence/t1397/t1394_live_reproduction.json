@@ -1,0 +1,47 @@
+{
+  "ticket": "T-1394",
+  "status": "reproduced live, in this session, with a stronger symptom than the ticket records",
+  "when": "2026-10-02T05:49Z, during `saipen transition SHIP T-1397`",
+  "trigger": {
+    "symptom": "REFUSE [CONFLICT] target .saipen/STATE.md action failed: [WinError 5] Access is denied: '...\\\\.saipen\\\\.STATE.md.955c013613e6493692b606a24ceab073.tmp' -> '...\\\\.saipen\\\\STATE.md'",
+    "class": "transient filesystem error on the atomic rename",
+    "code_returned": "CONFLICT",
+    "recovery_required": true
+  },
+  "code_site": {
+    "file": "tools/saipen_engine/journal.py",
+    "lines": "2813-2822",
+    "branch": "except OSError as exc: journal.mark(\"CONFLICT\"); return {code: \"CONFLICT\", recovery_required: True}",
+    "the_content_mismatch_path_below": "lines 2826-2831: same code and same recovery_required, reached when after_hash != expected"
+  },
+  "the_escalation_had_a_second_order_effect_the_ticket_does_not_name": {
+    "what_happened": "LOG.md and BOARD.md were written; only the third target, STATE.md, failed its rename. The journal marked the whole operation CONFLICT anyway, so a one-file transient lock left a half-applied operation.",
+    "operation": "transition-2e84a50a2db440ffbd236c11bf2adcdc",
+    "targets": {
+      ".saipen/LOG.md": {"applied": true, "current_equals_planned_after": true},
+      ".saipen/BOARD.md": {"applied": true, "current_equals_planned_after": true},
+      ".saipen/STATE.md": {"applied": false, "current_equals_expected_before": true}
+    }
+  },
+  "the_conflict_was_unsettleable_through_its_own_advertised_resolutions": {
+    "declared_safe_classes": ["accept_live", "replan"],
+    "accept_live": "REFUSE [NEEDS_REPAIR] resolving to current live leaves an invalid repository: STATE proposed last_event 4030 != LOG tail 4031",
+    "replan": "REFUSE [NEEDS_REPAIR] same message, same refusal",
+    "why": "journal.py runs _run_verifier BEFORE settling and under BOTH resolutions, and the half-applied operation is exactly what that verifier rejects. The engine offers no way to complete the unapplied target, and both resolution classes keep the live bytes as the new baseline, so neither can ever clear it.",
+    "site": "tools/saipen_engine/journal.py around 4024-4037 (`errors = _run_verifier(...)`; `if errors: return NEEDS_REPAIR`)"
+  },
+  "the_only_route_that_worked_is_not_an_advertised_one": {
+    "command": "saipen recover",
+    "argument_less": true,
+    "result": "{\"ok\": true, \"code\": \"RECOVERED\", \"recovered\": [\"transition-2e84a50a2db440ffbd236c11bf2adcdc\"], \"recovery_required\": false}",
+    "effect": "reconciled STATE.md last_event to 4031 so it matches the LOG tail 4031",
+    "why_it_is_not_advertised": "neither `saipen recover resolve --help` nor the resolve refusal names it; both named routes dead-end"
+  },
+  "cost_of_the_incident": {
+    "manual_commands_required": 4,
+    "engine_attempts_to_retry_the_failed_rename": 0,
+    "data_loss": "none: LOG.md, BOARD.md and STATE.md were all intact and consistent after the bare `saipen recover`",
+    "time_under_manual_recovery": "about four minutes of command traffic in an unattended session, with no protocol step for it"
+  },
+  "why_this_is_not_just_t1394": "T-1394 asks for a distinct code and recovery_required false on OSError, which would prevent the CONFLICT and so prevent everything above. The defect measured here is a second one: when a multi-target operation DOES partially apply, the resulting conflict has no resolution path. Fixing T-1394's code removes the common trigger but leaves the second defect reachable by any other partial-apply cause (a full disk, a second writer, a killed process). Filed separately as T-1398."
+}

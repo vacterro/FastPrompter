@@ -1,0 +1,39 @@
+{
+  "ticket": "T-1397",
+  "disposition": "NOT_REPRODUCED",
+  "claim_as_written": [
+    "rebind-home --auto reports HOME_ALREADY_BOUND for a saipen_home that does not exist",
+    "validate.py reports that dead path as validator_path while executing the live one"
+  ],
+  "measurement": {
+    "state_saipen_home": "V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN",
+    "state_saipen_home_isdir": true,
+    "receipt_validator_path": "V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN\\tools\\validate.py",
+    "receipt_validator_path_isfile": true,
+    "receipt_validator_path_bytes": 570636,
+    "home_is_a_git_repo": true,
+    "home_remote": "https://github.com/vacterro/saipen.git",
+    "home_head": "fb91135a fix(engine): ship the accumulated tools/ code delta as one unit",
+    "rebind_home_auto": {
+      "ok": true,
+      "code": "HOME_ALREADY_BOUND",
+      "changed": false,
+      "verdict": "correct: the pointer resolves, so there is nothing to rebind"
+    },
+    "rebind_home_explicit_to_the_same_path": {
+      "ok": false,
+      "code": "VALIDATION_FAILED",
+      "detail": "STATE.saipen_home already points at '.../_SAIPEN'; nothing to rebind",
+      "verdict": "correct: the idempotence guard, after _candidate_home_errors proved the candidate"
+    }
+  },
+  "root_cause_of_the_false_report": "the session miscounted the leading underscores when re-typing the path from a rendered STATE.md view, so it asserted a deleted tree and built the ticket on that. Both `ls` and `rebind-home` had been run against the mis-typed string, so they agreed with each other and both were wrong about the directory.",
+  "the_tickets_own_negative_control_is_what_settles_it": "the verify clause asks for rebind-home --auto to converge when saipen_home does NOT resolve, and to converge to no change when it DOES. The antecedent is false here, so the required behaviour is the observed behaviour.",
+  "residual_observation_not_ticketised": {
+    "what": "two engine copies report the same VERSION 8.0.1 and differ in bytes (launcher 564598 vs home 570636)",
+    "why_not_a_defect_yet": "the launcher directory is named scheduled-source, i.e. it is the mirror the deployment syncs from, and the home copy is newer (mtime 2026-10-02 03:40). Whether the mirror is meant to lead or follow is a property of the deployment, not something this project's tree can decide, and no gate in this repo reports it.",
+    "evidence": "build/t1396/t1397_probe.json"
+  },
+  "operator_correction": "an earlier report in this session told the operator the SAIPEN home was deleted, that HUNT-001's finding was live because of it, and that T-1394/T-1395 were blocked on a missing engine tree. All three were wrong and are retracted: the home is present, git-backed and remote-configured, so those tickets are ordinary cross-repo engine work, not blocked work.",
+  "hunt_001": "its reported symptom -- a load_path that does not resolve -- was produced by the same mis-typed path in this session's own shell commands; the launcher itself reported the correct single-underscore path in `continue --json`. HUNT-001 still sits stale-bound for its own recorded reason (source_tree_fingerprint differs) and `sub collect saihunt` still refuses; that part was measured correctly and stands."
+}
