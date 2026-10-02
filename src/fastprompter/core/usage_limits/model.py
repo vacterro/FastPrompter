@@ -21,6 +21,8 @@ import hashlib
 import os
 import re
 
+from fastprompter.core.translations import tr
+
 
 @dataclasses.dataclass(frozen=True)
 class AccountRef:
@@ -520,19 +522,22 @@ def format_offer_expiry(epoch, now: float | None = None) -> str:
         now = _time.time()
     remaining = float(epoch) - float(now)
     if remaining <= 0:
-        return "expired"
+        return tr("expired")
     if remaining < 3600:
-        return f"expires in {int(remaining // 60) or 1}m"
+        return tr("expires in {mins}m").format(mins=int(remaining // 60) or 1)
     if remaining < 86400:
         hours = int(remaining // 3600)
         minutes = int((remaining % 3600) // 60)
-        return (f"expires in {hours}h" + (f" {minutes}m" if minutes else ""))
+        if minutes:
+            return tr("expires in {hours}h {mins}m").format(
+                hours=hours, mins=minutes)
+        return tr("expires in {hours}h").format(hours=hours)
     import datetime as _dt
     try:
         moment = _dt.datetime.fromtimestamp(float(epoch))
     except (OverflowError, OSError, ValueError):
         return ""
-    return f"expires {moment.strftime('%a %H:%M')}"
+    return tr("expires {when}").format(when=moment.strftime('%a %H:%M'))
 
 
 def window_usable(window) -> bool:
@@ -748,7 +753,7 @@ def reserve_advice(snapshot, now: float | None = None) -> list[str]:
         label = next((model_family_label(w) for w in scoped
                       if model_family_label(w)), "")
         if label:
-            out.append(f"{label} available via reserve")
+            out.append(tr("{label} available via reserve").format(label=label))
     return sorted(set(out))
 
 

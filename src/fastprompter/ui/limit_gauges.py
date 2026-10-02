@@ -334,17 +334,20 @@ class LimitGauges(QWidget):
                     banked_reset_count as _count,
                 )
                 cnt = _count(action.snapshot)
-                res_word = "reset" if cnt == 1 else "resets"
+                res_word = tr("reset") if cnt == 1 else tr("resets")
                 act = menu.addAction(
-                    f"★ Activate {action.account.display_name} Reset "
-                    f"({cnt} {res_word})...")
+                    tr("★ Activate {name} Reset ({cnt} {res_word})...").format(
+                        name=action.account.display_name, cnt=cnt,
+                        res_word=res_word))
                 act.triggered.connect(
                     lambda checked=False, acc=action.account,
                     shot=action.snapshot: self._prompt_activate_reset(acc, shot))
             else:
                 act = menu.addAction(
-                    f"★ {action.account.display_name} — "
-                    f"{action.offers[0].title} · Open {action.account.provider_id.title()} Usage...")
+                    tr("★ {name} — {title} · Open {provider} Usage...").format(
+                        name=action.account.display_name,
+                        title=action.offers[0].title,
+                        provider=action.account.provider_id.title()))
                 act.triggered.connect(
                     lambda checked=False, url=action.open_url:
                     self._open_reset_page(url))
@@ -850,12 +853,12 @@ class LimitGauges(QWidget):
                 return ""
             age = max(0, tooltip_now - fetched)
             if age < 60:
-                return "updated now"
+                return tr("updated now")
             if age < 3600:
-                return f"updated {int(age // 60)}m ago"
+                return tr("updated {mins}m ago").format(mins=int(age // 60))
             if age < 86400:
-                return f"updated {int(age // 3600)}h ago"
-            return f"updated {int(age // 86400)}d ago"
+                return tr("updated {hours}h ago").format(hours=int(age // 3600))
+            return tr("updated {days}d ago").format(days=int(age // 86400))
 
         def _resets_section() -> str:
             """The manual-reset panel — independent of the bar filters.
@@ -870,7 +873,8 @@ class LimitGauges(QWidget):
             chunk = [
                 "<div style='font-weight:bold; font-size:12px; color:#ffd700; "
                 "border-bottom:1px solid #5a4f32; padding-bottom:2px; "
-                "margin-top:6px; margin-bottom:3px;'>Resets</div>",
+                "margin-top:6px; margin-bottom:3px;'>"
+                + tr("Resets") + "</div>",
             ]
             for row in rows:
                 name = html.escape(self._elide(
@@ -882,7 +886,7 @@ class LimitGauges(QWidget):
                               if v_color else "")
                 for offer in row.offers:
                     title = html.escape(self._elide(
-                        offer.title or "reset", self.LABEL_CHARS))
+                        offer.title or tr("reset"), self.LABEL_CHARS))
                     chunk.append(
                         f"<div style='padding-top:2px;'>"
                         f"<span style='color:#4FB6A8; font-weight:bold;'>★</span> "
@@ -920,15 +924,25 @@ class LimitGauges(QWidget):
                 filter_active = (self._hide_unusable() or str(self.main_win.data.get(
                     "limit_gauges_hide_zero_usage", "False")) == "True")
                 if filter_active:
-                    parts.append("<div style='color:#888888; font-style:italic;'>no accounts usable right now (hide 5h/0% filter)</div>")
+                    parts.append(
+                        "<div style='color:#888888; font-style:italic;'>"
+                        + tr("no accounts usable right now (hide 5h/0% filter)")
+                        + "</div>")
                 else:
-                    parts.append("<div style='color:#888888; font-style:italic;'>all accounts hidden in settings</div>")
+                    parts.append(
+                        "<div style='color:#888888; font-style:italic;'>"
+                        + tr("all accounts hidden in settings") + "</div>")
                 manually_hidden = [a for a in snap.accounts
                                    if a.key in hidden_account_keys(self.main_win.data)]
                 if manually_hidden:
-                    parts.append(f"<div style='color:#666666; font-size:10px;'>hidden in settings: {len(manually_hidden)}</div>")
+                    parts.append(
+                        "<div style='color:#666666; font-size:10px;'>"
+                        + tr("hidden in settings: {n}").format(
+                            n=len(manually_hidden)) + "</div>")
             else:
-                parts.append("<div style='color:#888888; font-style:italic;'>no accounts selected</div>")
+                parts.append(
+                    "<div style='color:#888888; font-style:italic;'>"
+                    + tr("no accounts selected") + "</div>")
             parts.append(_resets_section())
             parts.append("</body></html>")
             return "".join(parts)
@@ -947,14 +961,17 @@ class LimitGauges(QWidget):
             if not s:
                 parts.append(
                     f"<tr><td colspan='4' style='padding-top:4px; padding-bottom:2px;'>"
-                    f"<b{title_style}>{header}</b>: <span style='color:#888888;'>not probed yet</span></td></tr>"
+                    f"<b{title_style}>{header}</b>: "
+                    f"<span style='color:#888888;'>"
+                    + tr("not probed yet") + "</span></td></tr>"
                 )
                 continue
 
             plan = (f" <span style='color:#8f856c; font-size:10px;'>"
                     f"({html.escape(self._elide(s.plan_type, 18))})</span>"
                     if s.plan_type else "")
-            stale = f" <span style='color:{stale_col}; font-size:10px;'>[stale]</span>" if s.status == STALE else ""
+            stale = (f" <span style='color:{stale_col}; font-size:10px;'>"
+                     + tr("[stale]") + "</span>") if s.status == STALE else ""
             age = _snapshot_age(s)
             freshness = (f" <span style='color:#77705d; font-size:9px;'>"
                          f"[{age}]</span>" if age else "")
@@ -962,8 +979,11 @@ class LimitGauges(QWidget):
             from fastprompter.core.usage_limits.model import banked_reset_count
             reset_count = banked_reset_count(s, now=tooltip_now)
             if reset_count:
-                res_word = "reset" if reset_count == 1 else "resets"
-                banked = f" <span style='color:#4FB6A8; font-size:10px; font-weight:bold;'>[{reset_count} {res_word}]</span>"
+                res_word = tr("reset") if reset_count == 1 else tr("resets")
+                banked = (" <span style='color:#4FB6A8; font-size:10px; "
+                          "font-weight:bold;'>"
+                          + tr("[{n} {res_word}]").format(
+                              n=reset_count, res_word=res_word) + "</span>")
 
             # Freebuff total spendable (daily + wallet) as one amount pill, the
             # vendor's own quick-glance number; the detail rows below explain
@@ -988,7 +1008,10 @@ class LimitGauges(QWidget):
                 readable = False
                 for b in windows:
                     if b is not None and b.reset_pending:
-                        parts.append("<tr><td colspan='4'>Reset time passed; refresh to check current limits</td></tr>")
+                        parts.append(
+                            "<tr><td colspan='4'>"
+                            + tr("Reset time passed; refresh to check "
+                                 "current limits") + "</td></tr>")
                         readable = True
                     if b is None or not b.available:
                         continue
@@ -1028,18 +1051,22 @@ class LimitGauges(QWidget):
                         f"</tr>"
                     )
                 if not readable and not banked_reset_count(s, now=tooltip_now):
-                    parts.append("<tr><td colspan='4' style='color:#777777; font-style:italic; padding-left:6px;'>no readable quota window</td></tr>")
+                    parts.append(
+                        "<tr><td colspan='4' style='color:#777777; "
+                        "font-style:italic; padding-left:6px;'>"
+                        + tr("no readable quota window") + "</td></tr>")
                 meta = getattr(s, "provider_metadata", None) or {}
                 wallet = meta.get("wallet_balance")
                 if isinstance(wallet, (int, float)) and wallet > 0:
                     # Wallet is a BALANCE badge: no meter, no reset — it never
                     # expires, so a progress bar would be a lie.
                     bonus = meta.get("wallet_monthly_bonus")
-                    hint = (f" (adds {int(bonus)}/month)"
+                    hint = (tr(" (adds {n}/month)").format(n=int(bonus))
                             if isinstance(bonus, (int, float)) and bonus > 0 else "")
                     parts.append(
-                        f"<tr><td colspan='4' style='color:#d8ccaa; padding-left:4px; font-size:10px; padding-top:2px;'>"
-                        f"Wallet: <b>{int(wallet)} FB</b> · never expires{hint}</td></tr>"
+                        "<tr><td colspan='4' style='color:#d8ccaa; padding-left:4px; font-size:10px; padding-top:2px;'>"
+                        + tr("Wallet: <b>{n} FB</b> · never expires{hint}").format(
+                            n=int(wallet), hint=hint) + "</td></tr>"
                     )
                 prices = meta.get("model_prices") or {}
                 if isinstance(prices, dict) and prices:
@@ -1054,20 +1081,24 @@ class LimitGauges(QWidget):
                         high = format_price(buckets[-1][0])
                         span = f" · {low}-{high} FB/h" if low != high else \
                             f" · {low} FB/h"
+                    model_line = tr("{n} model prices{span} — see AI Limit "
+                                    "Settings").format(n=len(prices), span=span)
                     parts.append(
-                        f"<tr><td colspan='4' style='color:#77705d; "
-                        f"font-size:10px; padding-left:4px;'>"
-                        f"{len(prices)} model prices{span} — see AI Limit "
-                        f"Settings</td></tr>")
+                        "<tr><td colspan='4' style='color:#77705d; "
+                        "font-size:10px; padding-left:4px;'>"
+                        + model_line + "</td></tr>")
                 if not readable and not getattr(s, "banked_resets", None):
-                    parts.append("<tr><td colspan='4' style='color:#777777; font-style:italic; padding-left:6px;'>no readable quota window</td></tr>")
+                    parts.append(
+                        "<tr><td colspan='4' style='color:#777777; "
+                        "font-style:italic; padding-left:6px;'>"
+                        + tr("no readable quota window") + "</td></tr>")
                 for advice in reserve_advice(s):
                     parts.append(
                         f"<tr><td colspan='4' style='color:#4FB6A8; font-size:10px; "
                         f"padding-left:6px; padding-bottom:2px;'>→ {html.escape(advice)}</td></tr>")
             else:
                 err = html.escape(self._elide(
-                    s.error_summary or "unavailable", self.ERROR_CHARS))
+                    s.error_summary or tr("unavailable"), self.ERROR_CHARS))
                 parts.append(
                     f"<tr><td colspan='4' style='color:{bad_col}; "
                     f"padding-left:6px;'>{s.status.lower()} — {err}</td></tr>")
@@ -1080,14 +1111,24 @@ class LimitGauges(QWidget):
             h_names = html.escape(self._elide(
                 ", ".join(account_display_name(a, self.main_win.data)
                           for a in hidden), self.LIST_CHARS))
-            parts.append(f"<div style='margin-top:6px; font-size:10px; color:#666666; border-top:1px dotted #3e382b; padding-top:3px;'>Hidden: {h_names}</div>")
+            parts.append(
+                "<div style='margin-top:6px; font-size:10px; color:#666666; "
+                "border-top:1px dotted #3e382b; padding-top:3px;'>"
+                + tr("Hidden: {names}").format(names=h_names) + "</div>")
 
         content_w = max(0, self.width() - self.PAD * 2 - self._status_width(accounts, snap))
         _labels, _per_cluster, count_fit = self._fit_layout(content_w, accounts)
         if count_fit < len(accounts):
-            parts.append(f"<div style='font-size:10px; color:#8a8067; margin-top:2px;'>+{len(accounts) - count_fit} more selected accounts than fit in the header</div>")
+            parts.append(
+                "<div style='font-size:10px; color:#8a8067; margin-top:2px;'>"
+                + tr("+{n} more selected accounts than fit in the header").format(
+                    n=len(accounts) - count_fit) + "</div>")
 
-        parts.append("<div style='font-size:10px; color:#77705d; margin-top:5px; border-top:1px dotted #3e382b; padding-top:2px;'>Click: Settings • Ctrl+Click: Bars / Dots / Stacked</div>")
+        parts.append(
+            "<div style='font-size:10px; color:#77705d; margin-top:5px; "
+            "border-top:1px dotted #3e382b; padding-top:2px;'>"
+            + tr("Click: Settings • Ctrl+Click: Bars / Dots / Stacked")
+            + "</div>")
         parts.append("</body></html>")
         return "".join(parts)
 

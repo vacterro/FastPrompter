@@ -164,7 +164,7 @@ class LimitOverview(QWidget):
             for offer in current_reset_offers(shot, now=_time.time()):
                 expiry = format_offer_expiry(offer.expires_at_epoch,
                                              now=_time.time())
-                text = f"★ {offer.title or 'reset'}"
+                text = f"★ {offer.title or tr('reset')}"
                 if expiry:
                     text += f" · {expiry}"
                 rows.append(("reset_offer", (text, offer), shot))
@@ -396,8 +396,9 @@ class LimitOverview(QWidget):
         banked = (banked_reset_count(shot, now=_t.time())
                   if shot is not None else None)
         if banked:
-            res_suffix = "s" if banked != 1 else ""
-            title = f"{title} [{banked} reset{res_suffix}]"
+            res_word = tr("reset") if banked == 1 else tr("resets")
+            title = f"{title} " + tr("[{n} {res_word}]").format(
+                n=banked, res_word=res_word)
         v_color = reset_color(self.main_win, getattr(account, "provider_id", ""))
         pen_col = QColor(v_color) if v_color else pal["good"]
         painter.setPen(QPen(pen_col, 1))
@@ -410,7 +411,7 @@ class LimitOverview(QWidget):
             painter.drawText(
                 QRect(self.PAD, y, width - self.PAD * 2, self.HEADER_H),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                "stale")
+                tr("stale"))
         # a 1px rule under the account name groups its windows visually
         painter.setPen(QPen(pal["light"], 1))
         bottom = y + self.HEADER_H - 1
@@ -522,9 +523,10 @@ class LimitOverview(QWidget):
         elif not isinstance(remaining, (int, float)):
             value = "--"
         elif drains:
-            value = f"{int(round(remaining))}% left"
+            value = tr("{n}% left").format(n=int(round(remaining)))
         else:
-            value = f"{int(round(100.0 - float(remaining)))}% used"
+            value = tr("{n}% used").format(
+                n=int(round(100.0 - float(remaining))))
         reset = _reset_text(window.resets_at_epoch)
         return f"{value} · {reset}" if reset else value
 
@@ -542,7 +544,7 @@ class LimitOverview(QWidget):
             elif kind == "pool":
                 lines.append(f"  {payload}")
             elif kind == "window":
-                source = payload.source or "unknown source"
+                source = payload.source or tr("unknown source")
                 lines.append(
                     f"  {_win_label(payload, shot.account.provider_id)}: {source}")
             else:
@@ -560,9 +562,10 @@ def _reset_text(epoch) -> str:
         return ""
     delta = (target - datetime.datetime.now()).total_seconds()
     if delta <= 0:
-        return "resets now"
+        return tr("resets now")
     if delta < 3600:
-        return f"resets in {int(delta // 60)}m"
+        return tr("resets in {mins}m").format(mins=int(delta // 60))
     if delta < 86400:
-        return f"resets in {int(delta // 3600)}h {int((delta % 3600) // 60)}m"
-    return f"resets {target.strftime('%a %H:%M')}"
+        return tr("resets in {hours}h {mins}m").format(
+            hours=int(delta // 3600), mins=int((delta % 3600) // 60))
+    return tr("resets {when}").format(when=target.strftime('%a %H:%M'))

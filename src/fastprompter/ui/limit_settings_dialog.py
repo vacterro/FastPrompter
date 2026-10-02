@@ -441,7 +441,8 @@ class LimitSettingsDialog(QDialog):
             parts = []
             for k in ("codex", "claude", "antigravity", "zcode"):
                 rep = diag.get(k, {})
-                parts.append(f"{rep.get('title', k)}: {rep.get('summary', 'unknown')}")
+                parts.append(f"{rep.get('title', k)}: "
+                             f"{rep.get('summary', tr('unknown'))}")
             label.setText(tr("Detection scan:\n• ") + "\n• ".join(parts))
         except Exception:
             pass
@@ -473,15 +474,19 @@ class LimitSettingsDialog(QDialog):
                            for r in offer_rows for o in r.offers)
         btn = getattr(self, "btn_activate_reset", None)
         if btn is not None:
+            # The counted noun is chosen per language rather than by pasting an
+            # English "s" onto a translated template: that glued a Latin "s"
+            # to a Cyrillic or inflected noun, which is wrong in every language
+            # that does not plural by suffix. Same shape as
+            # limit_gauges._prompt_activate_reset.
+            res_word = tr("reset") if banked_total == 1 else tr("resets")
             if banked_total > 0 and can_activate:
-                res_suffix = "s" if banked_total != 1 else ""
-                btn.setText(tr("Activate reset ({n} reset{s})").format(
-                    n=banked_total, s=res_suffix))
+                btn.setText(tr("Activate reset ({n} {res_word})").format(
+                    n=banked_total, res_word=res_word))
                 btn.show()
             elif banked_total > 0:
-                res_suffix = "s" if banked_total != 1 else ""
-                btn.setText(tr("Open Usage ({n} reset{s})").format(
-                    n=banked_total, s=res_suffix))
+                btn.setText(tr("Open Usage ({n} {res_word})").format(
+                    n=banked_total, res_word=res_word))
                 btn.show()
             else:
                 btn.hide()
@@ -498,9 +503,9 @@ class LimitSettingsDialog(QDialog):
                 self.card_onboarding.hide()
             if hasattr(self, "overview_scroll"):
                 self.overview_scroll.show()
-        parts = [f"{ok}/{total} accounts reporting"]
+        parts = [tr("{ok}/{total} accounts reporting").format(ok=ok, total=total)]
         if stale:
-            parts.append(f"{stale} stale")
+            parts.append(tr("{n} stale").format(n=stale))
         if snap.status in ("PROBING", "DISCOVERING"):
             parts.append(snap.status.lower())
         label.setText(" · ".join(parts))
@@ -531,11 +536,13 @@ class LimitSettingsDialog(QDialog):
                 br = banked_reset_count(s)
                 if br > 0:
                     name = account_display_name(a, self.data)
-                    res_w = "reset" if br == 1 else "resets"
-                    hidden_banked.append(f"{name} ({br} {res_w})")
+                    res_w = tr("reset") if br == 1 else tr("resets")
+                    hidden_banked.append(
+                        tr("{name} ({n} {res_word})").format(
+                            name=name, n=br, res_word=res_w))
             if hidden_banked:
                 hb_label.setText(
-                    "⚠ Hidden: " + ", ".join(hidden_banked)
+                    tr("⚠ Hidden: ") + ", ".join(hidden_banked)
                     + tr(" — unhide or activate"))
                 hb_label.show()
             else:
@@ -740,7 +747,8 @@ class LimitSettingsDialog(QDialog):
         if dur_idx >= 0:
             self.cmb_notif_duration.setCurrentIndex(dur_idx)
         else:
-            self.cmb_notif_duration.addItem(f"{cur_dur} seconds", cur_dur)
+            self.cmb_notif_duration.addItem(tr("{n} seconds").format(n=cur_dur),
+                                            cur_dur)
             self.cmb_notif_duration.setCurrentIndex(self.cmb_notif_duration.count() - 1)
         self.cmb_notif_duration.currentIndexChanged.connect(self._set_notif_duration)
         notif_box_lay.addWidget(self.cmb_notif_duration, 0, 1)
@@ -763,7 +771,7 @@ class LimitSettingsDialog(QDialog):
         cur_sym = str(self.data.get("limit_notif_symbol", "⚡"))
         found_sym = False
         for lbl, sym in symbol_presets:
-            self.cmb_notif_symbol.addItem(lbl, sym)
+            self.cmb_notif_symbol.addItem(tr(lbl), sym)
             if sym == cur_sym:
                 self.cmb_notif_symbol.setCurrentIndex(self.cmb_notif_symbol.count() - 1)
                 found_sym = True
@@ -789,12 +797,13 @@ class LimitSettingsDialog(QDialog):
         cur_col = str(self.data.get("limit_notif_color", ""))
         found_col = False
         for lbl, col in color_presets:
-            self.cmb_notif_color.addItem(lbl, col)
+            self.cmb_notif_color.addItem(tr(lbl), col)
             if col == cur_col:
                 self.cmb_notif_color.setCurrentIndex(self.cmb_notif_color.count() - 1)
                 found_col = True
         if not found_col and cur_col:
-            self.cmb_notif_color.addItem(f"Custom ({cur_col})", cur_col)
+            self.cmb_notif_color.addItem(
+                tr("Custom ({col})").format(col=cur_col), cur_col)
             self.cmb_notif_color.setCurrentIndex(self.cmb_notif_color.count() - 1)
         self.cmb_notif_color.currentIndexChanged.connect(self._set_notif_color)
         color_h.addWidget(self.cmb_notif_color, 1)
@@ -889,7 +898,8 @@ class LimitSettingsDialog(QDialog):
             self.data["limit_notif_color"] = hex_val
             idx = self.cmb_notif_color.findData(hex_val)
             if idx < 0:
-                self.cmb_notif_color.addItem(f"Custom ({hex_val})", hex_val)
+                self.cmb_notif_color.addItem(
+                    tr("Custom ({col})").format(col=hex_val), hex_val)
                 idx = self.cmb_notif_color.count() - 1
             self.cmb_notif_color.setCurrentIndex(idx)
             self._commit()
@@ -1007,13 +1017,14 @@ class LimitSettingsDialog(QDialog):
         self._rebuild_alert_rows()
         source_label = combo.currentText()
         self.lbl_copy_hint.setText(
-            f"Copied \"{source_label}\" onto {len(targets)} other section(s).")
+            tr("Copied \"{source}\" onto {n} other section(s).").format(
+                source=source_label, n=len(targets)))
         self.main_win._check_limit_notifications()
 
     def _sound_inventory(self):
         if hasattr(self, "_sound_inventory_cache"):
             return self._sound_inventory_cache
-        items = [("Notification event", "notify")]
+        items = [(tr("Notification event"), "notify")]
         try:
             for rel in self.main_win.sound_manager.get_available_sounds() or ():
                 items.append((rel, f"file:{rel}"))
@@ -1232,13 +1243,13 @@ class LimitSettingsDialog(QDialog):
         grid.setVerticalSpacing(2)
         self._color_buttons = {}
         for row, role in enumerate(ROLES):
-            name = QLabel(role.label)
-            name.setToolTip(role.tooltip)
+            name = QLabel(tr(role.label))
+            name.setToolTip(tr(role.tooltip))
             grid.addWidget(name, row, 0)
 
             swatch = QPushButton()
             swatch.setFixedWidth(96)
-            swatch.setToolTip(role.tooltip)
+            swatch.setToolTip(tr(role.tooltip))
             swatch.clicked.connect(
                 lambda _checked=False, key=role.key: self._pick_color(key))
             grid.addWidget(swatch, row, 1)
@@ -2113,7 +2124,7 @@ class LimitSettingsDialog(QDialog):
             if button is not None:
                 button.setText(tr('Connect Claude Code'))
             if label is not None:
-                label.setText(f"Configuration error: {exc}")
+                label.setText(tr("Configuration error: {exc}").format(exc=exc))
         self._refresh_claude_accounts()
         self._refresh_claude_sources()
 
@@ -2262,7 +2273,9 @@ class LimitSettingsDialog(QDialog):
             from fastprompter.core.usage_limits.troubleshooter import auto_heal_all
             result = auto_heal_all(self.data, self.service)
         except Exception as exc:
-            QMessageBox.warning(self, tr('Auto-Troubleshoot'), f"Auto-troubleshoot failed:\n\n{exc}")
+            QMessageBox.warning(
+                self, tr('Auto-Troubleshoot'),
+                tr("Auto-troubleshoot failed:\n\n{exc}").format(exc=exc))
             return
 
         self._commit()
@@ -2285,7 +2298,8 @@ class LimitSettingsDialog(QDialog):
         remaining = result.get("remaining_issues", [])
         accounts_count = result.get("accounts_count", 0)
 
-        status_text = f"Auto-heal: {len(healed)} fix(es) · {accounts_count} account(s) reporting"
+        status_text = tr("Auto-heal: {n} fix(es) · {accounts} account(s) "
+                         "reporting").format(n=len(healed), accounts=accounts_count)
         if hasattr(self, "lbl_troubleshoot_status"):
             self.lbl_troubleshoot_status.setText(status_text)
 
