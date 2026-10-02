@@ -1,0 +1,10 @@
+locales examined               : 32
+hand verdicts in the allowlist : 999
+verdicts STALE (pack translated since): 0
+verdicts ORPHANED (en.json no longer has the key): 0
+staleness assertion wired into validate_saitranslate.py: True
+
+RUN-1/IMP-002 REPRODUCES on the current tree. The finding named the absence of any staleness assertion; that assertion now exists (i18n_verified.stale_verdicts / orphaned_verdicts), is wired into the translate gate, and reports 0 stale and 0 orphaned verdicts -- which is what T-1391/T-1392 built in response. The finding was real; its absence is what made it a ticket. reproduced=y.
+
+NOT RE-DERIVED, AND NOT CLAIMED: the finding's other half -- 81 of 106 keys on the minority side of their own key -- is not checked here. It came from audit_verdict_split.py and V:/_TEMP_/audit_minority.json, and neither exists in this tree any more, so that count cannot be reproduced and is not asserted. The finding marked that half explicitly as not decidable without per-language human adjudication.
+(drifted=0 -- a non-zero figure here would mean the gate is NOT clean)
