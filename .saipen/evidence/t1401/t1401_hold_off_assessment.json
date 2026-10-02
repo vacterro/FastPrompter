@@ -1,0 +1,29 @@
+{
+  "ticket": "T-1401",
+  "finding_under_test": "write_sweep_entry refuses any finding_ref already present in the SWEEP ledger, so an entry's reproduced value can never be corrected when the finding's reproducibility later changes",
+  "the_measured_defect_is_still_real": {
+    "the_disagreement": "on the committed line '- RUN-1/IMP-002 [CONFIRMED] T-1392 report=buffy-02/saipen_improve_SAIPEN.md reproduced=n', the writer gate improve.validate_sweep (which write_sweep_entry itself calls at improve.py:1030-1036) returns 0 errors and ACCEPTS, while the core validator rejects the same line: 'line 4: RUN-1/IMP-002 CONFIRMED with reproduced=n'. The negative control (the same line with reproduced=y) is ACCEPTED by both.",
+    "consequence": "a disposition can be committed that the core gate reds. That is a real disagreement between two shipped gates, not a cosmetic one.",
+    "the_refusal_itself_is_correct": "the duplicate-finding_ref refusal at improve.py:1004-1011 is doing its job -- a ledger is append-only evidence. The defect is that there is NO verb to amend a value that was wrong when written, so the only way to change reproduced=n to reproduced=y is a hand-edit that bypasses the writer."
+  },
+  "why_it_is_held_off": {
+    "the_dirty_tree_rationale_is_dissolved": "the same re-measurement that unblocked T-1394 applies: tools/improve.py's dirty state would need checking, but the earlier blanket rationale ('the SAIPEN repo has 1750 dirty files') is a remembered number, not a fact about the files this fix touches.",
+    "the_real_ground": "the fix is TWO things, and neither is a conventional default: (1) a new clause in improve.validate_sweep so the writer gate rejects what the core gate rejects -- this changes what an append-only ledger will accept, in the shared engine; (2) a NEW VERB, `improve sweep --amend`, which is new public API surface in a protocol shared by every project on this machine, with another live session in the same repo. A new verb needs its own design (what evidence does an amendment carry, is the prior line retained or superseded, is it reversible, does it need a lock arm, does it appear in preflight), its own threat model, and its own tests.",
+    "same_class_as_T_1398": "both are 'two shipped components disagree and the fix is new surface in a shared engine'. T-1394 was not, because its fix chose which command to NAME and changed no behaviour. The distinction that let T-1394 through is exactly the distinction that holds these two."
+  },
+  "the_verify_clause_is_now_stale_and_says_so": {
+    "the_ticket_expects": "106 keys carry a verdict, 81 are minority-side with excused 1-12 and translated ...",
+    "measured_now": "1862 keys carry a verdict, 91 are minority-side, 9 keys carry at least one EXCUSED verdict",
+    "why_the_numbers_moved": "the locale packs grew substantially since the sweep ran; en.json's translations map now holds 1862 keys across 32 non-English locales, so the population under measurement is an order of magnitude larger than the one the finding was generalised from. The ticket's own verify clause can no longer be executed as written -- its expected numbers describe a tree that no longer exists.",
+    "the_named_defect_is_already_fixed": "the ticket's verify names 'the three stale ro entries IMP-001 found'. A fresh check of tools/i18n_verified_identical.json against the current packs finds ZERO stale allowlist entries in any of the 32 locales -- no allowlisted value has drifted from en.json. That specific defect was closed by T-1391/T-1392's work; the sweep ledger line for it was simply never corrected.",
+    "consequence_for_this_ticket": "the amend capability is still worth having, but the ticket's own acceptance test cannot be run, and the underlying data condition that motivated it no longer holds. Re-filing it against current numbers, with the amend-verb design written down, would be a better ticket than amending this one."
+  },
+  "what_a_human_decision_looks_like": [
+    "authorise `improve sweep --amend` plus the validate_sweep clause -- the real fix; needs an owned design in the SAIPEN repo, not a FastPrompter side effect",
+    "authorise ONE documented ledger correction: rewrite the RUN-1/IMP-002 line to reproduced=y (the negative control shows both gates accept it), recorded as a DEC line with the reason. Cheapest, closes the CURRENT_FAIL, and leaves the amend gap open.",
+    "accept permanent CURRENT_FAIL -- not viable: it blocks the project on every validate",
+    "re-file against current measurements -- the ticket's verify clause is stale and its motivating data condition is fixed"
+  ],
+  "recommendation": "option 2 (the one documented ledger correction) to clear CURRENT_FAIL now, and option 4 (re-file the amend-verb design properly) as the durable fix. Note the correction direction is unambiguous here: the negative control proves reproduced=y is accepted by both gates, and the finding that produced IMP-002 has demonstrably been fixed since.",
+  "not_done_and_why": "I did not write the ledger correction. Editing SWEEP.md by hand is exactly what this ticket exists to prevent, it would bypass the writer gate that is the subject of the finding, and it changes a conformance-gate outcome -- the standing authorisation to resolve autonomously covers engineering judgement, not authoring a ledger amendment on the project's own conformance record."
+}
