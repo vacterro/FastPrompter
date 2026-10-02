@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Garis Zebra",
     "🧩 Customize Toolbar": "🧩 Sesuaikan Toolbar",
     "🧹 Clear": "🧹 Jelas",
-    "🪟 Normal Window": "🪟 Jendela Biasa"
+    "🪟 Normal Window": "🪟 Jendela Biasa",
+    "Session": "Sesi",
+    "weekly": "mingguan",
+    "monthly": "bulanan",
+    "spend": "pengeluaran",
+    "daily FB": "FB harian",
+    "window": "jendela",
+    "cache present": "cache tersedia",
+    "live": "langsung",
+    "{name} until {when}": "{name} sampai {when}"
   },
   "missing_keys": 0
 }

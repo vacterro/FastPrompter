@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Seebratriibud",
     "🧩 Customize Toolbar": "🧩 Kohanda tööriistariba",
     "🧹 Clear": "🧹 Tühjenda",
-    "🪟 Normal Window": "🪟 Tavaline aken"
+    "🪟 Normal Window": "🪟 Tavaline aken",
+    "Session": "Sessioon",
+    "weekly": "nädalane",
+    "monthly": "kuuline",
+    "spend": "kulutamine",
+    "daily FB": "päevane FB",
+    "window": "aken",
+    "cache present": "vahemälu olemas",
+    "live": "otse",
+    "{name} until {when}": "{name} kuni {when}"
   },
   "missing_keys": 0
 }

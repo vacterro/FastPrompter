@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebra Stripes",
     "🧩 Customize Toolbar": "🧩 Customize Toolbar",
     "🧹 Clear": "🧹 Clear",
-    "🪟 Normal Window": "🪟 Normal Window"
+    "🪟 Normal Window": "🪟 Normal Window",
+    "Session": "Session",
+    "weekly": "weekly",
+    "monthly": "monthly",
+    "spend": "spend",
+    "daily FB": "daily FB",
+    "window": "window",
+    "cache present": "cache present",
+    "live": "live",
+    "{name} until {when}": "{name} until {when}"
   },
   "missing_keys": 0
 }

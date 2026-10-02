@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 斑马条纹",
     "🧩 Customize Toolbar": "🧩 自定义工具栏",
     "🧹 Clear": "🧹 清除",
-    "🪟 Normal Window": "🪟 普通窗口"
+    "🪟 Normal Window": "🪟 普通窗口",
+    "Session": "会话",
+    "weekly": "每周",
+    "monthly": "每月",
+    "spend": "支出",
+    "daily FB": "每日 FB",
+    "window": "窗口",
+    "cache present": "缓存已存在",
+    "live": "实时",
+    "{name} until {when}": "{name} 至 {when}"
   },
   "missing_keys": 0
 }

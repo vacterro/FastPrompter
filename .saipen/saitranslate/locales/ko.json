@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 얼룩말 줄무늬",
     "🧩 Customize Toolbar": "🧩 도구 모음 사용자 지정",
     "🧹 Clear": "🧹 지우기",
-    "🪟 Normal Window": "🪟 일반 창"
+    "🪟 Normal Window": "🪟 일반 창",
+    "Session": "세션",
+    "weekly": "주간",
+    "monthly": "월간",
+    "spend": "사용량",
+    "daily FB": "일일 FB",
+    "window": "창",
+    "cache present": "캐시 있음",
+    "live": "실시간",
+    "{name} until {when}": "{name} ~ {when}"
   },
   "missing_keys": 0
 }

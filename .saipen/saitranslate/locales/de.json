@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebrastreifen",
     "🧩 Customize Toolbar": "🧩 Symbolleiste anpassen",
     "🧹 Clear": "🧹 Leeren",
-    "🪟 Normal Window": "🪟 Normales Fenster"
+    "🪟 Normal Window": "🪟 Normales Fenster",
+    "Session": "Sitzung",
+    "weekly": "wöchentlich",
+    "monthly": "monatlich",
+    "spend": "Ausgaben",
+    "daily FB": "täglich FB",
+    "window": "Fenster",
+    "cache present": "Cache vorhanden",
+    "live": "live",
+    "{name} until {when}": "{name} bis {when}"
   },
   "missing_keys": 0
 }

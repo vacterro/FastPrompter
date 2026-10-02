@@ -157,8 +157,12 @@ def main() -> int:
         pack_path = LOCALES / f"{lang}.json"
         pack = load(pack_path)
         pack["translations"].update(load(todo / f"{lang}.done.json")["items"])
-        with pack_path.open("w", encoding="utf-8") as handle:
-            json.dump(pack, handle, ensure_ascii=False, indent=1)
+        # indent=2 and newline="\n" are what the committed packs already use.
+        # At indent=1 (and in text mode, which turns "\n" into "\r\n" on
+        # Windows) every merge reindented all ~1850 lines of the pack, turning
+        # a nine-key change into a whole-file rewrite that no reviewer can read.
+        with pack_path.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(pack, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
         print(f"merged {lang}: {len(pack['translations'])} keys")
     return 0

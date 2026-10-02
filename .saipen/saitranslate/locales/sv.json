@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebraränder",
     "🧩 Customize Toolbar": "🧩 Anpassa verktygsfältet",
     "🧹 Clear": "🧹 Rensa",
-    "🪟 Normal Window": "🪟 Normalt fönster"
+    "🪟 Normal Window": "🪟 Normalt fönster",
+    "Session": "Session",
+    "weekly": "veckovis",
+    "monthly": "månadsvis",
+    "spend": "spend",
+    "daily FB": "daglig FB",
+    "window": "fönster",
+    "cache present": "cache finns",
+    "live": "live",
+    "{name} until {when}": "{name} till {when}"
   },
   "missing_keys": 0
 }

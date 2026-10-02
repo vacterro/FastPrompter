@@ -1386,27 +1386,32 @@ def _win_label(b, provider_id: str = "") -> str:
     if key == FIVE_HOUR or mins == 300:
         # Claude's own /usage answer calls this bucket "Current session".
         # Its reset timestamp is authoritative and may be beyond five hours.
-        return "Session" if provider_id == "claude" else "5h"
+        return tr("Session") if provider_id == "claude" else "5h"
     if key == WEEKLY or mins == 10080:
-        return "weekly"
+        return tr("weekly")
     if key == MONTHLY or mins == 43200:
-        return "monthly"
+        return tr("monthly")
     if key == "spend_limit":
-        return "spend"
+        return tr("spend")
     if key == "quota":
         # Antigravity quotes only the remaining delay, never a window length.
-        return "quota"
+        return tr("quota")
     if key == "daily_amount":
         # Freebuff Freebucks: an amount pool with a daily refill, not an
         # hours-long percent window — the label must not read "5h" or "1d".
-        return "daily FB"
+        return tr("daily FB")
     if mins:
         if mins < 60:
             return f"{int(mins)}m"
         if mins < 1440:
             return f"{int(mins // 60)}h"
         return f"{int(mins // 1440)}d"
-    return key or "window"
+    # A vendor key is an identifier, not a human name. This used to fall
+    # through to `key or "window"`, so a provider that shipped a window this
+    # table did not know -- and reported no duration for it -- had its raw key,
+    # values like "five_hour", painted straight into the overview's label
+    # column. Unknown is a word the translator can supply; an identifier is not.
+    return tr("window")
 
 
 def _fmt_win(b) -> str:

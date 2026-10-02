@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Sọc ngựa vằn",
     "🧩 Customize Toolbar": "🧩 Tùy chỉnh thanh công cụ",
     "🧹 Clear": "🧹 Rõ ràng",
-    "🪟 Normal Window": "🪟 Cửa sổ bình thường"
+    "🪟 Normal Window": "🪟 Cửa sổ bình thường",
+    "Session": "Phiên",
+    "weekly": "hằng tuần",
+    "monthly": "hằng tháng",
+    "spend": "chi tiêu",
+    "daily FB": "FB hằng ngày",
+    "window": "cửa sổ",
+    "cache present": "đã có bộ nhớ đệm",
+    "live": "trực tiếp",
+    "{name} until {when}": "{name} đến {when}"
   },
   "missing_keys": 0
 }

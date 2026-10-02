@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebra csíkok",
     "🧩 Customize Toolbar": "🧩 Eszköztár testreszabása",
     "🧹 Clear": "🧹 Tiszta",
-    "🪟 Normal Window": "🪟 Normál ablak"
+    "🪟 Normal Window": "🪟 Normál ablak",
+    "Session": "Munkamenet",
+    "weekly": "heti",
+    "monthly": "havi",
+    "spend": "kiadások",
+    "daily FB": "napi FB",
+    "window": "ablak",
+    "cache present": "gyorsítótár elérhető",
+    "live": "élő",
+    "{name} until {when}": "{name} {when}-ig"
   },
   "missing_keys": 0
 }

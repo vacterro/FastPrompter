@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebrie pruhy",
     "🧩 Customize Toolbar": "🧩 Prispôsobiť panel nástrojov",
     "🧹 Clear": "🧹 Jasné",
-    "🪟 Normal Window": "🪟 Normálne okno"
+    "🪟 Normal Window": "🪟 Normálne okno",
+    "Session": "Relácia",
+    "weekly": "týždenne",
+    "monthly": "mesačne",
+    "spend": "výdavky",
+    "daily FB": "denný FB",
+    "window": "okno",
+    "cache present": "vyrovnávacia pamäť je k dispozícii",
+    "live": "naživo",
+    "{name} until {when}": "{name} do {when}"
   },
   "missing_keys": 0
 }

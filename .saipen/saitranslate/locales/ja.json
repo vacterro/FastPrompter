@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 ゼブラストライプ",
     "🧩 Customize Toolbar": "🧩 ツールバーをカスタマイズ",
     "🧹 Clear": "🧹 クリア",
-    "🪟 Normal Window": "🪟 通常ウィンドウ"
+    "🪟 Normal Window": "🪟 通常ウィンドウ",
+    "Session": "セッション",
+    "weekly": "週間",
+    "monthly": "月間",
+    "spend": "使用額",
+    "daily FB": "日次 FB",
+    "window": "ウィンドウ",
+    "cache present": "キャッシュあり",
+    "live": "ライブ",
+    "{name} until {when}": "{name} は {when} まで"
   },
   "missing_keys": 0
 }

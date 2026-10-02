@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebra Çizgileri",
     "🧩 Customize Toolbar": "🧩 Araç Çubuğunu Özelleştir",
     "🧹 Clear": "🧹 Temizle",
-    "🪟 Normal Window": "🪟 Normal Pencere"
+    "🪟 Normal Window": "🪟 Normal Pencere",
+    "Session": "Oturum",
+    "weekly": "haftalık",
+    "monthly": "aylık",
+    "spend": "harcama",
+    "daily FB": "günlük FB",
+    "window": "pencere",
+    "cache present": "önbellek mevcut",
+    "live": "canlı",
+    "{name} until {when}": "{name} {when} tarihine kadar"
   },
   "missing_keys": 0
 }

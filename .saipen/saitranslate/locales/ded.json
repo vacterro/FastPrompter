@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Зебра",
     "🧩 Customize Toolbar": "🧩 Настроить панель",
     "🧹 Clear": "🧹 Снести",
-    "🪟 Normal Window": "🪟 Обычное окно"
+    "🪟 Normal Window": "🪟 Обычное окно",
+    "Session": "Сессия",
+    "weekly": "еженедельно",
+    "monthly": "ежемесячно",
+    "spend": "расходы",
+    "daily FB": "ежедневно FB",
+    "window": "окно",
+    "cache present": "кэш есть",
+    "live": "живо",
+    "{name} until {when}": "{name} до {when}"
   },
   "missing_keys": 0
 }

@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 แถบม้าลาย",
     "🧩 Customize Toolbar": "🧩 ปรับแต่งแถบเครื่องมือ",
     "🧹 Clear": "🧹 ล้าง",
-    "🪟 Normal Window": "🪟 หน้าต่างปกติ"
+    "🪟 Normal Window": "🪟 หน้าต่างปกติ",
+    "Session": "เซสชัน",
+    "weekly": "รายสัปดาห์",
+    "monthly": "รายเดือน",
+    "spend": "การใช้จ่าย",
+    "daily FB": "FB รายวัน",
+    "window": "หน้าต่าง",
+    "cache present": "มีแคช",
+    "live": "สด",
+    "{name} until {when}": "{name} จนถึง {when}"
   },
   "missing_keys": 0
 }

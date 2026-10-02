@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 خطوط حمار وحشي",
     "🧩 Customize Toolbar": "🧩 تخصيص شريط الأدوات",
     "🧹 Clear": "🧹 مسح",
-    "🪟 Normal Window": "🪟 نافذة عادية"
+    "🪟 Normal Window": "🪟 نافذة عادية",
+    "Session": "جلسة",
+    "weekly": "أسبوعي",
+    "monthly": "شهري",
+    "spend": "الإنفاق",
+    "daily FB": "FB يومي",
+    "window": "نافذة",
+    "cache present": "ذاكرة التخزين المؤقت موجودة",
+    "live": "مباشر",
+    "{name} until {when}": "{name} حتى {when}"
   },
   "missing_keys": 0
 }

@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 פסי זברה",
     "🧩 Customize Toolbar": "🧩 התאם אישית את סרגל הכלים",
     "🧹 Clear": "🧹 נקה",
-    "🪟 Normal Window": "🪟 חלון רגיל"
+    "🪟 Normal Window": "🪟 חלון רגיל",
+    "Session": "הפעלה",
+    "weekly": "שבועי",
+    "monthly": "חודשי",
+    "spend": "הוצאות",
+    "daily FB": "FB יומי",
+    "window": "חלון",
+    "cache present": "מטמון קיים",
+    "live": "חי",
+    "{name} until {when}": "{name} עד {when}"
   },
   "missing_keys": 0
 }

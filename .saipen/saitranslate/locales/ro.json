@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Dungi Zebra",
     "🧩 Customize Toolbar": "🧩 Personalizați bara de instrumente",
     "🧹 Clear": "🧹 Clar",
-    "🪟 Normal Window": "🪟 Fereastra normală"
+    "🪟 Normal Window": "🪟 Fereastra normală",
+    "Session": "Sesiune",
+    "weekly": "săptămânal",
+    "monthly": "lunar",
+    "spend": "cheltuieli",
+    "daily FB": "FB zilnic",
+    "window": "fereastră",
+    "cache present": "cache prezent",
+    "live": "live",
+    "{name} until {when}": "{name} până la {when}"
   },
   "missing_keys": 0
 }

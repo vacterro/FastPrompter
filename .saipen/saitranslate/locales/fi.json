@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Seepraraitojen",
     "🧩 Customize Toolbar": "🧩 Mukauta työkalupalkkia",
     "🧹 Clear": "🧹 Tyhjennä",
-    "🪟 Normal Window": "🪟 Normaali ikkuna"
+    "🪟 Normal Window": "🪟 Normaali ikkuna",
+    "Session": "Istunto",
+    "weekly": "viikittäin",
+    "monthly": "kuukausittain",
+    "spend": "kulutus",
+    "daily FB": "päivittäin FB",
+    "window": "ikkuna",
+    "cache present": "välimuisti käytössä",
+    "live": "live",
+    "{name} until {when}": "{name} asti {when}"
   },
   "missing_keys": 0
 }

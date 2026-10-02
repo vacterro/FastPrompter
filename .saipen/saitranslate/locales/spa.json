@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Rayas de cebra",
     "🧩 Customize Toolbar": "🧩 Personalizar la barra de herramientas",
     "🧹 Clear": "🧹 Limpiar",
-    "🪟 Normal Window": "🪟 Ventana normal"
+    "🪟 Normal Window": "🪟 Ventana normal",
+    "Session": "Sesión",
+    "weekly": "semanal",
+    "monthly": "mensual",
+    "spend": "gasto",
+    "daily FB": "FB diario",
+    "window": "ventana",
+    "cache present": "caché presente",
+    "live": "en vivo",
+    "{name} until {when}": "{name} hasta {when}"
   },
   "missing_keys": 0
 }

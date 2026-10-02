@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Λωρίδες ζέβρας",
     "🧩 Customize Toolbar": "🧩 Προσαρμογή γραμμής εργαλείων",
     "🧹 Clear": "🧹 Καθαρό",
-    "🪟 Normal Window": "🪟 Κανονικό παράθυρο"
+    "🪟 Normal Window": "🪟 Κανονικό παράθυρο",
+    "Session": "Συνεδρία",
+    "weekly": "εβδομαδιαίο",
+    "monthly": "μηνιαίο",
+    "spend": "δαπάνες",
+    "daily FB": "ημερήσιο FB",
+    "window": "παράθυρο",
+    "cache present": "η προσωρινή μνήμη υπάρχει",
+    "live": "ζωντανά",
+    "{name} until {when}": "{name} έως {when}"
   },
   "missing_keys": 0
 }

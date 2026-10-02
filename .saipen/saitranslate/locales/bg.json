@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Зеброви ивици",
     "🧩 Customize Toolbar": "🧩 Настрой лентата",
     "🧹 Clear": "🧹 Ясно",
-    "🪟 Normal Window": "🪟 Нормален прозорец"
+    "🪟 Normal Window": "🪟 Нормален прозорец",
+    "Session": "Сесия",
+    "weekly": "седмично",
+    "monthly": "месечно",
+    "spend": "разходи",
+    "daily FB": "дневни FB",
+    "window": "прозорец",
+    "cache present": "кешът е наличен",
+    "live": "на живо",
+    "{name} until {when}": "{name} до {when}"
   },
   "missing_keys": 0
 }

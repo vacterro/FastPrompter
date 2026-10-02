@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebrastriper",
     "🧩 Customize Toolbar": "🧩 Tilpass verktøylinjen",
     "🧹 Clear": "🧹 Tøm",
-    "🪟 Normal Window": "🪟 Vanlig vindu"
+    "🪟 Normal Window": "🪟 Vanlig vindu",
+    "Session": "Økt",
+    "weekly": "ukentlig",
+    "monthly": "månedlig",
+    "spend": "forbruk",
+    "daily FB": "daglig FB",
+    "window": "vindu",
+    "cache present": "cache er til stede",
+    "live": "direkte",
+    "{name} until {when}": "{name} til {when}"
   },
   "missing_keys": 0
 }

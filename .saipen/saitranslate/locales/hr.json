@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebraste pruge",
     "🧩 Customize Toolbar": "🧩 Prilagodi alatnu traku",
     "🧹 Clear": "🧹 Jasno",
-    "🪟 Normal Window": "🪟 Normalan prozor"
+    "🪟 Normal Window": "🪟 Normalan prozor",
+    "Session": "Sesija",
+    "weekly": "tjedno",
+    "monthly": "mjesečno",
+    "spend": "potrošnja",
+    "daily FB": "dnevni FB",
+    "window": "prozor",
+    "cache present": "predmemorija je prisutna",
+    "live": "uživo",
+    "{name} until {when}": "{name} do {when}"
   },
   "missing_keys": 0
 }

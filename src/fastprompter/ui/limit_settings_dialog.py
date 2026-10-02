@@ -123,8 +123,8 @@ def _window_name(window) -> str:
 def _desktop_window_name(key: str) -> str:
     """Window label from a bare key (no UsageWindow to read a duration from)."""
     return {FIVE_HOUR: "5h", WEEKLY: "7d", MONTHLY: "30d",
-            "spend_limit": "spend", "quota": "quota"}.get(base_key(key),
-                                                          base_key(key))
+            "spend_limit": tr("spend"), "quota": tr("quota")}.get(
+                base_key(key), tr("window"))
 
 
 class LimitSettingsDialog(QDialog):
@@ -2221,7 +2221,7 @@ class LimitSettingsDialog(QDialog):
                             "percentages and reset times"))
         if state["bridge_connected"]:
             lines.append(tr("Status line (default home): connected · ")
-                         + ("cache present" if state["bridge_has_cache"]
+                         + (tr("cache present") if state["bridge_has_cache"]
                             else tr("no cache yet (Claude Code must render it)")))
         else:
             lines.append(tr("Status line (default home): not connected"))
@@ -2229,9 +2229,11 @@ class LimitSettingsDialog(QDialog):
         if windows:
             age = state["desktop_age_s"] or 0
             detail = ", ".join(
-                f"{_desktop_window_name(key)} {value:.0f}% used"
+                f"{_desktop_window_name(key)} "
+                + tr("{n}% used").format(n=int(round(value)))
                 for key, value in sorted(windows.items()))
-            freshness = "live" if state["desktop_fresh"] else "stale"
+            freshness = (tr("live") if state["desktop_fresh"]
+                         else tr("stale"))
             lines.append(tr("Claude Desktop sampler: {detail} · "
                          "{mins} min old ({fresh})").format(
                              detail=detail, mins=int(age // 60),
@@ -2242,9 +2244,10 @@ class LimitSettingsDialog(QDialog):
         if blocked:
             import datetime
             detail = ", ".join(
-                f"{_desktop_window_name(key)} until "
-                + datetime.datetime.fromtimestamp(
-                    block["resets_at"]).strftime("%H:%M")
+                tr("{name} until {when}").format(
+                    name=_desktop_window_name(key),
+                    when=datetime.datetime.fromtimestamp(
+                        block["resets_at"]).strftime("%H:%M"))
                 for key, block in sorted(blocked.items()))
             lines.append(tr("Claude Code refusals: blocked {detail}").format(detail=detail))
         label.setText("\n".join(lines))

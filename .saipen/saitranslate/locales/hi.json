@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 ज़ेबरा धारियाँ",
     "🧩 Customize Toolbar": "🧩 टूलबार अनुकूलित करें",
     "🧹 Clear": "🧹 साफ़",
-    "🪟 Normal Window": "🪟 सामान्य विंडो"
+    "🪟 Normal Window": "🪟 सामान्य विंडो",
+    "Session": "सत्र",
+    "weekly": "साप्ताहिक",
+    "monthly": "मासिक",
+    "spend": "खर्च",
+    "daily FB": "दैनिक FB",
+    "window": "विंडो",
+    "cache present": "कैश मौजूद है",
+    "live": "लाइव",
+    "{name} until {when}": "{name} {when} तक"
   },
   "missing_keys": 0
 }

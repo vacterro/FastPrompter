@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebrastrepen",
     "🧩 Customize Toolbar": "🧩 Werkbalk aanpassen",
     "🧹 Clear": "🧹 Wissen",
-    "🪟 Normal Window": "🪟 Normaal venster"
+    "🪟 Normal Window": "🪟 Normaal venster",
+    "Session": "Sessie",
+    "weekly": "wekelijks",
+    "monthly": "maandelijks",
+    "spend": "uitgaven",
+    "daily FB": "dagelijkse FB",
+    "window": "venster",
+    "cache present": "cache aanwezig",
+    "live": "live",
+    "{name} until {when}": "{name} tot {when}"
   },
   "missing_keys": 0
 }

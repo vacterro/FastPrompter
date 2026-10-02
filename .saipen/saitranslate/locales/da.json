@@ -1849,7 +1849,16 @@
     "🦓 Zebra Stripes": "🦓 Zebrastriber",
     "🧩 Customize Toolbar": "🧩 Tilpas værktøjslinje",
     "🧹 Clear": "🧹 Ryd",
-    "🪟 Normal Window": "🪟 Normalt vindue"
+    "🪟 Normal Window": "🪟 Normalt vindue",
+    "Session": "Session",
+    "weekly": "ugentlig",
+    "monthly": "månedlig",
+    "spend": "forbrug",
+    "daily FB": "daglig FB",
+    "window": "vindue",
+    "cache present": "cache er til stede",
+    "live": "live",
+    "{name} until {when}": "{name} til {when}"
   },
   "missing_keys": 0
 }
