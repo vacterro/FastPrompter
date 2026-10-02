@@ -1,0 +1,34 @@
+{
+  "ticket": "T-1396",
+  "t1391_scope": "verdicts whose pack value is no longer byte-identical to en.json",
+  "allowlist": "tools/i18n_verified_identical.json",
+  "total_verdicts": 1036,
+  "langs": 32,
+  "live_identical_verdicts": 999,
+  "stale_because_pack_translated": [
+    {
+      "lang": "ro",
+      "key": "Auto",
+      "en": "Auto",
+      "pack": "Automat"
+    },
+    {
+      "lang": "ro",
+      "key": "Auto — Full",
+      "en": "Auto — Full",
+      "pack": "Automat — Complet"
+    },
+    {
+      "lang": "ro",
+      "key": "Silo",
+      "en": "Silo",
+      "pack": "Siloz"
+    }
+  ],
+  "dead_key_texts": [
+    "MUTED\" if muted else \"SOUND ON",
+    "MUTED\" if self.data.get(\"audio_global_muted"
+  ],
+  "dead_verdict_count": 34,
+  "verdict": "FAIL (T-1391 confirmed: 3 stale ro verdicts; 34 further dead verdicts naming 2 key texts absent from both en.json and every pack)"
+}

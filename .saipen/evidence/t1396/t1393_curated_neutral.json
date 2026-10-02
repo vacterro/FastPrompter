@@ -1,0 +1,30 @@
+{
+  "ticket": "T-1393",
+  "claim": "the curated-neutral set consulted by tools/i18n_verified.py names the four en.json keys that are byte-identical in all 32 locales",
+  "keys": [
+    "[{n} {res_word}]",
+    "{name} ({n} {res_word})",
+    "▲",
+    "▼"
+  ],
+  "why_unstated_before": "i18n_verified.blank() excused all four through has_word_to_translate() returning False -- the value reduces to punctuation once placeholders are stripped -- so no verdict and no curated-neutral entry was ever recorded",
+  "unstated_verdicts_before": {
+    "key_texts": 4,
+    "key_locale_pairs": 128,
+    "evidence": "build/t1396/t1393_scan_before.txt"
+  },
+  "unstated_verdicts_after": {
+    "key_texts": 0,
+    "key_locale_pairs": 0,
+    "evidence": "build/t1396/t1393_scan_after.txt"
+  },
+  "identical_audit_delta": {
+    "english_fallbacks_before": 610,
+    "english_fallbacks_after": 546,
+    "why_64_not_128": "classify_key() already returned neutral for the two bare glyphs via not _has_letters(), so only the two composed skeletons (2 x 32) ever reached the English-fallback counter",
+    "language_neutral_keys_before": 29,
+    "language_neutral_keys_after": 31,
+    "evidence": "build/t1396/audit_before.txt"
+  },
+  "regression_test": "tests/test_t1393_curated_neutral.py"
+}

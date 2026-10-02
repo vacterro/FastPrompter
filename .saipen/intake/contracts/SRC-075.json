@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-075:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Work T-1391: drop the three stale Romanian identical verdicts and add the full-staleness sweep"
+    }
+  },
+  "derived_at": "2026-10-02T05:38:21Z",
+  "derived_from": "SRC-075",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "c93f86d4192226dd8052f9f30adc956b4c4d3226d899581fa2ee1cab22bbdac2"
+}

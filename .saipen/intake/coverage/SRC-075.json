@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-075:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1396 closed with verification evidence in LOG: verify -> PASS [target: T-1396] conf: high -- python -m pytest -q (full suite): 5265 passed, 23 skipped in 1339.95s, exit 0; receipt build/t1396/suite_after.txt. Targeted: 62 passed across test_t1391_i18n_verdict_staleness.py, test_t1392_verdict_staleness_gate.py, test_t1393_curated_neutral.py, test_i18n_contract_t1353.py, test_i18n_key_inventory.py. Negative controls: injected stale ro verdict ->",
+      "text": "Work T-1391: drop the three stale Romanian identical verdicts and add the full-staleness sweep",
+      "verification": "the Work this request created reached its own verification gate; see the T-1396 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1396"
+    }
+  },
+  "schema_version": 1
+}

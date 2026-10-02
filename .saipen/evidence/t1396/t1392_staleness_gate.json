@@ -1,0 +1,38 @@
+{
+  "ticket": "T-1392",
+  "claim": "tools/validate_saitranslate.py reports every allowlist entry whose pack value is no longer byte-identical to en.json as an error",
+  "implementation": [
+    "tools/i18n_verified.py: STALENESS_EXEMPT (the deliberate exception) + staleness_exempt()",
+    "tools/i18n_verified.py: stale_verdicts(lang, english, pack) and orphaned_verdicts(lang, english)",
+    "tools/validate_saitranslate.py: the drifted set is an ERROR, the orphaned set a WARNING"
+  ],
+  "exception_mechanism": "i18n_verified.STALENESS_EXEMPT -- a code constant, not another JSON blob, so keeping a stale excuse is a visible reasoned act in a diff. Empty today.",
+  "negative_controls": [
+    {
+      "id": "clean",
+      "root": "build/t1392_scratch",
+      "injection": null,
+      "exit_code": 0,
+      "status_line": "STATUS: VALIDATION PASSED with 1 warning(s) - no structural errors",
+      "evidence": "build/t1396/t1392_clean.txt"
+    },
+    {
+      "id": "stale",
+      "root": "build/t1392_scratch",
+      "injection": "ro['**__{text}__** ({time})'] rewritten to 'CONTRACȚIE (injectată)' while its verdict stayed on file",
+      "exit_code": 1,
+      "status_line": "STATUS: VALIDATION FAILED",
+      "error": "[ro] 1 identical-verdict(s) in i18n_verified_identical.json no longer hold -- the pack has since translated the key ('**__{text}__** ({time})' -> 'CONTRACȚIE (injectată)'). Drop the verdict, or record it in i18n_verified.STALENESS_EXEMPT with its reason.",
+      "evidence": "build/t1396/t1392_stale2.txt"
+    },
+    {
+      "id": "exempted",
+      "root": "build/t1392_scratch",
+      "injection": "same drift + the key added to STALENESS_EXEMPT",
+      "staleness_errors": 0,
+      "note": "the exemption suppresses exactly the staleness rule and nothing else; the two errors that remain are the crude injection losing its placeholders and its coverage_pct metadata",
+      "evidence": "build/t1396/t1392_exempt.txt"
+    }
+  ],
+  "regression_test": "tests/test_t1392_verdict_staleness_gate.py"
+}

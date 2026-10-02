@@ -190,6 +190,32 @@ def main():
                 if bad:
                     contract_bad.append(f"{k}: {bad[0]}")
 
+            # T-1391/T-1392: the allowlist is a human judgement with no
+            # expiry. `blank()` above trusts a verdict to excuse a
+            # byte-identical value and never re-reads the pack to check the
+            # verdict still describes it -- so a locale that finished
+            # translating a key stayed invisible as a "verified identical"
+            # and the verdict count overstated what the file asserts.
+            # Re-read it here, where the pack is already loaded.
+            drifted = i18n_verified.stale_verdicts(lang, en_master, trans)
+            if drifted:
+                shown = ", ".join(f"{k!r} -> {trans[k]!r}" for k in drifted[:5])
+                more = " ..." if len(drifted) > 5 else ""
+                errors.append(
+                    f"[{lang}] {len(drifted)} identical-verdict(s) in "
+                    f"i18n_verified_identical.json no longer hold -- the pack "
+                    f"has since translated the key ({shown}{more}). Drop the "
+                    f"verdict, or record it in i18n_verified.STALENESS_EXEMPT "
+                    f"with its reason."
+                )
+            orphaned = i18n_verified.orphaned_verdicts(lang, en_master)
+            if orphaned:
+                warnings.append(
+                    f"[{lang}] {len(orphaned)} identical-verdict(s) name a key "
+                    f"absent from en.json and excuse nothing: "
+                    f"{orphaned[:5]}{' ...' if len(orphaned) > 5 else ''}"
+                )
+
             if untranslated > 0 and lang != "en":
                 detail = f"{len(english_copies)} of them byte-identical to the English master"
                 if english_copies:

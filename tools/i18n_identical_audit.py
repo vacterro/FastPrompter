@@ -81,6 +81,21 @@ _CURATED_NEUTRAL = {
     "RGB", "WAV", "URL",
     # the product's own name and its brand
     "Problip", "FastPrompter",
+    # Tab-order and snippet-row arrows. Not words: the sentences that mention
+    # them ("Use ▲ ▼ to change the order of the tabs") carry their own
+    # translation, so the arrow is a pictogram inside an already-translated
+    # string rather than a label standing on its own.
+    "▲", "▼",
+    # Runtime-composed skeletons for the usage-limit reset rows. `name` and
+    # `res_word` arrive already translated and are substituted at render
+    # time, so the bracket-and-placeholder frame is the same in every
+    # language and translating the frame would only break the substitution.
+    # These four were passing the gate before this entry existed, but through
+    # `has_word_to_translate` returning False -- the whole value reduces to
+    # punctuation once the placeholders are stripped. That is an emergent
+    # excuse nobody ever stated, which is what left 4 keys x 32 locales =
+    # 128 values byte-identical everywhere with no verdict anywhere.
+    "[{n} {res_word}]", "{name} ({n} {res_word})",
 }
 
 

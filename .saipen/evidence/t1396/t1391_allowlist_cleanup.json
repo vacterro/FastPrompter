@@ -1,0 +1,61 @@
+{
+  "ticket": "T-1391",
+  "claim": "the three Romanian identical-verdicts excuse values ro.json has since translated",
+  "allowlist": "tools/i18n_verified_identical.json",
+  "before": {
+    "total_verdicts": 1036,
+    "stale_because_the_pack_translated": [
+      {
+        "lang": "ro",
+        "key": "Auto",
+        "en": "Auto",
+        "pack": "Automat"
+      },
+      {
+        "lang": "ro",
+        "key": "Auto — Full",
+        "en": "Auto — Full",
+        "pack": "Automat — Complet"
+      },
+      {
+        "lang": "ro",
+        "key": "Silo",
+        "en": "Silo",
+        "pack": "Siloz"
+      }
+    ],
+    "dead_key_texts": [
+      "MUTED\" if muted else \"SOUND ON",
+      "MUTED\" if self.data.get(\"audio_global_muted"
+    ],
+    "dead_verdict_count": 34,
+    "evidence": ".saipen/evidence/t1396/scout_staleness_scan.json"
+  },
+  "change": {
+    "verdicts_deleted": 37,
+    "ro_translated": 3,
+    "dead_scrape_artefacts": 34,
+    "why_the_34_went_too": "both key texts are absent from en.json AND from every locale pack, and neither appears in the collected tr() universe, so a verdict for them excuses nothing at any gate call. Keeping them is inert; deleting them changes no gate outcome and stops the allowlist asserting things it cannot mean.",
+    "deletion_method": "line-wise on the raw bytes so CRLF endings and every untouched line are preserved; git reports 0 insertions / 37 deletions",
+    "ro_pack_touched": false
+  },
+  "after": {
+    "total_verdicts": 999,
+    "live_identical_verdicts": 999,
+    "stale_because_the_pack_translated": 0,
+    "dead_verdict_count": 0
+  },
+  "negative_control": {
+    "method": "tests/test_t1391_i18n_verdict_staleness.py::stale_verdicts() run against the pre-fix allowlist restored from HEAD",
+    "pre_fix_stale": 37,
+    "post_fix_stale": 0,
+    "planted_verdict_detected": true,
+    "evidence": "build/t1396/t1391_negctl.txt"
+  },
+  "gate": {
+    "before": "build/t1396/gate_before.txt",
+    "after": "build/t1396/gate_after_all.txt",
+    "verdict": "VALIDATION PASSED, all 32 locales still 100.0% coverage; the only line that differs between the two runs is a WARN's unordered sample of example keys"
+  },
+  "regression_test": "tests/test_t1391_i18n_verdict_staleness.py"
+}
