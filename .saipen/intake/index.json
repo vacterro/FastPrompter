@@ -3,9 +3,13 @@
     "SRC-075": {
       "linked_work": "T-1396",
       "source_sha256": "c93f86d4192226dd8052f9f30adc956b4c4d3226d899581fa2ee1cab22bbdac2"
+    },
+    "SRC-076": {
+      "linked_work": "T-1399",
+      "source_sha256": "563caa71ab67b0407bdaea2556784b69f27e4b0df7eec36414d715f4f831b087"
     }
   },
-  "next_id": 76,
+  "next_id": 77,
   "schema_version": 1,
   "tombstones": {
     "SRC-003": {

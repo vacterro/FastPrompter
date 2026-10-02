@@ -1,0 +1,54 @@
+{
+  "ticket": "T-1398",
+  "claim_under_test": "a CONFLICT raised by a partial apply cannot be settled by either resolution class the engine advertises",
+  "why_this_run_exists": "the ticket was filed from ONE live incident in the real project (2026-10-02T05:49Z). A single sample cannot distinguish a deterministic defect from a one-off. This drives the same path on purpose, with a negative control, in a scratch project.",
+  "harness": {
+    "file": "build/t1398/repro.py",
+    "root": "build/t1398/scratch2",
+    "how_the_failure_is_forced": "the harness opens .saipen/STATE.md with `open(path, 'r+b')` and holds it. Win32 opens without FILE_SHARE_DELETE, so os.replace on that target fails with WinError 5 -- the same failure an antivirus scanner, a search indexer or a second writer produces, with no timing race involved.",
+    "engine_is_untouched": "every step is the public CLI in a subprocess with --project-root pointed at the scratch tree"
+  },
+  "arm_a_negative_control": {
+    "lock_held": false,
+    "result": "TRANSITIONED",
+    "changed_files": [".saipen/LOG.md", ".saipen/BOARD.md", ".saipen/STATE.md"],
+    "phase_before": "SCOUT",
+    "phase_after": "BUILD",
+    "verdict": "the harness and the path are sound; without the lock the three-target write completes and the phase moves"
+  },
+  "arm_b_partial_apply": {
+    "lock_held": true,
+    "result_code": "CONFLICT",
+    "recovery_required": true,
+    "op_id": "transition-92591cce66aa46928591d21dd5d2805a",
+    "targets": {
+      ".saipen/LOG.md": {"applied": true, "current_equals_planned_after": true},
+      ".saipen/BOARD.md": {"applied": true, "current_equals_planned_after": true},
+      ".saipen/STATE.md": {"applied": false, "current_equals_expected_before": true}
+    },
+    "staged_identity": "73c2a15dfb67979c",
+    "further_writes": "RECOVERY_CONFLICT"
+  },
+  "both_advertised_resolution_classes": {
+    "safe_resolution_classes_reported_by_inspect": ["accept_live", "replan"],
+    "accept_live": {"code": "NEEDS_REPAIR", "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 4"},
+    "replan": {"code": "NEEDS_REPAIR", "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 4"},
+    "verdict": "both dead-end on the identical message; the claim holds deterministically, not by sample"
+  },
+  "the_sharper_root_cause_the_original_ticket_missed": {
+    "what_ops_md_already_promises": "saipen/OPS.md 'Recovery semantics': Recovery is ROLL-FORWARD. Per unfinished target: 'current hash == before_hash: apply the staged planned bytes'.",
+    "the_target_qualifies": "STATE.md has current == expected_before (9e7d8d7aae78818c) and applied: false, and the journal holds its staged bytes (staged_identity 73c2a15dfb67979c). By the documented rule the operation was fully roll-forwardable and the state was recoverable.",
+    "what_actually_happens": "resolve() runs _run_verifier BEFORE settling, and the half-applied operation is exactly what that verifier rejects -- 'STATE proposed last_event 3 != LOG tail 4'. So the verifier fires on an inconsistency that the roll-forward step sitting behind it would have resolved.",
+    "the_defect_in_one_line": "verify-then-fix ordering. The check that could never pass is run before the repair that would make it pass.",
+    "site": "tools/saipen_engine/journal.py, resolve(): `errors = _run_verifier(root, record.get('targets'), policy, ...)` then `if errors: return NEEDS_REPAIR`"
+  },
+  "post_recovery_state": {
+    "bare_saipen_recover": "RECOVERED",
+    "reconciles": "STATE.md last_event 3 -> 4, matching the LOG tail",
+    "validate_after": "CURRENT_FAIL with exactly one problem, and it is '.saipen/IDENTITY.md exists but is not tracked by git' -- an artefact of the scratch tree not being a git repo, not a residue of the conflict"
+  },
+  "what_is_still_not_proven": [
+    "that no OTHER route exists; only the two classes the engine itself reports as safe were tried, plus the bare recover",
+    "the fix itself -- this is a reproduction, and the engine was not modified"
+  ]
+}

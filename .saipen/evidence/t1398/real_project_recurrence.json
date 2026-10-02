@@ -1,0 +1,49 @@
+{
+  "tickets": ["T-1394", "T-1398", "T-1400"],
+  "summary": "two independent transient WinError 5 partial applies in the real project inside one unattended session, plus a deterministic reproduction in a scratch project",
+  "incidents": [
+    {
+      "n": 1,
+      "when": "2026-10-02T05:49:25Z",
+      "command": "saipen transition SHIP T-1397",
+      "failed_target": ".saipen/STATE.md",
+      "applied_targets": [".saipen/LOG.md", ".saipen/BOARD.md"],
+      "returned": "REFUSE [CONFLICT] recovery_required=true",
+      "detected_where": "the agent's own tool result",
+      "settled_by": "saipen recover inspect -> recover resolve --resolution accept_live (NEEDS_REPAIR) -> --resolution replan (NEEDS_REPAIR) -> bare saipen recover (RECOVERED)"
+    },
+    {
+      "n": 2,
+      "when": "2026-10-02T06:0xZ, minutes later, in the same session",
+      "command": "saipen ticket done T-1399 --closure-mode own_patch",
+      "failed_target": ".saipen/BOARD.md",
+      "returned": "REFUSE [CONFLICT] recovery_required=true",
+      "detected_where": "the agent's own tool result",
+      "settled_by": "bare saipen recover (RECOVERED) -- which ROLLED THE FINISH FORWARD: the command had just refused, and the recovery completed the very operation the refusal named",
+      "consequence": "T-1399 ended up closed and the project phase reached DONE without the agent re-issuing ticket done"
+    }
+  ],
+  "recurrence_measured": {
+    "hits": 2,
+    "window_minutes": 50,
+    "distinct_files_hit": [".saipen/STATE.md", ".saipen/BOARD.md"],
+    "operator_or_user_present": false,
+    "what_ran_concurrently_on_this_machine": "a separate SAIPEN session writing its own project memory under V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN\\.saipen, and an antivirus/search indexer is the usual Windows cause",
+    "significance": "T-1394's recurrence field says 'any Windows process holding a short lock on .saipen/LOG.md'. The measurement widens it: it is not LOG.md-specific, it is not once-per-machine, and it fires without any human touching the machine. The agent recovered both times by knowing the unadvertised route, which is a fact about my memory, not about the protocol."
+  },
+  "incident_2_is_the_stronger_form_of_t1400": {
+    "claim": "a bare `saipen recover` settles a CONFLICT that `saipen recover resolve` refuses, contradicting OPS.md",
+    "incident_1": "the bare recover reconciled a last_event counter, which is a repair",
+    "incident_2": "the bare recover ROLLED A REFUSED OPERATION FORWARD to its intended end state -- not a repair of bookkeeping but the completion of a write the agent was told had failed",
+    "why_that_is_worse": "a tool result of `REFUSE [CONFLICT]` is an answer. An agent that obeys it will stop and report the block. The tree then moves anyway, silently. Nothing in the LOG line the recovery wrote says which resolution class was applied, because none was: OPS.md's roll-forward path is not a resolution class at all."
+  },
+  "state_after_both": {
+    "consistency": "STATE.md last_event 4045 == LOG tail E-4045",
+    "validate": "CURRENT_FAIL with exactly 1 problem -- the pre-existing sweep-ticket-link ledger entry -- and 66 warnings, i.e. no residue from either incident",
+    "data_loss": "none"
+  },
+  "not_proven": [
+    "which process took each lock; Windows does not attribute this without an audit subscription, and none is available here",
+    "that a retry inside the engine would have succeeded within a reasonable bound -- the lock is released by the time the agent re-issues the command, which is why the manual recovery works at all"
+  ]
+}

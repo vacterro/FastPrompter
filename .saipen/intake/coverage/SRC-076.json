@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-076:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1399 closed with verification evidence in LOG: verify -> PASS [target: T-1399] conf: high -- python build/t1398/repro.py, run twice against a fresh scratch2 project. Control arm (no lock): ok=true TRANSITIONED, changed_files LOG.md/BOARD.md/STATE.md, phase SCOUT->BUILD -- proves the harness and the path are sound. Armed arm (.saipen/STATE.md held open, which makes os.replace fail with WinError 5 deterministically, no race): ok=false CONFLICT r",
+      "text": "scratch project for the T-1398 partial-apply reproduction",
+      "verification": "the Work this request created reached its own verification gate; see the T-1399 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1399"
+    }
+  },
+  "schema_version": 1
+}
