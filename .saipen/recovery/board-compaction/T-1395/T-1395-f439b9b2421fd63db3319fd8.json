@@ -1,0 +1,20 @@
+{
+  "externalization_event": {
+    "event_id": "E-3979",
+    "operation_id": "ticket-reasoning-2478bcc2c4f5467499012741527d4160",
+    "reason": "existing/proposed oversized BOARD record requires canonical reasoning update"
+  },
+  "lossless": true,
+  "metadata_path": ".saipen/recovery/board-compaction/T-1395/T-1395-f439b9b2421fd63db3319fd8.json",
+  "operation": "board_legacy_compaction",
+  "original_record_bytes": 1784,
+  "original_record_path": ".saipen/recovery/board-compaction/T-1395/T-1395-f439b9b2421fd63db3319fd8.BOARD.md",
+  "original_record_sha256": "f439b9b2421fd63db3319fd877191ce031a07b52f59a658381e90b4e76f92f0c",
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "schema_version": 1,
+  "source": ".saipen/BOARD.md",
+  "status": "COMMITTED",
+  "supersedes_detail_ref": "",
+  "ticket_id": "T-1395"
+}
