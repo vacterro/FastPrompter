@@ -1,0 +1,61 @@
+{
+  "ticket": "T-1394",
+  "disposition": "FIXED IN THE ENGINE -- implemented, verified on all three shapes, committed",
+  "engine_commit": "51fb18a1 fix(engine): route a conflict by its shape, not by one answer for all",
+  "engine_file": "tools/saipen_engine/journal.py (only file touched; +65 / -12)",
+  "why_the_hold_off_was_lifted": {
+    "the_original_reason": "the engine repo has ~1780 dirty tracked files and another live session's uncommitted work; a commit there would sweep that work in",
+    "what_changed": "the dirty set was re-measured, not assumed: 1787 dirty paths, of which 1735 are .saipen/ and the rest are saipen/*.md docs, tools/run_scenarios.py, ruff.toml, VERSION, README.md",
+    "the_decisive_fact": "tools/saipen.py and tools/saipen_engine/journal.py were CLEAN -- neither appears in git status for those paths",
+    "consequence": "the commit was path-limited to tools/saipen_engine/journal.py. The resulting commit contains exactly one file. No other session's work was included, and none of it was modified.",
+    "the_engine_pre_commit_gate": "the engine's own tools/validate.py ran as a pre-commit hook and reported conformance clean with 34 warnings and 0 problems"
+  },
+  "the_fix": {
+    "shape_of_the_change": "recovery_preflight's CONFLICT refusal now chooses canonical_next_command by the conflict's shape instead of emitting one answer for every CONFLICT",
+    "the_predicate": "_conflict_diverges(root, op_id) delegates to inspect_op -- the same read-only probe the message already tells the operator to run -- and returns True when it reports conflicting_locations",
+    "why_delegate_rather_than_re_derive": "a second copy of the settle path's judgement would drift from the first. The first attempt re-implemented the classification from the plan's before/after hashes and was WRONG: it reported the non-prefix-materialization fixture as non-divergent and would have named `saipen recover` for an op that bare recover refuses. inspect_op is the surface that already makes this judgement, and it is the same probe the operator runs, so advice and diagnostic cannot disagree.",
+    "fails_closed": "an op that will not inspect returns True, so unreadable recovery evidence keeps routing to the explicit resolution classes exactly as before",
+    "new_field": "conflict_diverged: bool on the RECOVERY_CONFLICT answer, so a caller can branch on the shape without re-deriving it",
+    "what_did_not_change": "the CONFLICT status, recovery_required: True, the refusal itself, inspect_command, and every safety property. The divergent shape still refuses; nothing that previously refused now proceeds."
+  },
+  "verification_on_every_shape": [
+    {
+      "shape": "clean partial apply -- a transient WinError 5, what an antivirus scanner or indexer produces",
+      "harness": ".saipen/evidence/t1394/t1394_transient_lock_escalation.py",
+      "before": "retry refused with canonical_next_command 'saipen recover resolve <op> --resolution <accept_live|replan>'; that route and replan both NEEDS_REPAIR; bare recover RECOVERED but unnamed; operator session measured 4 commands",
+      "after": "RERUN AGAINST THE FIXED ENGINE: retry refused with canonical_next_command 'saipen recover'; that named command RECOVERED; the retry then TRANSITIONED; operator session measured 2 commands with the_engine_named_a_route_that_works true",
+      "measured_again_not_remembered": "the harness was re-run end to end after the engine commit, so this row reports the shipped engine rather than a claim about it. Two defects in the harness itself had to be fixed first, or the rerun would have been misleading: the source-branch locator was pinned to line numbers 3054/3064, which my commit shifted, so it quoted the wrong lines under a plausible number; and operator_session_shape was hardcoded pre-fix prose. Both now anchor on content and on what actually ran.",
+      "reproduction": ".saipen/evidence/t1394/t1394_transient_lock_escalation.json"
+    },
+    {
+      "shape": "divergent -- a third party rewrote an already-applied target",
+      "harness": ".saipen/evidence/t1394/t1394_divergent_preflight_route.py (new) plus .saipen/evidence/t1400/t1400_divergent_conflict.py",
+      "before": "bare recover REFUSED (RECOVERY_CONFLICT), third-party bytes preserved, status stayed CONFLICT",
+      "after": "UNCHANGED AND NOW MEASURED AT THE ROUTING LAYER: the new probe reaches preflight on a divergent target and observes conflict_diverged=true, canonical_next_command 'saipen recover resolve <op> --resolution <accept_live|replan>', refusal intact, third-party edit intact. All five checks pass: DIVERGENT_SHAPE_STILL_PROTECTED",
+      "why_a_new_probe_was_needed": "T-1400's harness puts its divergence in .saipen/LOG.md as a non-grammar line, so the immutable-ledger validator rejects the tree with HISTORY_LEDGER_CORRUPT before recovery is reached. It proves bare recover refuses; it cannot exercise the routing my fix changed. This probe diverges BOARD.md instead and reaches preflight.",
+      "the_four_discarded_injection_attempts": "appending a new ticket line (CORE-003, no allocation event), injecting into DOING (ACTIVE_TICKET_MISMATCH, DOING is the active slot), injecting into TODO (CORE-003 again), and appending text after the fields (INVALID claim, because the append landed inside claim_time). One lesson four times: an injection into a validated file must be a VALID change, or the validator answers instead of the probe. The harness docstring records this rather than presenting a first-try success.",
+      "why_this_matters": "this is the shape T-1355 measured and its fix protects. Naming bare recover for THIS shape would have recreated the loop T-1355 removed. It is not named for it, and that is now measured rather than asserted.",
+      "reproduction": ".saipen/evidence/t1394/t1394_divergent_preflight_route.json and .saipen/evidence/t1400/t1400_divergent_conflict.json"
+    },
+    {
+      "shape": "non-prefix materialization -- T-1355's own fixture",
+      "harness": "tools/test_recovery_noop_targets.py::test_a_genuine_conflict_names_the_command_that_settles_it",
+      "before": "named 'saipen recover resolve <op> --resolution <accept_live|replan>', ran it, and the state moved",
+      "after": "unchanged and passing -- still names the resolution classes, still moves the state",
+      "run_against_the_shipped_engine": "yes -- the covering set below was run after the commit",
+      "why_this_matters": "the termination oracle -- never advertise a command that reproduces your own state -- is preserved, not weakened. The fix did not buy the clean case by breaking it."
+    }
+  ],
+  "tests": {
+    "command": "python -m unittest test_recovery_noop_targets test_t1316_recovery_already_applied test_journal_nested_targets test_continue_improve_fallthrough test_source_receipts",
+    "cwd": "V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN/tools",
+    "result": "Ran 155 tests -- OK",
+    "one_test_failed_first_and_that_was_the_point": "test_a_genuine_conflict_names_the_command_that_settles_it failed on the first, blanket version of the fix, because that fix named bare recover for a conflict bare recover refuses. That failure is what forced the shape-aware predicate; it was not edited to pass.",
+    "lint": "ruff check tools/saipen_engine/journal.py -- All checks passed"
+  },
+  "not_verified": [
+    "the engine's full suite was not run -- only the five modules that touch recovery_preflight or RECOVERY_CONFLICT. tools/run_scenarios.py is modified in the other session's dirty tree and running it would have executed their uncommitted code.",
+    "no test was ADDED for the new clean-partial-apply routing. The behaviour is covered end to end by the T-1394 harness above, which is a real reproduction rather than a synthetic fixture; an in-engine regression test for it would be the natural follow-up in the owning session."
+  ],
+  "what_is_left_for_T_1398": "the partial-apply-and-divergent intersection is unchanged: all three routes still refuse (DEADLOCK_NO_ROUTE_SETTLES). This fix removes the mis-routing that led operators toward it; it does not make that state settleable. That needs a resolution class that reconciles rather than re-verifies."
+}

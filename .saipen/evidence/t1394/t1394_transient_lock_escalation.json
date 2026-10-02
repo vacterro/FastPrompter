@@ -19,7 +19,7 @@
   "ticket": {
     "ok": true,
     "code": "TICKET_ADDED",
-    "op_id": "ticket-5a56729a78624981aff41000e76bda9f",
+    "op_id": "ticket-6b3f00f738bf48f5b2eb71cd0b62f1f8",
     "changed_files": [
       ".saipen/LOG.md",
       ".saipen/BOARD.md",
@@ -32,7 +32,7 @@
   "claim": {
     "ok": true,
     "code": "CLAIMED",
-    "op_id": "claim-591d2936ef3a4628842996592309f4c7",
+    "op_id": "claim-20d188e4e45946a89e4d2d91e40f5ace",
     "changed_files": [
       ".saipen/LOG.md",
       ".saipen/BOARD.md",
@@ -59,7 +59,7 @@
     "code": "CONFLICT",
     "recovery_required": true,
     "canonical_next_command": null,
-    "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1394\\\\scratch\\\\.saipen\\\\.STATE.md.8ce28a05cb83482eaa550fe010621a98.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1394\\\\s"
+    "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1394\\\\scratch\\\\.saipen\\\\.STATE.md.cb3cdc833e5542b1a90a0c025502717e.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1394\\\\s"
   },
   "lock_released_before_retry": true,
   "step4_retry": {
@@ -67,32 +67,19 @@
     "ok": false,
     "code": "RECOVERY_CONFLICT",
     "recovery_required": true,
-    "canonical_next_command": "saipen recover resolve transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 --resolution <accept_live|replan>",
-    "detail": "unresolved conflict transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 blocks new mutation; look with `saipen recover inspect transition-f7a6fe3b35e14a62a9742e6f8bfe18e7` and settle it with `saipen recover resolve transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 --resolut"
+    "canonical_next_command": "saipen recover",
+    "detail": "unresolved conflict transition-5c6c6c604acc40c192a26c5dfbd374f4 blocks new mutation; every unfinished target's live bytes still match the plan, so `saipen recover` re-derives them from live bytes and settles this without a human. Look first with `saipen recove"
   },
   "step5_canonical_routes": {
-    "the_engine_named_this": "saipen recover resolve transition-f7a6fe3b35e14a62a9742e6f8bfe18e7 --resolution <accept_live|replan>",
-    "accept_live": {
-      "step": "canonical: accept_live",
-      "ok": false,
-      "code": "NEEDS_REPAIR",
-      "recovery_required": null,
-      "canonical_next_command": null,
-      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 4"
-    },
-    "replan": {
-      "step": "canonical: replan",
-      "ok": false,
-      "code": "NEEDS_REPAIR",
-      "recovery_required": null,
-      "canonical_next_command": null,
-      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 4"
-    },
-    "canonical_routes_settle": false,
-    "the_engine_named_a_route_that_works": false
+    "the_engine_named_this": "saipen recover",
+    "canonical_routes_settle": null,
+    "the_engine_named_a_route_that_works": true,
+    "the_named_command": "saipen recover",
+    "accept_live": "not attempted: the engine did not name it",
+    "replan": "not attempted: the engine did not name it"
   },
   "step6_recover": {
-    "step": "unnamed: bare recover",
+    "step": "bare recover (named post-fix)",
     "ok": true,
     "code": "RECOVERED",
     "recovery_required": false,
@@ -107,34 +94,32 @@
     "canonical_next_command": null,
     "detail": ""
   },
-  "op_id": "transition-f7a6fe3b35e14a62a9742e6f8bfe18e7",
+  "op_id": "transition-5c6c6c604acc40c192a26c5dfbd374f4",
   "source": {
     "oserror_branch": {
-      "first_line": 3054,
+      "first_line": 3108,
+      "anchored_on": "action failed: {exc}",
       "block": [
-        "3054:         except OSError as exc:",
-        "3055:             journal.mark(\"CONFLICT\")",
-        "3056:             return {",
-        "3057:                 \"ok\": False,",
-        "3058:                 \"code\": \"CONFLICT\",",
-        "3059:                 \"op_id\": op_id,",
-        "3060:                 \"recovery_required\": True,",
-        "3061:                 \"detail\": f\"target {target['path']} action failed: {exc}\",",
-        "3062:             }"
+        "3108:             journal.mark(\"CONFLICT\")",
+        "3109:             return {",
+        "3110:                 \"ok\": False,",
+        "3111:                 \"code\": \"CONFLICT\",",
+        "3112:                 \"op_id\": op_id,",
+        "3113:                 \"recovery_required\": True,",
+        "3114:                 \"detail\": f\"target {target['path']} action failed: {exc}\","
       ]
     },
     "content_mismatch_branch": {
-      "first_line": 3064,
+      "first_line": 3118,
+      "anchored_on": "action left {after!r}",
       "block": [
-        "3064:         if after != target[\"after_hash\"]:",
-        "3065:             journal.mark(\"CONFLICT\")",
-        "3066:             return {",
-        "3067:                 \"ok\": False,",
-        "3068:                 \"code\": \"CONFLICT\",",
-        "3069:                 \"op_id\": op_id,",
-        "3070:                 \"recovery_required\": True,",
-        "3071:                 \"detail\": f\"target {target['path']} action left {after!r}, \"",
-        "3072:                 f\"expected {target['after_hash']!r}\","
+        "3118:             journal.mark(\"CONFLICT\")",
+        "3119:             return {",
+        "3120:                 \"ok\": False,",
+        "3121:                 \"code\": \"CONFLICT\",",
+        "3122:                 \"op_id\": op_id,",
+        "3123:                 \"recovery_required\": True,",
+        "3124:                 \"detail\": f\"target {target['path']} action left {after!r}, \""
       ]
     }
   },
@@ -150,13 +135,13 @@
   },
   "operator_session_shape": {
     "intended": 1,
-    "measured": 4,
+    "measured": 2,
     "commands": [
-      "transition VERIFY",
-      "recover resolve --resolution accept_live|replan   <- named by the engine",
-      "recover                                        <- the one that works, unnamed",
-      "transition VERIFY"
-    ]
+      "transition VERIFY (held -> CONFLICT)",
+      "saipen recover   <- named by the engine"
+    ],
+    "the_engine_named_a_route_that_works": true,
+    "the_named_command_settled_it": true
   },
   "conclusion": "ESCALATION_OUTLIVES_THE_CONDITION"
 }

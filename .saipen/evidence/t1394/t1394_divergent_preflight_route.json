@@ -1,0 +1,93 @@
+{
+  "scratch_root": "build\\t1394\\divergent",
+  "init": {
+    "ok": true,
+    "code": "INIT_COMPLETED",
+    "project_root": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\divergent",
+    "identity": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\divergent\\.saipen\\IDENTITY.md",
+    "state": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\divergent\\.saipen\\STATE.md",
+    "board": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\divergent\\.saipen\\BOARD.md",
+    "log": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1394\\divergent\\.saipen\\LOG.md",
+    "saipen_home": "V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN",
+    "route": "saipen start '<the first goal>'",
+    "mailbox": {
+      "ok": false,
+      "code": "MAILBOX_ATTACH_SKIPPED",
+      "detail": "a mailbox is already bound or SAIMAIL is not installed"
+    }
+  },
+  "ticket": {
+    "ok": true,
+    "code": "TICKET_ADDED",
+    "op_id": "ticket-fede0d45075840d9845df2205814ca1b",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "ticket": "T-1",
+    "event_id": "E-1"
+  },
+  "claim": {
+    "ok": true,
+    "code": "CLAIMED",
+    "op_id": "claim-357fa28bc5074c67a9bedfcb8505c800",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "ticket": "T-1",
+    "event_id": "E-2",
+    "phase": "SCOUT",
+    "next_action": "PHASE SCOUT T-1"
+  },
+  "control": {
+    "ok": true,
+    "code": "TRANSITIONED",
+    "op_id": "transition-a95f5a700dd148cdb2e292bad57f4747",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "phase": "BUILD",
+    "next_action": "PHASE BUILD T-1",
+    "event_id": "E-3",
+    "ticket": "T-1"
+  },
+  "control_ok": true,
+  "half_applied": {
+    "ok": false,
+    "code": "CONFLICT",
+    "recovery_required": true,
+    "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1394\\\\divergent\\\\.saipen\\\\.STATE.md.91576f88c0864af4bb4db302a5d749c1.tmp' ->"
+  },
+  "third_party_write": {
+    "file": ".saipen/BOARD.md",
+    "diverged_line": "- [/] T-1 [P1] scratch ticket for the divergent-shape routing probe | verify: th",
+    "marker": "DO NOT OVERWRITE",
+    "bytes": 1793
+  },
+  "preflight": {
+    "ok": false,
+    "code": "RECOVERY_CONFLICT",
+    "conflict_diverged": true,
+    "canonical_next_command": "saipen recover resolve transition-773f2445fda94666b7e5cb98ed280c8c --resolution <accept_live|replan>",
+    "inspect_command": "saipen recover inspect transition-773f2445fda94666b7e5cb98ed280c8c",
+    "detail": "unresolved conflict transition-773f2445fda94666b7e5cb98ed280c8c blocks new mutation; a target's live bytes match neither its before nor its after hash, so recovery refuses rather than overwrite what a third party wrote; resolve it explicitly, or by hand. Look first with `saipen recover inspect transition-773f2445fda946"
+  },
+  "op_id": "transition-773f2445fda94666b7e5cb98ed280c8c",
+  "checks": {
+    "the_divergent_shape_is_diverged": true,
+    "it_names_the_resolve_route": true,
+    "it_does_not_name_the_bare_recover": true,
+    "the_third_party_edit_survived": true,
+    "it_still_refuses": true
+  },
+  "all_checks_passed": true,
+  "conclusion": "DIVERGENT_SHAPE_STILL_PROTECTED"
+}

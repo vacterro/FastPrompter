@@ -20,7 +20,7 @@
   "ticket": {
     "ok": true,
     "code": "TICKET_ADDED",
-    "op_id": "ticket-2533b3e8eead49f5aaa8645762a90d5f",
+    "op_id": "ticket-cec5074de5724718940c0e35aaf65ab7",
     "changed_files": [
       ".saipen/LOG.md",
       ".saipen/BOARD.md",
@@ -33,7 +33,7 @@
   "claim": {
     "ok": true,
     "code": "CLAIMED",
-    "op_id": "claim-5c63bd569e964a90a54694eff078fb3a",
+    "op_id": "claim-b158623ffb1a4fc8a7068f094314eb72",
     "changed_files": [
       ".saipen/LOG.md",
       ".saipen/BOARD.md",
@@ -48,7 +48,7 @@
   "control_transition": {
     "ok": true,
     "code": "TRANSITIONED",
-    "op_id": "transition-bf97e216d6364d1299058c6c9ac6e7aa",
+    "op_id": "transition-d1486917940c4f83ae52ac4f34894f46",
     "changed_files": [
       ".saipen/LOG.md",
       ".saipen/BOARD.md",
@@ -64,11 +64,11 @@
   "conflicting_transition": {
     "ok": false,
     "code": "CONFLICT",
-    "op_id": "transition-340fb869886d4d46b1ee9286238e4a6b",
+    "op_id": "transition-60fb2ad044b246d5b1444c0a4e89d428",
     "changed_files": [],
     "recovery_required": true,
-    "message": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\.STATE.md.7e07891b83c04c69978dbe3ec1b6e32e.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\STATE.md'",
-    "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\.STATE.md.7e07891b83c04c69978dbe3ec1b6e32e.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\STATE.md'"
+    "message": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\.STATE.md.0529e7788a0f4b82a203f8e4e0270f83.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\STATE.md'",
+    "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\.STATE.md.0529e7788a0f4b82a203f8e4e0270f83.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1400\\\\scratch\\\\.saipen\\\\STATE.md'"
   },
   "conflict_code": "CONFLICT",
   "divergence_injected": {
@@ -79,10 +79,10 @@
   },
   "inspect_before": {
     "ok": true,
-    "op_id": "transition-340fb869886d4d46b1ee9286238e4a6b",
+    "op_id": "transition-60fb2ad044b246d5b1444c0a4e89d428",
     "operation": "transition",
     "status": "CONFLICT",
-    "created_at": "2026-10-02T06:22:11Z",
+    "created_at": "2026-10-02T06:44:49Z",
     "agent": "saipen",
     "verification_policy": "core_fast",
     "read_dependencies": {
@@ -94,9 +94,9 @@
         "role": "log",
         "action": "write",
         "applied": true,
-        "expected_before": "8c8c57c2415b5519",
-        "planned_after": "b97b563ee0cda523",
-        "current": "246c33c12032f4e5",
+        "expected_before": "490bb8573c68831d",
+        "planned_after": "fdbc86252f2d2da5",
+        "current": "5eafd7605a9d55a8",
         "conflicts": true
       },
       {
@@ -104,9 +104,9 @@
         "role": "board",
         "action": "write",
         "applied": true,
-        "expected_before": "5899b5f823556366",
-        "planned_after": "5f368ca6e56e7152",
-        "current": "5f368ca6e56e7152",
+        "expected_before": "3cdd87976b1455af",
+        "planned_after": "23b32cdc52bce158",
+        "current": "23b32cdc52bce158",
         "conflicts": false
       },
       {
@@ -114,9 +114,9 @@
         "role": "state",
         "action": "write",
         "applied": false,
-        "expected_before": "ae59cef1d126ccb6",
-        "planned_after": "515d486ee3333f76",
-        "current": "ae59cef1d126ccb6",
+        "expected_before": "a563cd665373db2f",
+        "planned_after": "ed9072d518b2b73d",
+        "current": "a563cd665373db2f",
         "conflicts": false
       }
     ],
@@ -133,25 +133,25 @@
   "bare_recover": {
     "ok": false,
     "code": "RECOVERY_CONFLICT",
-    "op_id": "transition-340fb869886d4d46b1ee9286238e4a6b",
+    "op_id": "transition-60fb2ad044b246d5b1444c0a4e89d428",
     "recovery_required": true,
     "target_path": ".saipen/LOG.md",
     "target_index": 0,
-    "expected_before_hash": "8c8c57c2415b5519",
-    "expected_after_hash": "b97b563ee0cda523",
-    "actual_hash": "246c33c12032f4e5",
+    "expected_before_hash": "490bb8573c68831d",
+    "expected_after_hash": "fdbc86252f2d2da5",
+    "actual_hash": "5eafd7605a9d55a8",
     "applied_frontier": -1,
-    "detail": "unfinished target .saipen/LOG.md has unexpected bytes (live '246c33c12032f4e5'; before '8c8c57c2415b5519', after 'b97b563ee0cda523'); refuse to guess",
+    "detail": "unfinished target .saipen/LOG.md has unexpected bytes (live '5eafd7605a9d55a8'; before '490bb8573c68831d', after 'fdbc86252f2d2da5'); refuse to guess",
     "pending_op_ids": [
-      "transition-340fb869886d4d46b1ee9286238e4a6b"
+      "transition-60fb2ad044b246d5b1444c0a4e89d428"
     ]
   },
   "inspect_after": {
     "ok": true,
-    "op_id": "transition-340fb869886d4d46b1ee9286238e4a6b",
+    "op_id": "transition-60fb2ad044b246d5b1444c0a4e89d428",
     "operation": "transition",
     "status": "CONFLICT",
-    "created_at": "2026-10-02T06:22:11Z",
+    "created_at": "2026-10-02T06:44:49Z",
     "agent": "saipen",
     "verification_policy": "core_fast",
     "read_dependencies": {
@@ -163,9 +163,9 @@
         "role": "log",
         "action": "write",
         "applied": true,
-        "expected_before": "8c8c57c2415b5519",
-        "planned_after": "b97b563ee0cda523",
-        "current": "246c33c12032f4e5",
+        "expected_before": "490bb8573c68831d",
+        "planned_after": "fdbc86252f2d2da5",
+        "current": "5eafd7605a9d55a8",
         "conflicts": true
       },
       {
@@ -173,9 +173,9 @@
         "role": "board",
         "action": "write",
         "applied": true,
-        "expected_before": "5899b5f823556366",
-        "planned_after": "5f368ca6e56e7152",
-        "current": "5f368ca6e56e7152",
+        "expected_before": "3cdd87976b1455af",
+        "planned_after": "23b32cdc52bce158",
+        "current": "23b32cdc52bce158",
         "conflicts": false
       },
       {
@@ -183,9 +183,9 @@
         "role": "state",
         "action": "write",
         "applied": false,
-        "expected_before": "ae59cef1d126ccb6",
-        "planned_after": "515d486ee3333f76",
-        "current": "ae59cef1d126ccb6",
+        "expected_before": "a563cd665373db2f",
+        "planned_after": "ed9072d518b2b73d",
+        "current": "a563cd665373db2f",
         "conflicts": false
       }
     ],
