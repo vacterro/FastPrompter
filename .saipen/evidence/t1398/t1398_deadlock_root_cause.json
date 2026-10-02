@@ -1,0 +1,80 @@
+{
+  "ticket": "T-1398",
+  "finding": "DEADLOCK -- a CONFLICT that is both a partial apply and divergent cannot be settled by ANY route the engine offers, and further protocol writes are refused",
+  "disposition": "CONFIRMED -- strictly stronger than the ticket as filed",
+  "state_under_test": {
+    "partial_apply": ".saipen/STATE.md applied=false, live bytes still == expected_before",
+    "divergence": ".saipen/LOG.md was already applied, then a third party appended one more event line, so its live hash matches neither expected_before nor planned_after",
+    "inspect_reports": {
+      "conflicting_locations": [".saipen/LOG.md"],
+      "unapplied_targets": [".saipen/STATE.md"]
+    }
+  },
+  "harness": {
+    "file": ".saipen/evidence/t1398/t1398_divergent_intersection.py",
+    "receipt": ".saipen/evidence/t1398/t1398_divergent_intersection.json",
+    "engine_is_untouched": "every step is the public CLI in a subprocess with --project-root pointed at build/t1398_intersection/scratch; no engine file was opened for writing"
+  },
+  "all_three_routes_measured": [
+    {
+      "route": "bare `saipen recover`",
+      "ok": false,
+      "code": "RECOVERY_CONFLICT",
+      "detail": "unfinished target .saipen/LOG.md has unexpected bytes (live 'b38dbf7c6e3cbb92'; before '0b2cd1cf146fb2ab', after '0040f3d88245788e'); refuse to guess",
+      "why": "correct by design -- rolling forward would overwrite a third party's write",
+      "names_the_op": true
+    },
+    {
+      "route": "recover resolve --resolution accept_live",
+      "ok": false,
+      "code": "NEEDS_REPAIR",
+      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 5",
+      "names_the_op": true
+    },
+    {
+      "route": "recover resolve --resolution replan",
+      "ok": false,
+      "code": "NEEDS_REPAIR",
+      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 5",
+      "names_the_op": true
+    }
+  ],
+  "after_all_three_routes": {
+    "op_status": "CONFLICT",
+    "third_party_line_survived": true,
+    "further_protocol_write": "RECOVERY_CONFLICT",
+    "nothing_was_destroyed": "the engine refused consistently; the trap is unavailability, not data loss"
+  },
+  "the_harness_artefacts_that_were_removed_before_this_receipt": {
+    "why": "the first two runs let the harness itself supply a reason for the classes to refuse, which would have made the deadlock look like a convergence instead of a trap",
+    "attempt_1": "appended a bare marker string 'THIRD-PARTY-LINE-DO-NOT-OVERWRITE'. accept_live then cited 'LOG.md:6 not a legal event line' -- grammar, supplied by the harness.",
+    "attempt_2": "appended a legal-shaped line with id E-99. accept_live then cited 'E-99 is not consecutive after E-4' -- monotonicity, still supplied by the harness.",
+    "final": "appended a legal, consecutive E-5 event line. The only remaining refusal reason is the ticket's own: 'STATE proposed last_event 3 != LOG tail 5'.",
+    "the_rule_this_establishes": "a reproduction that injects into a validated file must inject a VALID line, or the validator will do the harness's arguing for it"
+  },
+  "why_this_is_strictly_stronger_than_the_ticket": "as filed, T-1398 claims only that the two advertised classes cannot settle a partial apply -- true, and the bare recover is the way out. This adds the missing half: the bare recover is the way out ONLY while the applied targets still match their plan. One ordinary event (any other process writing the LOG) removes the last exit. The benign case measured in t1398/deterministic_reproduction.json and the deadlock measured here differ by exactly that third-party line.",
+  "root_cause": {
+    "the_shared_defect": "resolve() runs _run_verifier BEFORE settling (journal.py:4190 resolve_conflict -> _resolve_conflict_locked at 4233), so a half-applied operation is judged by a whole-repository verifier that the half-apply itself made fail. The verifier's complaint -- 'STATE proposed last_event 3 != LOG tail 5' -- is a description of the damage the resolve would repair, so the repair is gated on the thing it exists to fix.",
+    "why_bare_recover_does_not_catch_it": "auto_recover_pending walks the pending ops and settles each by re-deriving its target classifications from live bytes. That is exactly the right behaviour when the bytes are unambiguous. It is not a substitute for the resolution classes when they are needed, because it has no way to distinguish 'the plan is stale' from 'somebody else wrote here' beyond the per-target hash check -- and that check is what correctly refuses here.",
+    "the_gap_the_engine_has_no_verb_for": "the state needs one of: complete the unapplied STATE.md target from its staged bytes while preserving the third party's LOG line, or accept the live LOG and rewrite STATE.md's last_event to match. Neither is expressible as accept_live or replan; neither is what bare recover does."
+  },
+  "what_is_measured_and_what_is_inferred": {
+    "measured": [
+      "all three routes refuse, in the order bare / accept_live / replan",
+      "op status remains CONFLICT after all three",
+      "the third-party line survives; nothing is overwritten",
+      "a subsequent protocol write is refused with RECOVERY_CONFLICT",
+      "the control arm (no lock) transitions cleanly, so the harness and path are sound",
+      "the only refusal reason surviving the artefact-removal passes is 'STATE proposed last_event 3 != LOG tail 5'"
+    ],
+    "inferred": [
+      "the verifier-before-settle ordering in resolve_conflict is the cause of both classes refusing; read from the source and consistent with the message, not traced at runtime"
+    ],
+    "not_established": [
+      "whether the deadlock also occurs when the unapplied target is not STATE.md -- only the three-target transition shape was exercised",
+      "whether a manual STATE.md edit unblocks it; not attempted, because a manual edit would destroy the very evidence the ticket is about"
+    ]
+  },
+  "operational_consequence": "if this state ever occurs in a real project, the operator must hand-edit .saipen/STATE.md to make last_event match the LOG tail, or hand-edit the journal. There is no supported command that settles it. This is worth knowing before it happens, not after.",
+  "why_not_fixed_here": "the fix is in the SAIPEN engine repo (journal.py resolve_conflict's verifier ordering, or a third resolution class that reconciles rather than re-verifies). That repo has 1750 dirty tracked files and another live session's uncommitted work; editing it would sweep their work into a commit. The finding is filed and measured; the patch is not applied blind."
+}

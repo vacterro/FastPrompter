@@ -1,0 +1,225 @@
+{
+  "scratch_root": "build\\t1398_intersection\\scratch",
+  "init": {
+    "ok": true,
+    "code": "INIT_COMPLETED",
+    "project_root": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1398_intersection\\scratch",
+    "identity": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1398_intersection\\scratch\\.saipen\\IDENTITY.md",
+    "state": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1398_intersection\\scratch\\.saipen\\STATE.md",
+    "board": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1398_intersection\\scratch\\.saipen\\BOARD.md",
+    "log": "V:\\___VAC\\__K\\__CODE\\_PY\\_FastPrompter\\build\\t1398_intersection\\scratch\\.saipen\\LOG.md",
+    "saipen_home": "V:\\___VAC\\__K\\__CODE\\_AI_STUFF_AGENTIC\\_SAIPEN",
+    "route": "saipen start '<the first goal>'",
+    "mailbox": {
+      "ok": false,
+      "code": "MAILBOX_ATTACH_SKIPPED",
+      "detail": "a mailbox is already bound or SAIMAIL is not installed"
+    }
+  },
+  "ticket": {
+    "ok": true,
+    "code": "TICKET_ADDED",
+    "op_id": "ticket-1f35c634dc83441296828824fc741c99",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "ticket": "T-1",
+    "event_id": "E-1"
+  },
+  "claim": {
+    "ok": true,
+    "code": "CLAIMED",
+    "op_id": "claim-49733bd58a02471ea6761f49f713b5b5",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "ticket": "T-1",
+    "event_id": "E-2",
+    "phase": "SCOUT",
+    "next_action": "PHASE SCOUT T-1"
+  },
+  "control_transition": {
+    "ok": true,
+    "code": "TRANSITIONED",
+    "op_id": "transition-eabdb484fa0e408fb069c56510cc9e12",
+    "changed_files": [
+      ".saipen/LOG.md",
+      ".saipen/BOARD.md",
+      ".saipen/STATE.md"
+    ],
+    "recovery_required": false,
+    "phase": "BUILD",
+    "next_action": "PHASE BUILD T-1",
+    "event_id": "E-3",
+    "ticket": "T-1"
+  },
+  "control_ok": true,
+  "conflicting_transition": {
+    "ok": false,
+    "code": "CONFLICT",
+    "op_id": "transition-2b1c86124ecb422995addd284dd9b0d3",
+    "changed_files": [],
+    "recovery_required": true,
+    "message": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1398_intersection\\\\scratch\\\\.saipen\\\\.STATE.md.bb39473773054d359410c6ad0dadda52.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1398_intersection\\\\scratch\\\\.saipen\\\\STATE.md'",
+    "detail": "target .saipen/STATE.md action failed: [WinError 5] Access is denied: 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1398_intersection\\\\scratch\\\\.saipen\\\\.STATE.md.bb39473773054d359410c6ad0dadda52.tmp' -> 'V:\\\\___VAC\\\\__K\\\\__CODE\\\\_PY\\\\_FastPrompter\\\\build\\\\t1398_intersection\\\\scratch\\\\.saipen\\\\STATE.md'"
+  },
+  "conflict_code": "CONFLICT",
+  "op_id": "transition-2b1c86124ecb422995addd284dd9b0d3",
+  "inspect_before": {
+    "ok": true,
+    "op_id": "transition-2b1c86124ecb422995addd284dd9b0d3",
+    "operation": "transition",
+    "status": "CONFLICT",
+    "created_at": "2026-10-02T06:26:03Z",
+    "agent": "saipen",
+    "verification_policy": "core_fast",
+    "read_dependencies": {
+      ".saipen/logs": "tree-missing-v1"
+    },
+    "targets": [
+      {
+        "path": ".saipen/LOG.md",
+        "role": "log",
+        "action": "write",
+        "applied": true,
+        "expected_before": "2ed048921f3d467f",
+        "planned_after": "396fc5268b3160fe",
+        "current": "5ec00b180e3e0505",
+        "conflicts": true
+      },
+      {
+        "path": ".saipen/BOARD.md",
+        "role": "board",
+        "action": "write",
+        "applied": true,
+        "expected_before": "7c447615e6099ad8",
+        "planned_after": "1d5661086e846240",
+        "current": "1d5661086e846240",
+        "conflicts": false
+      },
+      {
+        "path": ".saipen/STATE.md",
+        "role": "state",
+        "action": "write",
+        "applied": false,
+        "expected_before": "4219118bec65bbf6",
+        "planned_after": "c5c3d25b6b8a8ba9",
+        "current": "4219118bec65bbf6",
+        "conflicts": false
+      }
+    ],
+    "conflicting_locations": [
+      ".saipen/LOG.md"
+    ],
+    "staged_identity": "f290e217bc6f5518",
+    "safe_resolution_classes": [
+      "accept_live",
+      "replan"
+    ],
+    "code": "CONFLICT_INSPECT"
+  },
+  "conflicting_locations": [
+    ".saipen/LOG.md"
+  ],
+  "unapplied_targets": [
+    ".saipen/STATE.md"
+  ],
+  "state_is_both_partial_and_divergent": true,
+  "routes": [
+    {
+      "route": "bare_recover",
+      "ok": false,
+      "code": "RECOVERY_CONFLICT",
+      "names_the_op": true,
+      "detail": "unfinished target .saipen/LOG.md has unexpected bytes (live '5ec00b180e3e0505'; before '2ed048921f3d467f', after '396fc5268b3160fe'); refuse to guess",
+      "settled": false
+    },
+    {
+      "route": "accept_live",
+      "ok": false,
+      "code": "NEEDS_REPAIR",
+      "names_the_op": true,
+      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 5",
+      "settled": false
+    },
+    {
+      "route": "replan",
+      "ok": false,
+      "code": "NEEDS_REPAIR",
+      "names_the_op": true,
+      "detail": "resolving to current live leaves an invalid repository: STATE proposed last_event 3 != LOG tail 5",
+      "settled": false
+    }
+  ],
+  "inspect_after": {
+    "ok": true,
+    "op_id": "transition-2b1c86124ecb422995addd284dd9b0d3",
+    "operation": "transition",
+    "status": "CONFLICT",
+    "created_at": "2026-10-02T06:26:03Z",
+    "agent": "saipen",
+    "verification_policy": "core_fast",
+    "read_dependencies": {
+      ".saipen/logs": "tree-missing-v1"
+    },
+    "targets": [
+      {
+        "path": ".saipen/LOG.md",
+        "role": "log",
+        "action": "write",
+        "applied": true,
+        "expected_before": "2ed048921f3d467f",
+        "planned_after": "396fc5268b3160fe",
+        "current": "5ec00b180e3e0505",
+        "conflicts": true
+      },
+      {
+        "path": ".saipen/BOARD.md",
+        "role": "board",
+        "action": "write",
+        "applied": true,
+        "expected_before": "7c447615e6099ad8",
+        "planned_after": "1d5661086e846240",
+        "current": "1d5661086e846240",
+        "conflicts": false
+      },
+      {
+        "path": ".saipen/STATE.md",
+        "role": "state",
+        "action": "write",
+        "applied": false,
+        "expected_before": "4219118bec65bbf6",
+        "planned_after": "c5c3d25b6b8a8ba9",
+        "current": "4219118bec65bbf6",
+        "conflicts": false
+      }
+    ],
+    "conflicting_locations": [
+      ".saipen/LOG.md"
+    ],
+    "staged_identity": "f290e217bc6f5518",
+    "safe_resolution_classes": [
+      "accept_live",
+      "replan"
+    ],
+    "code": "CONFLICT_INSPECT"
+  },
+  "status_after": "CONFLICT",
+  "third_party_line_survived": true,
+  "further_write_blocked": "RECOVERY_CONFLICT",
+  "settled_routes": [],
+  "refused_routes": [
+    "bare_recover",
+    "accept_live",
+    "replan"
+  ],
+  "op_still_conflict": true,
+  "conclusion": "DEADLOCK_NO_ROUTE_SETTLES",
+  "verdict_against_the_ticket": "the advertised classes dead-end and no other route settles either"
+}
