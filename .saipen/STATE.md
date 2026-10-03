@@ -1,9 +1,9 @@
 ---
-phase: SHIP
-task: T-1398
-next_action: "PHASE SHIP T-1398"
+phase: BUILD
+task: T-1404
+next_action: "PHASE BUILD T-1404"
 blocker: none
-agent: buffy
+agent: saipen-cli
 saipen_version: 8
 saipen_home: "V:/___VAC/__K/__CODE/_AI_STUFF_AGENTIC/_SAIPEN"
 mode: full
@@ -13,13 +13,13 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 4121
-style_contract: ded-71fc58de
-updated: "2026-10-02T07:53:30Z"
-transition_from: REVIEW
+last_event: 4145
+style_contract: ded-069a4c52
+updated: "2026-10-03T01:52:18Z"
+transition_from: SCOUT
 execution_intent: goal
 goal_waves: 0
-goal_tickets: 9
+goal_tickets: 1
 ---
 T-1336 DONE 28.09.26 (E-3328):
 

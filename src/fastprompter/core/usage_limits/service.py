@@ -549,6 +549,8 @@ class UsageLimitService:
                 prev = self._state.snapshots.get(key)
                 if s.status == OK:
                     self._state.snapshots[key] = s
+                elif s.status in ("AUTH_REQUIRED", "IDENTITY_MISMATCH") or (prev is not None and prev.status != OK):
+                    self._state.snapshots[key] = s
                 elif prev is not None:
                     # transient failure -> mark STALE, preserve last good
                     self._state.snapshots[key] = UsageSnapshot(

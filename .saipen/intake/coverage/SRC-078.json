@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-078:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1403 closed with verification evidence in LOG: verify -> PASS [target: T-1403] conf: high -- python -m pytest tests/test_t1403_image_copy_lane.py tests/test_t1330_image_and_sound.py tests/test_t1337_inline_visual_contract.py tests/test_t1338_hover_geometry.py tests/test_t1349_hover_grace.py tests/test_t1352_copy_row_collisions.py tests/test_t1265_image_click.py tests/test_t1339_wrapped_inline_copy.py tests/test_clickable_links.py : 185 passed,",
+      "text": "T-1381: image Copy icon must be a fixed internal lane inside the image pill, not generic external placement",
+      "verification": "the Work this request created reached its own verification gate; see the T-1403 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1403"
+    }
+  },
+  "schema_version": 1
+}

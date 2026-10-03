@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.70 - 2026-10-03
+
+- **Codex account identity is verified, not assumed:** the Codex probe reads the
+  account id each home is actually signed in as (`auth.json` plus the app-server's
+  `account/read`) and refuses to paint one account's quota under another home's
+  name. A mismatch is reported as `IDENTITY_MISMATCH`, a signed-out home as
+  `AUTH_REQUIRED`, and neither is masked as a transient error or re-read through
+  a different home's config. A usage window the app-server reports without a
+  percentage is marked unavailable instead of being drawn as 0% remaining.
+  Covered by `tests/test_codex_identity_pinning.py`.
+- **Image Copy is a fixed lane inside the image pill:** the Copy control on a
+  pasted image sits in its own reserved square at the pill's right edge, so it
+  can no longer land on the text beside the image and the filename never shifts
+  when it appears (T-1381, T-1403).
+- **Meters no longer hide what they cannot read:** the "hide zero usage" and
+  "hide unusable" filters now skip accounts they have never read. An account
+  whose probe failed or is not answered stays on screen instead of disappearing,
+  because a silent removal is indistinguishable from an account that does not
+  exist. Both defaults are off for a fresh profile.
 ## 0.8.69 - 2026-09-29
 
 - **Inline image/link/hover Copy corridor:** pasted images render as one clean

@@ -93,10 +93,13 @@ class LimitOverview(QWidget):
         for a in snap.accounts:
             if a.key in hidden:
                 continue
-            if hide_zero and not account_has_usage(snap.snapshots.get(a.key)):
+            shot = snap.snapshots.get(a.key)
+            if shot is None or shot.status not in (OK, STALE):
+                shown.append(a)
                 continue
-            if hide_unusable and not account_usable_now(
-                    snap.snapshots.get(a.key)):
+            if hide_zero and not account_has_usage(shot):
+                continue
+            if hide_unusable and not account_usable_now(shot):
                 continue
             shown.append(a)
         return ordered_accounts(shown, self.main_win.data)

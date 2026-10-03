@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-078:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1381: image Copy icon must be a fixed internal lane inside the image pill, not generic external placement"
+    }
+  },
+  "derived_at": "2026-10-02T20:37:40Z",
+  "derived_from": "SRC-078",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "6c78246f7423dcdabadaadb120b11c853417f20a1988ce970abdf591e23d2c2f"
+}

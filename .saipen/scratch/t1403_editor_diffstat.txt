@@ -1,0 +1,2 @@
+ src/fastprompter/ui/editor.py | 91 ++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 82 insertions(+), 9 deletions(-)

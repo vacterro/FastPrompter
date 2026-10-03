@@ -11,7 +11,7 @@ One global hotkey brings the same workspace back from anywhere. Your text and pr
 [**Download the latest portable EXE**](https://github.com/vacterro/FastPrompter/releases) · [Wiki](https://github.com/vacterro/FastPrompter/wiki) · [Issues](https://github.com/vacterro/FastPrompter/issues)
 
 <img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=latest%20tag" alt="latest tag">
-<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.69**
+<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.70**
 <a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=flat-square" alt="Windows 10 and 11">
 <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square" alt="Python 3.11+">

@@ -129,11 +129,15 @@ class CodexProvider(UsageProvider):
 
         ok = result.get("ok", False)
         if not ok:
+            st = result.get("status") or ERROR
+            code = "identity_mismatch" if st == "IDENTITY_MISMATCH" else (
+                "auth_required" if st == "AUTH_REQUIRED" else "probe_failed"
+            )
             return UsageSnapshot(
-                account=account, status=ERROR,
+                account=account, status=st,
                 windows=[UsageWindow.unavailable(FIVE_HOUR),
                          UsageWindow.unavailable(WEEKLY)],
-                error_code="probe_failed",
+                error_code=code,
                 error_summary=str(result.get("error") or "probe failed")[:120],
             )
 
@@ -144,7 +148,12 @@ class CodexProvider(UsageProvider):
             windows = [UsageWindow.unavailable(FIVE_HOUR),
                        UsageWindow.unavailable(WEEKLY)]
         banked = result.get("banked_resets")
-        meta = {"source": "codex app-server account/rateLimits/read"}
+        meta = {
+            "source": "codex app-server account/rateLimits/read",
+            "codex_home": result.get("codex_home") or account.source_path,
+            "codex_account_id": result.get("codex_account_id"),
+            "codex_email": result.get("codex_email"),
+        }
         if banked is not None:
             meta["banked_resets"] = banked
         if result.get("reset_credits"):

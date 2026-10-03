@@ -418,13 +418,14 @@ def parse_windows(rate_limits: dict) -> dict:
                 continue   # first match wins
             used = w.get("usedPercent")
             rem = None
-            if isinstance(used, (int, float)):
+            has_used = isinstance(used, (int, float))
+            if has_used:
                 rem = max(0.0, min(100.0, 100.0 - float(used)))
             out[label] = {
-                "available": True,
+                "available": has_used,
                 "remaining_percent": rem,
                 "resets_at": _iso_from_epoch(w.get("resetsAt")),
-                "used_percent": float(used) if isinstance(used, (int, float)) else None,
+                "used_percent": float(used) if has_used else None,
                 "window_duration_mins": dur,
                 "group": "",
                 "group_label": "",
@@ -451,13 +452,14 @@ def parse_windows(rate_limits: dict) -> dict:
                     continue   # first match wins within pool
                 used = w.get("usedPercent")
                 rem = None
-                if isinstance(used, (int, float)):
+                has_used = isinstance(used, (int, float))
+                if has_used:
                     rem = max(0.0, min(100.0, 100.0 - float(used)))
                 out[qkey] = {
-                    "available": True,
+                    "available": has_used,
                     "remaining_percent": rem,
                     "resets_at": _iso_from_epoch(w.get("resetsAt")),
-                    "used_percent": float(used) if isinstance(used, (int, float)) else None,
+                    "used_percent": float(used) if has_used else None,
                     "window_duration_mins": dur,
                     "group": group,
                     "group_label": group_label,
@@ -537,6 +539,19 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
                 "five_hour": {"available": False}, "weekly": {"available": False}}
 
     session = None
+    expected_account_id = None
+    auth_path = os.path.join(codex_home, "auth.json")
+    if os.path.isfile(auth_path):
+        try:
+            with open(auth_path, encoding="utf-8") as f:
+                auth_doc = json.load(f)
+                if isinstance(auth_doc, dict):
+                    tokens = auth_doc.get("tokens") or {}
+                    if isinstance(tokens, dict):
+                        expected_account_id = tokens.get("account_id")
+        except Exception:
+            pass
+
     try:
         if time.monotonic() >= deadline:
             return None
@@ -554,8 +569,22 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
             raise JsonRpcError(f"initialize error: {init['error']}")
         session.notify("initialized")
         remaining = deadline - time.monotonic()
+        acct_res = {}
+        try:
+            acct_call = session.call(
+                "account/read",
+                {},
+                timeout=min(RESPONSE_WINDOW_S, max(0.1, remaining)),
+            )
+            if isinstance(acct_call, dict) and "result" in acct_call:
+                acct_res = acct_call.get("result") or {}
+        except Exception:
+            pass
+
+        remaining = deadline - time.monotonic()
         rl = session.call(
             "account/rateLimits/read",
+            {},
             timeout=min(RESPONSE_WINDOW_S, max(0.1, remaining)),
         )
         if time.monotonic() > deadline:
@@ -563,6 +592,28 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
         if "error" in rl:
             raise JsonRpcError(f"rateLimits error: {rl['error']}")
         result = rl.get("result") or {}
+
+        # Identity verification
+        probed_account_id = result.get("accountId")
+        if not probed_account_id and isinstance(acct_res.get("workspaceRouting"), dict):
+            probed_account_id = acct_res["workspaceRouting"].get("chatgptAccountId")
+
+        email = ""
+        if isinstance(acct_res.get("account"), dict):
+            email = str(acct_res["account"].get("email") or "")
+
+        if expected_account_id and probed_account_id:
+            if str(expected_account_id).strip().lower() != str(probed_account_id).strip().lower():
+                return {
+                    "ok": False,
+                    "status": "IDENTITY_MISMATCH",
+                    "error": f"Identity mismatch: expected {expected_account_id}, got {probed_account_id}",
+                    "expected_account_id": expected_account_id,
+                    "probed_account_id": probed_account_id,
+                    "five_hour": {"available": False},
+                    "weekly": {"available": False},
+                }
+
         parsed = parse_windows(result)
         # Every detected window ships through verbatim — the provider decides
         # how many to render, the probe must not pre-filter the set.
@@ -571,16 +622,23 @@ def probe_codex_home(codex_home: str, deadline: float | None = None,
             if key in ("plan_type", "banked_resets", "reset_credits"):
                 continue
             payload[key] = bucket
-        payload["plan_type"] = parsed.get("plan_type")
+        payload["plan_type"] = parsed.get("plan_type") or (
+            acct_res.get("account", {}).get("planType") if isinstance(acct_res.get("account"), dict) else None
+        )
         payload["banked_resets"] = parsed.get("banked_resets")
         payload["reset_credits"] = parsed.get("reset_credits", [])
+        payload["codex_home"] = codex_home
+        payload["codex_account_id"] = probed_account_id or expected_account_id
+        payload["codex_email"] = email
         payload["fetched_at"] = time.time()
         return payload
     except JsonRpcError as exc:
-        return {"ok": False, "error": str(exc)[:160],
+        err_str = str(exc)[:160]
+        status = "AUTH_REQUIRED" if any(w in err_str.lower() for w in ("unauthorized", "401", "authentication", "auth required")) else "ERROR"
+        return {"ok": False, "status": status, "error": err_str,
                 "five_hour": {"available": False}, "weekly": {"available": False}}
     except Exception as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:120],
+        return {"ok": False, "status": "ERROR", "error": f"{type(exc).__name__}: {exc}"[:120],
                 "five_hour": {"available": False}, "weekly": {"available": False}}
     finally:
         if session is not None:
