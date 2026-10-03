@@ -361,3 +361,27 @@ def _mute_sound():
                 _restore_qse.play = _real_qse_play
         except Exception:
             pass
+
+
+@pytest.fixture(autouse=True)
+def _no_sai_accounts_plane(monkeypatch: pytest.MonkeyPatch):
+    """No automated run may see a REAL SAI Accounts control plane.
+
+    The plane is an optional ambient service on the developer's machine. Left
+    alone it leaks into every test that isolates a fake HOME: a real registry
+    holding two Claude config directories merges them into a fake-home run that
+    asked for one account and gets three. That is not a flaky test, it is a
+    test asserting about a machine it does not control.
+
+    The seam is set the same way the Qt platform and the audio device are
+    neutralized, and a test that is specifically ABOUT the federation sets the
+    plane it wants through its own ``monkeypatch``, which wins over this.
+
+    Set through ``monkeypatch`` rather than a saved value and a ``finally``:
+    the federation suite patches the SAME attribute from its own fixture, and
+    two hand-rolled writers unwind in whatever order pytest happens to finalize
+    them, while monkeypatch unwinds as a stack. That difference is invisible
+    until it is not.
+    """
+    from fastprompter.core.usage_limits import sai_accounts
+    monkeypatch.setattr(sai_accounts, "TestEngine", lambda: "")

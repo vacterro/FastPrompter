@@ -321,6 +321,15 @@ class HeaderFormatDialog(QDialog):
         self.cb_stamp_every.setChecked(cfg["stamp_every"])
         self.cb_stamp_every.toggled.connect(self._refresh)
         row3.addWidget(self.cb_stamp_every)
+        self.cb_follow_edit = QCheckBox(tr("follow last edit", self._lang))
+        self.cb_follow_edit.setToolTip(tr(
+            "Off (default): the stamp stays where Ctrl+E put it.\n"
+            "On: the date and time move to the silo's last edit, so the "
+            "header keeps dating the note it belongs to.",
+            self._lang))
+        self.cb_follow_edit.setChecked(cfg["follow_edit"])
+        self.cb_follow_edit.toggled.connect(self._refresh)
+        row3.addWidget(self.cb_follow_edit)
         row3.addStretch(1)
         root.addLayout(row3)
 
@@ -419,28 +428,25 @@ class HeaderFormatDialog(QDialog):
             "align_rule": self.cb_align_rule.currentData() or "",
             "align_bullet": self.cb_align_bullet.currentData() or "",
             "stamp_every": self.cb_stamp_every.isChecked(),
+            "follow_edit": self.cb_follow_edit.isChecked(),
         }
 
     def _stamp(self):
         """The same stamp the editor would write, from the date settings."""
+        from fastprompter.core import header as header_core
+
         now = datetime.datetime.now()
-        h = now.hour
-        state = ("Morning" if 5 <= h < 12 else "Day" if 12 <= h < 17
-                 else "Evening" if 17 <= h < 22 else "Night")
         d = self.main_win.data
-        m_fmt = "%d %b" if d.get("date_text_month", "False") == "True" else "%d.%m"
         try:
             t_fmt = self.main_win._clock_time_fmt()
         except Exception:
             t_fmt = "%H:%M"
-        ts = now.strftime(f"{m_fmt} - {t_fmt}")
-        if "{state}" in self.edit.text():
-            time_str = ts
-        elif profile_flag(d, "date_daypart"):
-            time_str = f"{state} {ts}"
-        else:
-            time_str = ts
-        return time_str, state
+        time_str = header_core.stamp_time_text(
+            now, t_fmt,
+            text_month=d.get("date_text_month", "False") == "True",
+            daypart=("{state}" not in self.edit.text())
+            and profile_flag(d, "date_daypart"))
+        return time_str, header_core.day_part(now.hour)
 
     def sample_line(self, template):
         """Render the template with sample values — matches the editor."""
@@ -500,6 +506,7 @@ class HeaderFormatDialog(QDialog):
             if idx >= 0:
                 combo.setCurrentIndex(idx)
         self.cb_stamp_every.setChecked(d["ctrl_e_stamp_every"] == "True")
+        self.cb_follow_edit.setChecked(d["ctrl_e_follow_edit"] == "True")
         self._refresh()
 
     def _accept(self):
@@ -517,6 +524,7 @@ class HeaderFormatDialog(QDialog):
         d["ctrl_e_align_rule"] = cfg["align_rule"]
         d["ctrl_e_align_bullet"] = cfg["align_bullet"]
         d["ctrl_e_stamp_every"] = "True" if cfg["stamp_every"] else "False"
+        d["ctrl_e_follow_edit"] = "True" if cfg["follow_edit"] else "False"
         # the old boolean is what the settings checkbox still shows; keep it
         # agreeing with the alignment instead of letting the two contradict
         d["ctrl_e_center"] = "True" if cfg["align"] == "center" else "False"

@@ -1869,7 +1869,9 @@
     "configured": "налаштований",
     "auto sibling": "автоматичний близнець",
     "home": "домашня тека",
-    "fresh": "актуальні"
+    "fresh": "актуальні",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Вимк. (за замовчуванням): мітка часу лишається там, де її поставив Ctrl+E.\nУвімк.: дата й час переходять до останнього редагування сила, тож заголовок і далі датує нотатку, якій він належить.",
+    "follow last edit": "Слідувати за останнім редагуванням"
   },
   "missing_keys": 0
 }

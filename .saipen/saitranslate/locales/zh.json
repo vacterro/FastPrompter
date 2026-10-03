@@ -1869,7 +1869,9 @@
     "configured": "已配置",
     "auto sibling": "自动同级目录",
     "home": "主目录",
-    "fresh": "最新"
+    "fresh": "最新",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "关闭（默认）：时间戳保持在 Ctrl+E 放置的位置。\n开启：日期和时间跟随该分类的最后一次编辑，因此标题会继续为它所属的笔记标注日期。",
+    "follow last edit": "跟随最后编辑"
   },
   "missing_keys": 0
 }

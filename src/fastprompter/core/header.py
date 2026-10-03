@@ -32,6 +32,10 @@ DEFAULTS = {
     "ctrl_e_align_rule": "",
     "ctrl_e_align_bullet": "left",
     "ctrl_e_stamp_every": "False",
+    # Off by default: a header that silently rewrites itself while the note is
+    # being typed is a surprise, and the stamp is the one line in a silo the
+    # user may have deliberately fixed.
+    "ctrl_e_follow_edit": "False",
 }
 
 # Which lines of the block can be aligned on their own, in block order.
@@ -83,6 +87,7 @@ def read_settings(data):
         "bullet_char": bullet_char if bullet_char.strip() else "•",
         "align": align,
         "stamp_every": _s("ctrl_e_stamp_every") == "True",
+        "follow_edit": _s("ctrl_e_follow_edit") == "True",
     }
 
 
@@ -97,6 +102,46 @@ def header_line(template, text, time_str, state):
             .replace("{time}", time_str)
             .replace("{state}", state))
     return line if line.startswith("# ") else f"# {line}"
+
+
+DAY_PARTS = ("Morning", "Day", "Evening", "Night")
+
+
+def day_part(hour):
+    return DAY_PARTS[0] if 5 <= hour < 12 else DAY_PARTS[1] if hour < 17 \
+        else DAY_PARTS[2] if hour < 22 else DAY_PARTS[3]
+
+
+def stamp_time_text(when, time_fmt, text_month=False, daypart=False):
+    """The ``{time}`` a Ctrl+E header carries, formatted.
+
+    One function, because this text used to be built in three places - the
+    editor insert, the follow-the-last-edit rewrite and the settings preview -
+    and three copies is how the preview starts promising a stamp the editor
+    no longer writes.
+    """
+    ts = when.strftime(f"{'%d %b' if text_month else '%d.%m'} - {time_fmt}")
+    if daypart:
+        return f"{day_part(when.hour)} {ts}"
+    return ts
+
+
+def stamp_line_pattern(template):
+    """Compiled ``^...$`` matcher for a stamped header line.
+
+    ``{text}`` is the only capture; ``{time}`` and ``{state}`` match loosely,
+    because the point is to recognise the SHAPE, not to re-derive the value.
+    A template with no ``{text}`` captures nothing and is still returned: the
+    editor's own toggle uses this to find a line it previously stamped, and
+    refusing such a template there would stop Ctrl+E un-doing its own work.
+    """
+    import re
+
+    pat = re.escape(template if template.startswith("# ") else "# " + template)
+    pat = pat.replace(re.escape("{text}"), r"(.*?)")
+    pat = pat.replace(re.escape("{time}"), r".*?")
+    pat = pat.replace(re.escape("{state}"), r".*?")
+    return re.compile(f"^{pat}$")
 
 
 def build_block(cfg, title_line):

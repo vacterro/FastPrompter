@@ -1869,7 +1869,9 @@
     "configured": "configured",
     "auto sibling": "auto sibling",
     "home": "home",
-    "fresh": "fresh"
+    "fresh": "fresh",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.",
+    "follow last edit": "follow last edit"
   },
   "missing_keys": 0
 }

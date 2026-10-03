@@ -1869,7 +1869,9 @@
     "configured": "מוגדר",
     "auto sibling": "אח אוטומטי",
     "home": "תיקייה",
-    "fresh": "עדכני"
+    "fresh": "עדכני",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "כבוי (ברירת מחדל): חותמת הזמן נשארת במקום שבו Ctrl+E הניח אותה.\nפועל: התאריך והשעה עוברים לעריכה האחרונה של הסילו, כך שהכותרת ממשיכה לתאר את הפתק שאליו היא שייכת.",
+    "follow last edit": "עקוב אחר העריכה האחרונה"
   },
   "missing_keys": 0
 }

@@ -112,12 +112,23 @@ class AntigravityProvider(UsageProvider):
             if not key or key in seen or not os.path.isdir(key):
                 return
             seen.add(key)
+            user = (os.environ.get("USERNAME") or os.environ.get("USER") or "").strip().lower()
+            norm = key.lower().replace("/", "\\")
+            if "\\users\\" in norm:
+                parts = norm.split("\\")
+                try:
+                    u_idx = [p.lower() for p in parts].index("users")
+                    if u_idx + 1 < len(parts):
+                        user = parts[u_idx + 1].strip().lower()
+                except ValueError:
+                    pass
             accounts.append(AccountRef(
                 provider_id=self.provider_id,
                 stable_id=stable_id_for(self.provider_id, key),
                 display_name="Antigravity",
                 source_kind=kind,
                 source_path=key,
+                metadata={"identity_locator": user, "windows_user": user} if user else {},
             ))
 
         for path in self._extra_paths:

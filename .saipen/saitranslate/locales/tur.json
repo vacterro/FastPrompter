@@ -1869,7 +1869,9 @@
     "configured": "yapılandırılmış",
     "auto sibling": "otomatik kardeş",
     "home": "ana dizin",
-    "fresh": "güncel"
+    "fresh": "güncel",
+    "follow last edit": "Son düzenlemeyi izle",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Kapalı (varsayılan): zaman damgası Ctrl+E'nin bıraktığı yerde kalır.\nAçık: tarih ve saat silonun son düzenlemesine taşınır, böylece başlık ait olduğu notu tarihlendirmeye devam eder."
   },
   "missing_keys": 0
 }

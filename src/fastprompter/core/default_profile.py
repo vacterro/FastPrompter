@@ -81,6 +81,7 @@ DEFAULT_PROFILE = {
     "ctrl_e_rule": 'True',
     "ctrl_e_rule_below": 'False',
     "ctrl_e_stamp_every": 'False',
+    "ctrl_e_follow_edit": 'False',
     "ctrlw_blanks_after": '3',
     "ctrlw_blanks_before": '2',
     "ctrlw_bullet_char": '•',

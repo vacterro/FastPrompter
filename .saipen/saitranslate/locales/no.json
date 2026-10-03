@@ -1869,7 +1869,9 @@
     "configured": "konfigurert",
     "auto sibling": "automatisk søsken",
     "home": "hjem",
-    "fresh": "fersk"
+    "fresh": "fersk",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Av (standard): stemplet blir der Ctrl+E la det.\nPå: dato og klokkeslett flyttes til siloens siste redigering, slik at overskriften fortsatt daterer notatet den hører til.",
+    "follow last edit": "Følg siste redigering"
   },
   "missing_keys": 0
 }

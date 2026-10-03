@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QGridLayout,
@@ -62,7 +63,17 @@ def _setting_map(data: dict, key: str) -> dict[str, str]:
 
 
 def default_account_label(account) -> str:
-    """Detected compact label used until the user explicitly overrides it."""
+    """Detected compact label used until the user explicitly overrides it.
+
+    A shared account already carries the badge the control plane assigned it,
+    so that badge is the answer. Falling through to the rules below would mint
+    an ordinal out of the display name ("CL1", "CL2") that no registry ever
+    issued and that silently renumbers itself when the roster changes.
+    """
+    canonical = str((getattr(account, "metadata", None) or {}).get(
+        "compact_label") or "").strip()
+    if canonical:
+        return canonical
     if account.provider_id == "claude":
         # Same rule as Codex below: the ordinal only appears once a second
         # account exists, so a single-account machine keeps the badge it has
@@ -76,6 +87,8 @@ def default_account_label(account) -> str:
     if account.provider_id == "codex":
         suffix = account.display_name.removeprefix("Codex").strip()
         return f"C{suffix or '1'}"
+    if account.provider_id == "freebuff":
+        return "FB"
     return account.provider_id[:2].upper() or "AI"
 
 
@@ -146,6 +159,9 @@ class LimitAccountSelector(QWidget):
             self._grid.addWidget(cb, row, 0)
 
             detected = QLabel(account.display_name)
+            # The name is the plane's or the operator's, not ours: a "<" or "&"
+            # in it must not open rich text or become a mnemonic underline.
+            detected.setTextFormat(Qt.TextFormat.PlainText)
             detected.setToolTip(account.source_path)
             self._grid.addWidget(detected, row, 1)
 

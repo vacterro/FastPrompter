@@ -1869,7 +1869,9 @@
     "configured": "กำหนดค่าแล้ว",
     "auto sibling": "พี่น้องอัตโนมัติ",
     "home": "โฮม",
-    "fresh": "ล่าสุด"
+    "fresh": "ล่าสุด",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "ปิด (ค่าเริ่มต้น): ตราประทับเวลาจะอยู่ที่ตำแหน่งที่ Ctrl+E วางไว้\nเปิด: วันที่และเวลาจะย้ายไปตามการแก้ไขล่าสุดของไซโล เพื่อให้หัวข้อยังคงระบุวันที่ของบันทึกที่มันเป็นเจ้าของ",
+    "follow last edit": "ตามการแก้ไขล่าสุด"
   },
   "missing_keys": 0
 }

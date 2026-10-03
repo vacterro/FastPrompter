@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-080:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1406 closed with verification evidence in LOG: verify -> PASS [target: T-1406] conf: high -- pytest tests/ -q: 4263 passed, 20 skipped, 3 pre-existing FAIL (t1357/t1358/t1375 read the stale 0.8.69 build/FastPrompter.exe, filed T-1407), same 3 in three independent sessions; pytest tests_smoke/ -q: 1060 passed, 7 skipped; ruff check src/ tests/ tests_smoke/ clean; compileall clean; validate_saitranslate 100.0% x32 locales; new tests/test_sai_acc",
+      "text": "T-1405: Gauges accounts tab must show canonical SAI Accounts (no phantom ordinals, compact_label badges, display_name names), escape & mnemonic in limit settings, finish SAI Accounts federation and fix its full-suite order dependence",
+      "verification": "the Work this request created reached its own verification gate; see the T-1406 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1406"
+    }
+  },
+  "schema_version": 1
+}

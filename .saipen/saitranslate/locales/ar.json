@@ -1869,7 +1869,9 @@
     "configured": "مُعدّ",
     "auto sibling": "شقيق تلقائي",
     "home": "مجلد",
-    "fresh": "حديث"
+    "fresh": "حديث",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "إيقاف (افتراضي): تبقى الختمة حيث وضعها Ctrl+E.\nتشغيل: ينتقل التاريخ والوقت إلى آخر تعديل في السيلو، فيظل العنوان يؤرخ الملاحظة التي ينتمي إليها.",
+    "follow last edit": "تتبع آخر تعديل"
   },
   "missing_keys": 0
 }

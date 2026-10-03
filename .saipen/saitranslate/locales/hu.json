@@ -1869,7 +1869,9 @@
     "configured": "beállítva",
     "auto sibling": "automatikus testvér",
     "home": "mappa",
-    "fresh": "friss"
+    "fresh": "friss",
+    "follow last edit": "Követi az utolsó módosítást",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Ki (alapértelmezett): a bélyeg ott marad, ahová a Ctrl+E tette.\nBe: a dátum és az idő az utolsó módosításhoz igazodik, így a cím továbbra is azt a jegyzetet dátolja, amelyhez tartozik."
   },
   "missing_keys": 0
 }

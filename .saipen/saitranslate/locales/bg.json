@@ -1869,7 +1869,9 @@
     "configured": "конфигуриран",
     "auto sibling": "автоматичен ближник",
     "home": "домашна папка",
-    "fresh": "актуални"
+    "fresh": "актуални",
+    "follow last edit": "Следва последната редакция",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Изключено (по подбиране): маркерът остава там, където го е поставил Ctrl+E.\nВключено: датата и часът се преместват към последната редакция на силата, така че заглавието продължава да датира бележката, към която принадлежи."
   },
   "missing_keys": 0
 }

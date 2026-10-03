@@ -1869,7 +1869,9 @@
     "configured": "skonfigurowany",
     "auto sibling": "automatyczne rodzeństwo",
     "home": "katalog domowy",
-    "fresh": "aktualne"
+    "fresh": "aktualne",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Wyłączone (domyślnie): znacznik czasu zostaje tam, gdzie go wstawił Ctrl+E.\nWłączone: data i godzina przenoszą się na ostatnią edycję silosu, więc nagłówek nadal datuje notatkę, do której należy.",
+    "follow last edit": "Śledź ostatnią edycję"
   },
   "missing_keys": 0
 }

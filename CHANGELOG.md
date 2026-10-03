@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.71 - 2026-10-03
+
+- **The Ctrl+E header can date the note instead of the keystroke:** a new
+  "follow last edit" switch, off by default, moves the header's date and time
+  onto the silo's last edit — so the stamp keeps meaning "when this note was
+  last changed" rather than "when someone last pressed Ctrl+E". It only ever
+  rewrites a line the current template already matches: a hand-written header,
+  or one stamped under an older template, is left exactly as it is. It settles
+  rather than churning — once the stamp shows the current value the note stops
+  being touched, so an idle editor is never rewritten. Settings → Ctrl+E
+  header. `tests/test_header_follow_edit_t1408.py`.
+- **The header stamp is formatted in one place:** the editor insert, the new
+  follow-the-last-edit rewrite and the settings preview each built this string
+  separately, which is how a preview starts promising a stamp the editor no
+  longer writes. All three now go through `core/header.py`.
+- **SAI Accounts accounts wear the badge the control plane gave them:** the
+  plane's canonical compact label is projected onto the shared account instead
+  of being parsed and dropped, which had the UI invent an ordinal out of the
+  display name (`CL1`, `CL2`) — an account number no registry issued, and one
+  that renumbers itself whenever the roster changes. Display names containing
+  `&` or `<` are now escaped and rendered literally instead of turning into a
+  keyboard mnemonic or rich text.
+
 ## 0.8.70 - 2026-10-03
 
 - **Codex account identity is verified, not assumed:** the Codex probe reads the
@@ -19,6 +42,22 @@
   whose probe failed or is not answered stays on screen instead of disappearing,
   because a silent removal is indistinguishable from an account that does not
   exist. Both defaults are off for a fresh profile.
+- **SAI Accounts federation (optional):** AI Limits now picks up accounts from the
+  SAI Accounts shared registry when that control plane is installed — no
+  setting, no import step — and is unchanged when it is not. `sai_accounts.py` is
+  the whole integration and is allowed to answer "nothing": with no plane
+  present, stopped, broken or uninstalled, discovery and probing behave exactly
+  as before. Shared and local accounts coexist, merging into one card only when
+  the provider identity locator proves they are the same identity (never on a
+  display name); accounts FastPrompter owns are never published without an
+  explicit action; a shared account whose plane stops answering is marked
+  unavailable with the reason rather than silently re-read through another
+  account's config; and a provider the plane does not yet read keeps the local
+  reader it always had. 34 assertions in
+  `tests/test_usage_limits_sai_accounts.py` cover STANDALONE, a present-but-broken
+  plane, FEDERATED, HYBRID, duplicate discovery, central failure mid-life and
+  recovery — including a source-level guarantee that the module only ever reads.
+
 ## 0.8.69 - 2026-09-29
 
 - **Inline image/link/hover Copy corridor:** pasted images render as one clean

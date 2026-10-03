@@ -1869,7 +1869,9 @@
     "configured": "dikonfigurasi",
     "auto sibling": "saudara otomatis",
     "home": "beranda",
-    "fresh": "segar"
+    "fresh": "segar",
+    "follow last edit": "Ikuti suntingan terakhir",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Mati (bawaan): stempel tetap di tempat yang ditaruh Ctrl+E.\nHidup: tanggal dan waktu berpindah ke suntingan terakhir silo, sehingga judul terus menandai catatan yang menjadi induknya."
   },
   "missing_keys": 0
 }

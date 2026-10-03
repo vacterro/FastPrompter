@@ -1869,7 +1869,9 @@
     "configured": "कॉन्फ़िग किया गया",
     "auto sibling": "स्वतः सह-निवास",
     "home": "होम",
-    "fresh": "ताज़ा"
+    "fresh": "ताज़ा",
+    "follow last edit": "अंतिम संपादन के साथ चलें",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "बंद (डिफ़ॉल्ट): टाइमस्टैम्प वहीं रहता है जहाँ Ctrl+E ने उसे रखा।\nचालू: तारीख़ और समय सिलो के अंतिम संपादन पर चले जाते हैं, ताकि शीर्षक उस नोट को ही तारीख़ देता रहे जिससे वह जुड़ा है।"
   },
   "missing_keys": 0
 }

@@ -1869,7 +1869,9 @@
     "configured": "configuré",
     "auto sibling": "frère automatique",
     "home": "dossier",
-    "fresh": "à jour"
+    "fresh": "à jour",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Désactivé (par défaut) : l'horodatage reste là où Ctrl+E l'a posé.\nActivé : la date et l'heure suivent la dernière modification du silo, si bien que le titre continue de dater la note à laquelle il appartient.",
+    "follow last edit": "Suivre la dernière modification"
   },
   "missing_keys": 0
 }

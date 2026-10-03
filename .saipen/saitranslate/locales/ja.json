@@ -1869,7 +1869,9 @@
     "configured": "設定済み",
     "auto sibling": "自動検出の兄弟",
     "home": "ホーム",
-    "fresh": "最新"
+    "fresh": "最新",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "オフ（既定）：タイムスタンプは Ctrl+E が置いた場所に残ります。\nオン：日付と時刻がサイロの最終編集に追従し、見出しは、それが属するメモの日付を 示し続けるようになります。",
+    "follow last edit": "最終編集に追従"
   },
   "missing_keys": 0
 }

@@ -1869,7 +1869,9 @@
     "configured": "geconfigureerd",
     "auto sibling": "automatische broer",
     "home": "thuismap",
-    "fresh": "actueel"
+    "fresh": "actueel",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Uit (standaard): het stempel blijft waar Ctrl+E het heeft gezet.\nAan: datum en tijd volgen de laatste bewerking van de silo, zodat de kop blijft dateren van de notitie waarbij hij hoort.",
+    "follow last edit": "Volg laatste bewerking"
   },
   "missing_keys": 0
 }

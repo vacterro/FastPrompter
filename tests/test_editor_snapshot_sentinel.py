@@ -46,6 +46,10 @@ def _window(**over):
         mark_dirty=MagicMock(),
         _remember_active_document_text=MagicMock(),
         _update_active_silo_ui=MagicMock(),
+        # T-1408: the flush calls this after moving silo_last_edited. Covered
+        # for real in tests/test_header_follow_edit_t1408.py; here it only has
+        # to exist, because this double is standing in for the whole window.
+        refresh_header_stamp=MagicMock(),
         _active_doc=MagicMock(return_value=MagicMock()),
         _document_owner_matches=MagicMock(return_value=True),
         _refuse_unowned_flush=MagicMock(),

@@ -20,6 +20,7 @@ from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass, field
 
+from fastprompter.core.usage_limits import sai_accounts as _sai_accounts
 from fastprompter.core.usage_limits.model import (
     OK,
     STALE,
@@ -105,7 +106,13 @@ def apply_display_names(accounts: list[AccountRef]) -> list[AccountRef]:
                                              a.source_path))
         label = _PROVIDER_LABEL.get(pid, pid.title())
         for i, a in enumerate(group, 1):
-            name = label if len(group) == 1 else f"{label} {i}"
+            canonical = (a.metadata or {}).get("canonical_label")
+            if canonical:
+                name = canonical
+            elif len(group) == 1:
+                name = label
+            else:
+                name = f"{label} {i}"
             renamed.append(dataclasses.replace(a, display_name=name))
     # Keep provider grouping stable for rendering.
     renamed.sort(key=lambda a: (a.provider_id, a.display_name))
@@ -312,6 +319,14 @@ class UsageLimitService:
                 all_accounts.extend(provider.discover_accounts())
             except Exception:
                 pass
+        # SAI Accounts is OPTIONAL. This call answers "nothing" when the plane
+        # is absent, and even when it answers, it only adds accounts this
+        # application does not already have. With no plane installed the list
+        # below is byte-for-byte what it was before the federation existed.
+        try:
+            all_accounts = _sai_accounts.augment(all_accounts, [pid for pid, _ in providers])
+        except Exception:
+            pass
         all_accounts = apply_display_names(all_accounts)
         with self._lock:
             # A newer configuration/request owns the service now. Never let
@@ -463,6 +478,23 @@ class UsageLimitService:
         provider = self._providers.get(account.provider_id)
         if provider is None:
             return None
+        if _sai_accounts.is_shared(account):
+            # A shared account is read through the plane, which owns its
+            # identity and its context. The local provider probe is passed
+            # along, not called: the plane may answer "I do not read this
+            # provider", and only then is the local reader the right one.
+            try:
+                return _sai_accounts.probe_shared(
+                    account, deadline,
+                    local_probe=lambda a, d: provider.probe(a, d))
+            except Exception:
+                from fastprompter.core.logging import logger
+                logger.exception("limit shared probe error for %s", account.key)
+                return UsageSnapshot(
+                    account=account, status="UNAVAILABLE", windows=[],
+                    error_code="shared_probe_exception",
+                    error_summary="unexpected shared probe exception",
+                )
         try:
             return provider.probe(account, deadline)
         except Exception:

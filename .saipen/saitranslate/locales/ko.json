@@ -1869,7 +1869,9 @@
     "configured": "설정됨",
     "auto sibling": "자동 형제",
     "home": "홈",
-    "fresh": "최신"
+    "fresh": "최신",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "끄기(기본값): 타임스탬프는 Ctrl+E가 놓은 자리에 그대로 있습니다.\n켜기: 날짜와 시간이 사이로의 마지막 편집을 따라가므로 머리글은 계속 자신이 속한 메모의 날짜를 표시합니다.",
+    "follow last edit": "마지막 편집 따라가기"
   },
   "missing_keys": 0
 }

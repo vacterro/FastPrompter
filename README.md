@@ -11,7 +11,7 @@ One global hotkey brings the same workspace back from anywhere. Your text and pr
 [**Download the latest portable EXE**](https://github.com/vacterro/FastPrompter/releases) · [Wiki](https://github.com/vacterro/FastPrompter/wiki) · [Issues](https://github.com/vacterro/FastPrompter/issues)
 
 <img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=latest%20tag" alt="latest tag">
-<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.70**
+<img src="https://img.shields.io/github/v/tag/vacterro/FastPrompter?style=flat-square&label=source%20version" alt="version"> **v0.8.71**
 <a href="LICENSE"><img src="https://img.shields.io/github/license/vacterro/FastPrompter?style=flat-square&color=blue" alt="MIT license"></a>
 <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=flat-square" alt="Windows 10 and 11">
 <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square" alt="Python 3.11+">
@@ -292,7 +292,21 @@ The editor is based on `QPlainTextEdit` and adds FastPrompter-specific behavior 
 - live preview / source-style modes;
 - inline image pills and file-drop actions;
 - word-wrap and monospace-code options;
-- undo that covers text plus key silo operations.
+- undo that covers text plus key silo operations;
+- a `Ctrl+E` header whose date and time can follow the silo's last edit.
+
+### Ctrl+E and the header stamp
+
+`Ctrl+E` turns the current line into a heading, and by default stamps the date
+and time onto it — the first heading in a silo, so the stamp dates the note and
+the headings below it stay plain section markers. Both halves are settings:
+
+- **Stamp every header** puts the full title line on every heading instead.
+- **Follow last edit** (off by default) moves the stamp's date and time onto
+  the silo's last edit, so the header keeps meaning "when this note last
+  changed" rather than "when someone last pressed Ctrl+E". It only rewrites a
+  line the current template already matches, so a heading you wrote by hand is
+  never touched, and once the stamp is current the note stops being rewritten.
 
 ## AI usage limits
 
@@ -311,6 +325,19 @@ The UI includes:
 - provider-aware colors.
 
 Provider values are treated as observed data, not estimates. If a provider cannot be queried, FastPrompter should report that state instead of inventing a number.
+
+### SAI Accounts is optional
+
+If the [SAI Accounts](https://github.com/vacterro/saituls) control plane happens to be installed on this machine, FastPrompter picks up the accounts it shares — automatically, with no setting and no import step. If it is absent, stopped, broken or uninstalled, FastPrompter discovers and reads every account exactly as it did before, and nothing about your setup changes. **Install nothing else to use this program**; that is the standalone path and it is the default.
+
+The rules the integration follows, so you can predict what it will do:
+
+- **Your accounts stay yours.** Accounts FastPrompter discovers on its own are never published to the shared registry. Only an explicit action you take moves one there.
+- **Two accounts merge into one card only when they are provably the same identity** — the same provider and the same config directory. Two accounts that merely share a display name stay two accounts.
+- **A shared account whose control plane stops answering is marked unavailable**, with the reason shown. It is never quietly re-read through a different account's config, which would put the wrong numbers under the right name.
+- **A local setting stays local.** Hiding an account or reordering the meters here changes nothing for any other application.
+
+Contract and tests: `src/fastprompter/core/usage_limits/sai_accounts.py` and `tests/test_usage_limits_sai_accounts.py`.
 
 ## Timers, reminders and sound
 

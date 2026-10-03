@@ -1869,7 +1869,9 @@
     "configured": "konfiguriert",
     "auto sibling": "automatischer Geschwisterpfad",
     "home": "Heimat",
-    "fresh": "aktuell"
+    "fresh": "aktuell",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Aus (Standard): Der Zeitstempel bleibt, wo Strg+E ihn gesetzt hat.\nEin: Datum und Uhrzeit folgen der letzten Änderung des Silos, sodass die Überschrift weiterhin die Notiz datiert, zu der sie gehört.",
+    "follow last edit": "Letzte Änderung folgen"
   },
   "missing_keys": 0
 }

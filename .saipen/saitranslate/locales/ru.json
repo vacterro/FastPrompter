@@ -1869,7 +1869,9 @@
     "configured": "настроен",
     "auto sibling": "автоматический близнец",
     "home": "домашняя папка",
-    "fresh": "актуальные"
+    "fresh": "актуальные",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Выкл. (по умолчанию): отметка остаётся там, где её поставил Ctrl+E.\nВкл.: дата и время переходят к последнему редактированию сила, поэтому заголовок продолжает датировать заметку, которой он принадлежит.",
+    "follow last edit": "Следовать за последним редактированием"
   },
   "missing_keys": 0
 }

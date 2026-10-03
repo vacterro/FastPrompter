@@ -1869,7 +1869,9 @@
     "configured": "đã cấu hình",
     "auto sibling": "anh em tự động",
     "home": "thư mục",
-    "fresh": "mới nhất"
+    "fresh": "mới nhất",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Tắt (mặc định): dấu thời gian vẫn nằm ở chỗ Ctrl+E đặt nó.\nBật: ngày và giờ chuyển sang lần sửa cuối cùng của silo, nên tiêu đề vẫn ghi ngày cho ghi chú mà nó thuộc về.",
+    "follow last edit": "Theo lần sửa cuối"
   },
   "missing_keys": 0
 }

@@ -1869,7 +1869,9 @@
     "configured": "configurat",
     "auto sibling": "frate automat",
     "home": "folder",
-    "fresh": "actual"
+    "fresh": "actual",
+    "follow last edit": "Urmează ultima editare",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Oprit (implicit): marcajul temporal rămâne acolo unde l-a pus Ctrl+E.\nPornit: data și ora urmează ultima editare a silozului, astfel încât titlul continuă să dateze notița căre îi aparține."
   },
   "missing_keys": 0
 }

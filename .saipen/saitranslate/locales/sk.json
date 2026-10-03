@@ -1869,7 +1869,9 @@
     "configured": "nakonfigurované",
     "auto sibling": "automatický súrozenec",
     "home": "domovský priečinok",
-    "fresh": "aktuálne"
+    "fresh": "aktuálne",
+    "follow last edit": "Sledovať poslednú úpravu",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Vypnuté (predvolené): časová pečiatka zostáva tam, kde ju položil Ctrl+E.\nZapnuté: dátum a čas sa presúvajú na poslednú úpravu sila, takže nadpis ďalej datuje poznámku, ku ktorej patrí."
   },
   "missing_keys": 0
 }

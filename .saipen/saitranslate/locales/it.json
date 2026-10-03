@@ -1869,7 +1869,9 @@
     "configured": "configurato",
     "auto sibling": "gemello automatico",
     "home": "cartella",
-    "fresh": "aggiornato"
+    "fresh": "aggiornato",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Disattivato (predefinito): il timbro resta dove lo ha messo Ctrl+E.\nAttivo: data e ora seguono l'ultima modifica del silo, così il titolo continua a datare la nota a cui appartiene.",
+    "follow last edit": "Segui l'ultima modifica"
   },
   "missing_keys": 0
 }

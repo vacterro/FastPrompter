@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-080:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1405: Gauges accounts tab must show canonical SAI Accounts (no phantom ordinals, compact_label badges, display_name names), escape & mnemonic in limit settings, finish SAI Accounts federation and fix its full-suite order dependence"
+    }
+  },
+  "derived_at": "2026-10-03T11:17:52Z",
+  "derived_from": "SRC-080",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "207782e854ef091fca76590393edf6ef0741641c539575f4cf966caafd98c15e"
+}

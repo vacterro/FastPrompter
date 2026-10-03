@@ -1869,7 +1869,9 @@
     "configured": "määritetty",
     "auto sibling": "automaattinen sisarkansio",
     "home": "kotikansio",
-    "fresh": "ajan tasainen"
+    "fresh": "ajan tasainen",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Pois (oletus): aikaleima jää paikalleen, johon Ctrl+E sen asetti.\nPäällä: päivämäärä ja kellonaika siirtyvät siilon viimeisen muokkauspäivän mukaan, jolloin otsikko jatkaa päiväämäröimästä muistiinpanolle, johon se kuuluu.",
+    "follow last edit": "Seuraa viimeistä muokkausta"
   },
   "missing_keys": 0
 }

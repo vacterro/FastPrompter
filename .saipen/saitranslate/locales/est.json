@@ -1869,7 +1869,9 @@
     "configured": "seadistatud",
     "auto sibling": "automaatiline õde",
     "home": "kaust",
-    "fresh": "värske"
+    "fresh": "värske",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Välja (vaikimisi): ajamärgis jääb sinna, kuhu Ctrl+E selle pani.\nSeis: kuupäev ja kellaaeg liiguvad silo viimase redigeerimise juurde, nii et pealkiri jätkab märgistama märkuse, mille juurde see kuulub.",
+    "follow last edit": "Järgi viimast redigeerimist"
   },
   "missing_keys": 0
 }

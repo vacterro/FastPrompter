@@ -63,6 +63,33 @@ from fastprompter.ui.limit_colors import (
 from fastprompter.ui.limit_overview import LimitOverview
 
 
+def literal_label(text: str) -> str:
+    """A label string whose ``&`` is punctuation, not an accelerator.
+
+    Qt reads ``&x`` in a button, checkbox or tab title as a mnemonic and
+    underlines the ``x``, so a translated conjunction such as "Gauges &
+    accounts" renders as a broken Alt accelerator. Doubling is Qt's own
+    spelling for a literal ampersand and costs nothing at paint time.
+
+    ponytail: doubles a pre-escaped ``&&`` as well. No shipped translation
+    contains one; widen to a regex if a locale ever needs a real mnemonic.
+    """
+    return text.replace("&", "&&")
+
+
+def plain_text_label(label) -> None:
+    """Make a label render data literally instead of as markup.
+
+    The account summaries interpolate names, badges and home paths that the
+    operator — or a control plane running on another machine — chose. Under
+    QLabel's default AutoText a ``<`` in one of those opens rich text and an
+    ``&`` becomes a mnemonic underline. PlainText is the native answer: the
+    string is drawn exactly as given.
+    """
+    if label is not None:
+        label.setTextFormat(Qt.TextFormat.PlainText)
+
+
 def _request_limit_sound(manager, kind, key, ref, volume, *, preview=False):
     """One attributable AI-limit request through the existing sound owner."""
     from fastprompter.core.logging import logger
@@ -377,7 +404,8 @@ class LimitSettingsDialog(QDialog):
         card_lay.addWidget(desc_lbl)
 
         btn_row = QHBoxLayout()
-        self.btn_auto_connect = QPushButton(tr('⚡ Auto-Detect & Connect All AI Limits'))
+        self.btn_auto_connect = QPushButton(
+            literal_label(tr('⚡ Auto-Detect & Connect All AI Limits')))
         self.btn_auto_connect.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_auto_connect.setStyleSheet(
             "QPushButton { font-weight: bold; padding: 4px 10px; }"
@@ -615,7 +643,7 @@ class LimitSettingsDialog(QDialog):
 
         row3 = QHBoxLayout()
         self.cb_hide_zero = QCheckBox(
-            tr('Hide accounts with 0% usage (5h & weekly)'))
+            literal_label(tr('Hide accounts with 0% usage (5h & weekly)')))
         self.cb_hide_zero.setChecked(
             self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
         self.cb_hide_zero.setToolTip(
@@ -646,7 +674,7 @@ class LimitSettingsDialog(QDialog):
             self.main_win, self.service)
         lay.addWidget(self.account_selector)
         lay.addStretch(1)
-        self.tabs.addTab(page, tr('Gauges & accounts'))
+        self.tabs.addTab(page, literal_label(tr('Gauges & accounts')))
 
     def _set_master_enabled(self, checked):
         self.data["limit_gauges"] = "True" if checked else "False"
@@ -1518,7 +1546,8 @@ class LimitSettingsDialog(QDialog):
         lay.addLayout(form)
 
         top_bar = QHBoxLayout()
-        self.btn_auto_troubleshoot = QPushButton(tr('⚡ Auto-Troubleshoot & Auto-Repair All'))
+        self.btn_auto_troubleshoot = QPushButton(
+            literal_label(tr('⚡ Auto-Troubleshoot & Auto-Repair All')))
         self.btn_auto_troubleshoot.setToolTip(
             tr('Scan all AI sources, repair stale bridges, adopt candidate paths, and automatically enable detected coding plans.'))
         self.btn_auto_troubleshoot.clicked.connect(self._run_auto_troubleshoot)
@@ -1595,10 +1624,12 @@ class LimitSettingsDialog(QDialog):
         self.lbl_claude_accounts = QLabel()
         self.lbl_claude_accounts.setWordWrap(True)
         self._hint_style(self.lbl_claude_accounts)
+        plain_text_label(self.lbl_claude_accounts)
         lay.addWidget(self.lbl_claude_accounts)
         self.lbl_claude_sources = QLabel()
         self.lbl_claude_sources.setWordWrap(True)
         self._hint_style(self.lbl_claude_sources)
+        plain_text_label(self.lbl_claude_sources)
         lay.addWidget(self.lbl_claude_sources)
 
         antigravity_note = QLabel(

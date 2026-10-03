@@ -1869,7 +1869,9 @@
     "configured": "διαμορφωμένο",
     "auto sibling": "αυτόματος αδελφός",
     "home": "κατάλογος",
-    "fresh": "ενημέρα"
+    "fresh": "ενημέρα",
+    "follow last edit": "Ακολούθηση τελευταίας επεξεργασίας",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Εκτός (προεπιλογή): η χρονική σήμανση μένει εκεί που την έβαλε το Ctrl+E.\nΕνερό: η ημερομηνία και η ώρα μετακινούνται στην τελευταία επεξεργασία του σιλό, ώστε η κεφαλίδα να συνεχίζει να χρονολογεί τη σημείωση στην οποία ανήκει."
   },
   "missing_keys": 0
 }

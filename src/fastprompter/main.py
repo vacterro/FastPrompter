@@ -10590,6 +10590,70 @@ class FastPrompter(
         self.mark_dirty()
         return True
 
+    def refresh_header_stamp(self, slot, epoch):
+        """Move the Ctrl+E stamp(s) in the open silo onto `epoch`.
+
+        Only runs when "follow last edit" is on, only for the silo that is
+        actually open (a stamp in a background silo is text nobody is looking
+        at), and only rewrites a line the CURRENT template already matches.
+        A header stamped under an older template, or one the user wrote by
+        hand, is left exactly as it is rather than guessed at.
+
+        Rewrites nothing when the rendered stamp already equals the new one,
+        which is what makes it converge: the first flush moves the stamp and
+        dirties the document, the next one sees the stamp already current and
+        stops, so an idle editor is not rewritten forever.
+        """
+        from fastprompter.ui.edit_guard import edit_block, keep_view
+
+        if self.data.get("ctrl_e_follow_edit", "False") != "True":
+            return
+        cfg = header_core.read_settings(self.data)
+        if "{time}" not in cfg["format"]:
+            # Nothing in the header to move. Matching it anyway would let a
+            # {text}-only header be rewritten as if it carried a stamp.
+            return
+        pattern = header_core.stamp_line_pattern(cfg["format"])
+        if self.editing_snippet and self.editing_snippet[1] != slot:
+            return
+
+        when = datetime.datetime.fromtimestamp(epoch)
+        time_str = header_core.stamp_time_text(
+            when, self._clock_time_fmt(),
+            text_month=self.data.get("date_text_month", "False") == "True",
+            daypart=("{state}" not in cfg["format"])
+            and profile_flag(self.data, "date_daypart"))
+
+        doc = self.text_area.document()
+        targets = []
+        block = doc.begin()
+        while block.isValid():
+            m = pattern.match(block.text().strip())
+            if m:
+                text = m.group(1).strip()
+                fresh = header_core.header_line(
+                    cfg["format"], text, time_str, header_core.day_part(when.hour))
+                if fresh != block.text():
+                    targets.append((block.position(), len(block.text()), fresh))
+            block = block.next()
+        if not targets:
+            return
+
+        with keep_view(self.text_area):
+            plain = QTextCharFormat()
+            cur = QTextCursor(doc)
+            # ONE undo step for the whole sweep, via the helper Ctrl+E itself
+            # uses: QTextCursor groups with begin/endEditBlock (QTextDocument
+            # has no such call in PyQt6), and the editor arg arms the boundary
+            # so the next keystroke is not undone together with this.
+            with edit_block(cur, self.text_area):
+                for pos, length, fresh in reversed(targets):
+                    cur.setPosition(pos)
+                    cur.setPosition(pos + length,
+                                    QTextCursor.MoveMode.KeepAnchor)
+                    cur.insertText(fresh, plain)
+            self.mark_dirty()
+
     def apply_header_timestamp(self):
         """Ctrl+E: Apply user-defined header formatting and timestamp at end of current line."""
         cursor = self.text_area.textCursor()
@@ -10636,12 +10700,8 @@ class FastPrompter(
             # the toggle: with the rule switched off in settings, the key
             # could no longer undo its own work.
             # Try to match the stamped format first to extract just the text
-            stamped_pattern = re.escape(full_template)
-            stamped_pattern = stamped_pattern.replace(re.escape("{text}"), r"(.*?)")
-            stamped_pattern = stamped_pattern.replace(re.escape("{time}"), r".*?")
-            stamped_pattern = stamped_pattern.replace(re.escape("{state}"), r".*?")
-            stamped_pattern = f"^{stamped_pattern}$"
-            stamped_match = re.match(stamped_pattern, _stripped)
+            _stamped_re = header_core.stamp_line_pattern(full_template)
+            stamped_match = _stamped_re and _stamped_re.match(_stripped)
             if stamped_match:
                 _clean_sel = stamped_match.group(1)
             else:
@@ -10673,13 +10733,8 @@ class FastPrompter(
             self.mark_dirty()
             return
 
-        pattern = re.escape(full_template)
-        pattern = pattern.replace(re.escape("{text}"), r"(.*?)")
-        pattern = pattern.replace(re.escape("{time}"), r".*?")
-        pattern = pattern.replace(re.escape("{state}"), r".*?")
-        pattern = f"^{pattern}$"
-
-        m = re.match(pattern, sel)
+        pattern = header_core.stamp_line_pattern(full_template)
+        m = pattern and pattern.match(sel)
         if m:
             clean_sel = m.group(1)
             plain = QTextCharFormat()
@@ -10702,22 +10757,15 @@ class FastPrompter(
 
 
         now = datetime.datetime.now()
-        h = now.hour
-        if 5 <= h < 12: daypart = "Morning"
-        elif 12 <= h < 17: daypart = "Day"
-        elif 17 <= h < 22: daypart = "Evening"
-        else: daypart = "Night"
-
-        text_month = self.data.get("date_text_month", "False") == "True"
-        m_fmt = "%d %b" if text_month else "%d.%m"
-        ts = now.strftime(f"{m_fmt} - {self._clock_time_fmt()}")
+        daypart = header_core.day_part(now.hour)
 
         # {state} in the template takes over the day word; otherwise the
         # legacy behavior prefixes it inside {time} when Day Word is on
-        if "{state}" in template:
-            time_str = ts
-        else:
-            time_str = f"{daypart} {ts}" if profile_flag(self.data, "date_daypart") else ts
+        time_str = header_core.stamp_time_text(
+            now, self._clock_time_fmt(),
+            text_month=self.data.get("date_text_month", "False") == "True",
+            daypart=("{state}" not in template)
+            and profile_flag(self.data, "date_daypart"))
 
         # Strip any existing header hashes or list bullets so they don't get trapped
         clean_sel = re.sub(r'^(?:#+\s*|[-*•●+]\s+)+', '', sel).strip()
@@ -14563,6 +14611,7 @@ class FastPrompter(
             self.mark_dirty("arc" if is_arc else "temp")
             if not is_arc:
                 self.silo_last_edited[slot] = int(time.time())
+                self.refresh_header_stamp(slot, self.silo_last_edited[slot])
             self._update_active_silo_ui()
 
     def commit_current_text(self):
@@ -20211,6 +20260,8 @@ class FastPrompter(
                         if current_text != old_text:
                             self.mark_dirty("arc" if is_arc else "temp")
                             self.silo_last_edited[slot] = int(time.time())
+                            self.refresh_header_stamp(
+                                slot, self.silo_last_edited[slot])
                             # PERF-001: reuse the snapshot already materialized
                             # above — never a second whole-document extraction.
                             self._update_active_silo_ui(raw=current_text)

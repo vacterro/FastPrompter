@@ -1869,7 +1869,9 @@
     "configured": "konfigurirano",
     "auto sibling": "automatski proračun",
     "home": "dom",
-    "fresh": "svježe"
+    "fresh": "svježe",
+    "follow last edit": "Prati zadnju izmjenu",
+    "Off (default): the stamp stays where Ctrl+E put it.\nOn: the date and time move to the silo's last edit, so the header keeps dating the note it belongs to.": "Isključeno (zadano): vremenska oznaka ostaje tamo gdje ju je stavio Ctrl+E.\nUključeno: datum i vrijeme prelaze na zadnju izmjenu sila, pa naslov i dalje datira bilješku kojoj pripada."
   },
   "missing_keys": 0
 }
