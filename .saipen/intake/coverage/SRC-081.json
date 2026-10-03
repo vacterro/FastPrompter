@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-081:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1408 closed with verification evidence in LOG: verify -> PASS [target: T-1408] conf: high -- re-run at closure: pytest header_follow_edit_t1408 + editor_snapshot_sentinel + bake_corrective_t1298 + set_default_from_current + typecheck_vocab = 69 passed; validate_saitranslate PASSED. Full-suite evidence stands from E-4178 (tests/ 4274 passed 20 skipped, 3 stale-release FAIL owned by T-1407; tests_smoke/ 1060 passed).",
+      "text": "header date+time must also follow last-edited time, toggleable",
+      "verification": "the Work this request created reached its own verification gate; see the T-1408 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1408"
+    }
+  },
   "schema_version": 1
 }
