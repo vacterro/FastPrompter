@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-079:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1404 closed with verification evidence in LOG: ship -> PASS [target: T-1404] conf: high -- release 0.8.70 cut and published: commit 97cce5e, 'git push origin main' moved 165be9e..97cce5e, tag v0.8.70 created at 97cce5e14d97adf258441c38c2c774ce5c6823c0 and pushed only after the branch landed; VERSION, pyproject, FastPrompter.pyw, uv.lock and all four README badges read 0.8.70, newest CHANGELOG entry is 0.8.70; staged explicitly, no git add -A. ",
+      "text": "saipen ship",
+      "verification": "the Work this request created reached its own verification gate; see the T-1404 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1404"
+    }
+  },
   "schema_version": 1
 }
