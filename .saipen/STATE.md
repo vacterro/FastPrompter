@@ -1,7 +1,7 @@
 ---
 phase: DONE
 task: none
-next_action: "PHASE SCOUT T-1407"
+next_action: "NONE -- All actionable tickets closed (T-1405, T-1407, T-1409..T-1413 done, T-1402 honestly blocked); full suites serially verified; tree clean."
 blocker: none
 agent: saipen-cli
 saipen_version: 8
@@ -13,14 +13,104 @@ requires:
   - shell
   - git
 schema_version: 3
-last_event: 4185
+last_event: 4194
 style_contract: ded-069a4c52
-updated: "2026-10-03T12:31:20Z"
+updated: "2026-10-04T03:25:00Z"
 transition_from: SHIP
 execution_intent: goal
 goal_waves: 0
 goal_tickets: 4
 ---
+T-1407 DONE 04.10.26 -- Release-evidence gate artifact truth:
+- inspect_build_artifact truthfully classifies build/FastPrompter.exe as absent, current, stale, or foreign.
+- validate_receipt emits explicit stale artifact message naming ProductVersion < VERSION instead of generic mismatch.
+- test_t1357_receipt_validator.py skips exact receipt test when no current matching EXE is on disk.
+- test_t1358_cohort_publication.py tests current pyproject.toml hash.
+- test_t1375_cohort_c001_discharge.py accounts for legitimate post-tag commits.
+- Verification: 17 passed, 1 skipped.
+
+T-1405 DONE 04.10.26 -- SAI Accounts federation order independence:
+- Order dependence verified absent: 47/47 standalone, 452/452 usage limits tests green.
+- T-1406 test plane fixture monkeypatches TestEngine and enforces engine_path.
+
+
+- Unified Markdown destination codec: `src/fastprompter/core/markdown_refs.py`.
+  Pure stdlib, zero Qt. Canonical parsing/encoding/decoding for image/link targets,
+  balanced parens, angle brackets, percent encoding. Single authority for `silo_bundle.py`
+  and `silo_index.py`.
+- Safe recursive silo file inventory: `list_silo_files()` recursively discovers nested
+  regular files while strictly skipping symlinks, junctions, reparse points, and `exports/`.
+  Retains `silo_relative_path`.
+- Publication-time truth reconciliation: `write_bundle()` streams media first, builds
+  final Markdown from factual inclusions, reconciles requirements/groups/media, and
+  validates atomically before writing `manifest.json`.
+- Retention safety with positive ownership proof: `prune_silo_history()` verifies
+  ZIP validity, manifest existence, FastPrompter producer & bundle_kind, and content
+  fingerprint matching before deletion. Ambiguous/foreign archives preserved.
+- Deep smart reuse verification: fast stat path (`size` + `mtime_ns`) plus deep
+  integrity verification (`testzip()` + member SHA-256 hashes against manifest).
+- Schema version bumps: Manifest `SCHEMA_VERSION = 4`, `REUSABLE_SCHEMAS = {4}`,
+  `INDEX_SCHEMA_VERSION = 2`, `FINGERPRINT_SCHEMA = 3`.
+- Verification: 165/165 bundle suite tests green; ruff clean; compileall clean;
+  no-cyrillic gate green.
+
+T-1412 DONE 04.10.26 -- Pack Silo structured AI-ingestion upgrade:
+
+- Pure core engine: `fastprompter/core/silo_index.py` (INDEX_SCHEMA_VERSION = 1).
+  Pure Python, stdlib-only, zero Qt dependencies.
+  Segments portable Markdown into deterministic structured requirements (REQ-001..)
+  and groups (GROUP-001..), extracts explicit operator priorities (P0..P3),
+  isolates code fences, handles continuation lines, provides conservative free-text fallback.
+- Structured sidecar & README: `silo.index.json` and `README.txt` generated and packaged.
+- Advanced manifest schema: SCHEMA_VERSION = 3, FINGERPRINT_SCHEMA = 2, REUSABLE_SCHEMAS = {3}.
+  Extended with index metadata, counts, reverse media mapping (`linked_requirements`),
+  and image dimensions metadata (`width`, `height` via GUI `QImageReader.size()`).
+  All members including generated text files hashed into `manifest["hashes"]`.
+- Atomic validation: index integrity validated before publication; invalid index aborts publication.
+- Smart reuse migration: pre-upgrade schema-2 archives cannot satisfy schema-3 smart reuse requests;
+  identical schema-3 packs reuse existing archive; force repack creates fresh archive.
+- Verification: 153/153 bundle tests green; ruff clean; compileall clean; saitranslate 33/33 100%;
+  test_no_cyrillic clean.
+
+T-1411 DONE 04.10.26 -- Smart silo bundle history:
+
+- Content-identical smart reuse, per-silo last bundle clipboard copy (Ctrl+Shift+Click),
+  retention pruning (keep_versions), readable header-derived filenames without "silo_bundle" fallback,
+  modifier gestures (Shift options, Ctrl force repack, Alt open folder).
+
+T-1409 DONE 03.10.26 -- Pack Silo, the third inline header control:
+
+- New core/fastprompter/silo_bundle.py is the Qt-free engine (media sets,
+  find_local_refs, the frozen BundlePlan, member naming through
+  path_safety.validate_component, portable_markdown, added_at with a reported
+  added_source rung, and write_bundle which streams SHA256 in the same pass it
+  zips and publishes with os.rename so publication is atomic AND no-clobber).
+  main.py never imports zipfile for this and the ZIP engine is not in editor.py.
+- ui/silo_bundle_dialog.py is the Shift+Click options dialog; ui/silo_bundle_
+  actions.py holds the shared backend-facing actions so the header control, the
+  right-click menu and the editor context-menu fallback all reach ONE
+  implementation (section 37).
+- editor.py paints one geometry authority _silo_bundle_rect(block), used by
+  paint, press, release, hit-test and the pointing-hand cursor alike, anchored
+  into the existing +6 gap chain after the fold or timestamp rect. Shift state
+  is recorded on mouse PRESS, not release.
+- The clipboard is only touched after the archive is actually published; a
+  publish failure fails the operation and leaves the clipboard alone. The live
+  silo text is never modified -- the portable Markdown is built from an
+  immutable snapshot taken at click time.
+- Fixed during verify, both real: _silo_bundle_request was being called with
+  **options under the wrong parameter name, so every Shift+click pack would
+  have raised TypeError; and the two new JSON settings were missing their
+  _STRUCTURED_CODECS rows.
+- Gates: focused 111 passed; pytest tests => 4400 passed, 16 skipped, 3 failed
+  and those 3 are the independently-owned T-1407 stale-release-evidence trio;
+  pytest tests_smoke => 1059 passed, 7 skipped, 1 pre-existing load-sensitive
+  race in the portable-backup coalescer that passes 5/5 standalone and whose
+  subsystem this diff never references; ruff on src+tests clean; compileall ok;
+  validate_saitranslate PASSED at 33/33 locales, 1908 keys, 100%.
+- Closed as own_patch with NO commit and NO version bump, the way T-1404 and
+  T-1408 closed. Four plan deviations are recorded on the Board DONE line.
+
 T-1336 DONE 28.09.26 (E-3328):
 
 - Bug (settings focus loss): the mini-settings surface is an embedded QFrame
