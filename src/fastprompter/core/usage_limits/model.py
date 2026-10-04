@@ -812,6 +812,11 @@ def account_has_usage(snapshot, now: float | None = None) -> bool:
     # while waiting for the provider's post-reset refresh.
     if spare_balance(snapshot) > 0.0:
         return True
+    from fastprompter.core.usage_limits.freebuff_format import spendable_total
+    fb_total = spendable_total(snapshot)
+    if fb_total is not None:
+        return fb_total > 0.0
+
     # 3. ordinary metered-window evaluation.
     windows = [w for w in resolved_windows(getattr(snapshot, "windows", ()) or (), now=now)
                if isinstance(w, UsageWindow) and getattr(w, "available", False)]
@@ -822,6 +827,17 @@ def account_has_usage(snapshot, now: float | None = None) -> bool:
     has_any_remaining = False
 
     for w in windows:
+        if getattr(w, "unit", "") == "FB" or getattr(w, "key", "") == "daily_amount":
+            rem_amt = getattr(w, "remaining_amount", None)
+            if rem_amt is not None:
+                has_capacity = isinstance(rem_amt, (int, float)) and rem_amt > 0.0
+            else:
+                rem_pct = getattr(w, "remaining_percent", None)
+                has_capacity = isinstance(rem_pct, (int, float)) and rem_pct > 0.0
+            if has_capacity:
+                return True
+            continue
+
         used = getattr(w, "used_percent", None)
         rem = getattr(w, "remaining_percent", None)
         if used is None and rem is not None:
@@ -836,3 +852,4 @@ def account_has_usage(snapshot, now: float | None = None) -> bool:
             has_any_remaining = True
 
     return has_any_used and has_any_remaining
+

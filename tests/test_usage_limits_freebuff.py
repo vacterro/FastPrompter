@@ -501,6 +501,23 @@ class TestFiltersAndStale:
         _a, snapshot = self._snapshot(remaining=0.0, wallet=30.0)
         assert account_has_usage(snapshot) is True
 
+    def test_fresh_untouched_daily_pool_with_zero_wallet_stays_visible(self):
+        from fastprompter.core.usage_limits.model import account_has_usage
+
+        # 100/100 FB remaining, 0 FB used (used_percent == 0.0), wallet == 0.0.
+        # An untouched currency balance is spendable capacity and must NOT be hidden
+        # as "0% usage".
+        _a, snapshot = self._snapshot(remaining=100.0, wallet=0.0)
+        assert account_has_usage(snapshot) is True
+
+    def test_live_freebucks_payload_stays_visible_under_hide_zero(self):
+        from fastprompter.core.usage_limits.model import account_has_usage
+
+        _a, snapshot = self._snapshot(remaining=105.0, wallet=0.0)
+        snapshot.provider_metadata["mode"] = "freebucks"
+        snapshot.provider_metadata["total_balance"] = 105.0
+        assert account_has_usage(snapshot) is True
+
     def test_a_spent_pool_with_an_empty_wallet_is_genuinely_unusable(self):
         from fastprompter.core.usage_limits.model import account_usable_now
 
