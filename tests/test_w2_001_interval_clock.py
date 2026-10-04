@@ -41,7 +41,7 @@ class _Fake:
         self.fired.append(rule.get("id"))
         main_mod.FastPrompter._fire_interval_notif.__get__(self)(rule)
 
-    def mark_dirty(self):
+    def mark_dirty(self, *args, **kwargs):
         pass
 
 

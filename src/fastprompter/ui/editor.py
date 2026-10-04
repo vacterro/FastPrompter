@@ -26,8 +26,8 @@ from fastprompter.ui.edit_guard import edit_block
 from fastprompter.ui.interaction_undo import (
     CursorSelectionState,
     SelectionInteractionRecord,
-    is_meaningful_selection_transition,
     get_document_interaction_history,
+    is_meaningful_selection_transition,
 )
 from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
 from fastprompter.ui.qt_lifetime import weak_qt_callback

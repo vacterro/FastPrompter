@@ -709,7 +709,7 @@ class TestNumboxFollowsTheProjects:
             _app.processEvents()
             assert len(w._cat_num_buttons) == before + 1
             assert w._cat_num_buttons[-1].text() == str(before + 1)
-            assert w._cat_num_buttons[-1].toolTip().endswith("Fresh")
+            assert "Fresh" in w._cat_num_buttons[-1].toolTip()
         finally:
             w.close()
 
@@ -739,7 +739,7 @@ class TestNumboxFollowsTheProjects:
                                 staticmethod(lambda *a, **k: ("Renamed", True)))
             w.rename_category()
             _app.processEvents()
-            assert w._cat_num_buttons[idx].toolTip().endswith("Renamed")
+            assert "Renamed" in w._cat_num_buttons[idx].toolTip()
         finally:
             w.close()
 

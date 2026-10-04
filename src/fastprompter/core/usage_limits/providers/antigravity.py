@@ -41,6 +41,7 @@ import os
 import time
 from pathlib import Path
 
+from fastprompter.core.usage_limits import identity as _identity
 from fastprompter.core.usage_limits.model import (
     AUTH_REQUIRED,
     OK,
@@ -52,7 +53,6 @@ from fastprompter.core.usage_limits.model import (
     qualified_key,
     stable_id_for,
 )
-from fastprompter.core.usage_limits import identity as _identity
 from fastprompter.core.usage_limits.providers import UsageProvider, _antigravity_cli
 from fastprompter.core.usage_limits.providers._antigravity_brain import (
     latest_refusal,

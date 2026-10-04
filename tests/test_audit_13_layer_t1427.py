@@ -12,14 +12,12 @@ Covers:
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 from fastprompter.core.usage_limits import identity as ident
 from fastprompter.core.usage_limits.model import AccountRef, UsageSnapshot, UsageWindow

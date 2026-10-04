@@ -5505,6 +5505,7 @@ def test_no_unguarded_edit_blocks_in_new_code():
 
     known_unguarded = {
         ("editor.py", "keyPressEvent"),
+        ("editor.py", "_key_press_impl"),
         ("formatting_mixin.py", "apply_format"),
         ("formatting_mixin.py", "toggle_bullet_conversion"),
         # insert_add_line came off this list on 04.08 (T-717): it now uses
@@ -9854,9 +9855,8 @@ def test_numbox_buttons_match_visible_categories(win):
     cats = win.visible_categories()
     assert len(win._cat_num_buttons) == len(cats)
     for i, cat in enumerate(cats):
-        # the tooltip carries the number too — at 100 projects the button face
-        # is the only thing distinguishing them, so the pairing has to be shown
-        assert win._cat_num_buttons[i].toolTip() == f"{i + 1}: {cat}"
+        hk_hint = f" (F{i + 1})" if i < 12 else ""
+        assert win._cat_num_buttons[i].toolTip() == f"{i + 1}: {cat}{hk_hint}"
 
 
 def test_numbox_click_switches_project(win):

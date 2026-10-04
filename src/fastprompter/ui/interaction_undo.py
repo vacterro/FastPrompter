@@ -9,7 +9,6 @@ document text or interfering with native text or data undo chronology.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -104,16 +103,16 @@ class DocumentInteractionHistory:
     def can_redo(self) -> bool:
         return bool(self.redo_stack)
 
-    def peek_undo(self) -> Optional[SelectionInteractionRecord]:
+    def peek_undo(self) -> SelectionInteractionRecord | None:
         return self.undo_stack[-1] if self.undo_stack else None
 
-    def pop_undo(self) -> Optional[SelectionInteractionRecord]:
+    def pop_undo(self) -> SelectionInteractionRecord | None:
         return self.undo_stack.pop() if self.undo_stack else None
 
-    def peek_redo(self) -> Optional[SelectionInteractionRecord]:
+    def peek_redo(self) -> SelectionInteractionRecord | None:
         return self.redo_stack[-1] if self.redo_stack else None
 
-    def pop_redo(self) -> Optional[SelectionInteractionRecord]:
+    def pop_redo(self) -> SelectionInteractionRecord | None:
         return self.redo_stack.pop() if self.redo_stack else None
 
     def push_redo(self, record: SelectionInteractionRecord) -> None:
@@ -127,7 +126,7 @@ class DocumentInteractionHistory:
         self.redo_stack.clear()
 
 
-def get_document_interaction_history(doc) -> Optional[DocumentInteractionHistory]:
+def get_document_interaction_history(doc) -> DocumentInteractionHistory | None:
     if doc is None:
         return None
     history = getattr(doc, "_fastprompter_interaction_history", None)

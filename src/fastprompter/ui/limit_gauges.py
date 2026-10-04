@@ -96,6 +96,13 @@ _RESET_OPEN_URLS = {
     "zcode": "https://zcode.z.ai",
 }
 
+_PROVIDER_LABEL = {
+    "codex": "Codex",
+    "claude": "Claude",
+    "antigravity": "Antigravity",
+    "zcode": "ZCode",
+}
+
 # Bars per account cluster — see LimitGauges.MIN_BARS/MAX_BARS.
 _MIN_BARS = 2
 # An Antigravity account alone reports three live windows across two pools

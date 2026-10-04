@@ -20,6 +20,7 @@ Covers all 14 required verification cases:
 import os
 import sys
 import tempfile
+
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -27,13 +28,12 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../tests_smoke")))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from _smoke_support import SmokeEnv, SmokeWindowFactory
 from PyQt6.QtCore import QEvent, QPointF, Qt
 from PyQt6.QtGui import QKeyEvent, QMouseEvent, QTextCursor
 from PyQt6.QtWidgets import QApplication
 
-from _smoke_support import SmokeEnv, SmokeWindowFactory
 from fastprompter.ui.interaction_undo import (
-    CursorSelectionState,
     get_document_interaction_history,
 )
 

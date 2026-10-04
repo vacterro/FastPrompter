@@ -96,14 +96,12 @@ from fastprompter.theme.themes import THEMES
 from fastprompter.ui.cursor_mixin import CursorMixin
 from fastprompter.ui.edit_guard import edit_block
 from fastprompter.ui.editor import VaultTextEdit
-from fastprompter.ui.interaction_undo import (
-    CursorSelectionState,
-    SelectionInteractionRecord,
-    get_document_interaction_history,
-)
 from fastprompter.ui.fancy_zones import FancyZoneOverlay
 from fastprompter.ui.formatting_mixin import FormattingMixin
 from fastprompter.ui.hotkey_mixin import HotkeyMixin
+from fastprompter.ui.interaction_undo import (
+    get_document_interaction_history,
+)
 from fastprompter.ui.markdown_highlighter import MarkdownHighlighter
 from fastprompter.ui.pie_menu import QuickListWidget
 from fastprompter.ui.qt_lifetime import drain_qt_threadpool, weak_qt_callback
@@ -16678,7 +16676,7 @@ class FastPrompter(
         # belongs exclusively to _shutdown_application, which runs the same
         # close as part of the single canonical quiesce path.
         super().closeEvent(event)
-        QApplication.quit()
+        self.quit_app()
 
     def resizeEvent(self, event):
         if getattr(self, "is_locked", False) and getattr(self, "_locked_geometry", None):

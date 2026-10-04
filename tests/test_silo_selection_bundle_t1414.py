@@ -290,6 +290,7 @@ def test_a_b_c_hotkeys_and_context_dispatch():
 
 def test_fast_pack_selection_editor_resolution():
     from unittest.mock import MagicMock
+
     from fastprompter.main import FastPrompter
 
     dummy_editor = MagicMock()
@@ -309,7 +310,6 @@ def test_fast_pack_selection_editor_resolution():
 
 
 def test_active_silo_title_resolution():
-    from unittest.mock import MagicMock
     from fastprompter.main import FastPrompter
 
     obj = type("DummyFP", (), {
@@ -329,6 +329,7 @@ def test_active_silo_title_resolution():
 
 def test_fast_pack_selection_with_selection(qapp, tmp_path):
     from unittest.mock import MagicMock
+
     from fastprompter.main import FastPrompter
 
     silo_dir = str(tmp_path / "silo")
