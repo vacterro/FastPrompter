@@ -401,6 +401,87 @@ def version_matches_product_version(product_version: str, version: str) -> bool:
     return all(x == 0 for x in pv_parts[len(v_parts):])
 
 
+def _parse_version_tuple(v: str) -> tuple[int, ...] | None:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except (ValueError, AttributeError):
+        return None
+
+
+def inspect_build_artifact(exe_path: Path, expected_version: str) -> dict:
+    """Classify local build artifact as absent, current, stale, foreign, or unreadable."""
+    path = Path(exe_path)
+    if not path.is_file():
+        return {
+            "status": "absent",
+            "path": path,
+            "product_version": "",
+            "message": f"EXE missing: {path}",
+        }
+
+    if os.name != "nt":
+        return {
+            "status": "unsupported",
+            "path": path,
+            "product_version": "",
+            "message": "PE inspection unsupported on non-Windows",
+        }
+
+    pv = exe_product_version(path)
+    if not pv:
+        return {
+            "status": "unreadable",
+            "path": path,
+            "product_version": "",
+            "message": f"unreadable build artifact {path}: cannot read ProductVersion",
+        }
+
+    if version_matches_product_version(pv, expected_version):
+        return {
+            "status": "current",
+            "path": path,
+            "product_version": pv,
+            "message": "current",
+        }
+
+    pv_tuple = _parse_version_tuple(pv)
+    exp_tuple = _parse_version_tuple(expected_version)
+    if pv_tuple and exp_tuple:
+        max_len = max(len(pv_tuple), len(exp_tuple))
+        pv_padded = pv_tuple + (0,) * (max_len - len(pv_tuple))
+        exp_padded = exp_tuple + (0,) * (max_len - len(exp_tuple))
+        if pv_padded < exp_padded:
+            return {
+                "status": "stale",
+                "path": path,
+                "product_version": pv,
+                "message": (
+                    f"stale local build artifact {path}: actual ProductVersion {pv!r} is older than "
+                    f"declared source VERSION {expected_version!r} (local leftover, not source corruption)"
+                ),
+            }
+        elif pv_padded > exp_padded:
+            return {
+                "status": "foreign",
+                "path": path,
+                "product_version": pv,
+                "message": (
+                    f"mismatched foreign build artifact {path}: actual ProductVersion {pv!r} differs from "
+                    f"declared source VERSION {expected_version!r} (local foreign artifact, not source corruption)"
+                ),
+            }
+
+    return {
+        "status": "mismatch",
+        "path": path,
+        "product_version": pv,
+        "message": (
+            f"mismatched foreign build artifact {path}: actual ProductVersion {pv!r} differs from "
+            f"declared source VERSION {expected_version!r} (local foreign artifact, not source corruption)"
+        ),
+    }
+
+
 def validate_receipt(
     receipt: dict,
     exe_path: Path,
@@ -436,11 +517,11 @@ def validate_receipt(
         )
 
     # ProductVersion agreement with declared release version
-    if product_version:
-        if not version_matches_product_version(product_version, version):
-            failures.append(
-                f"declared release version {version!r} does not match EXE ProductVersion {product_version!r}"
-            )
+    if os.name == "nt" and (product_version or receipt.get("product_version")):
+        artifact = inspect_build_artifact(exe_path, version)
+        if artifact["status"] in ("stale", "foreign", "unreadable", "mismatch"):
+            failures.append(artifact["message"])
+
     rc_pv = receipt.get("product_version")
     if rc_pv:
         if not version_matches_product_version(rc_pv, version):

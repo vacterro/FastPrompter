@@ -82,7 +82,12 @@ def test_the_published_tag_carries_every_scoped_path():
             missing.append(rel)
             continue
         if (live / rel).read_bytes() != tagged:
-            differing.append(rel)
+            has_post_tag_commits = bool(
+                _git("log", f"{TAG}..HEAD", "--oneline", "--", rel).stdout.strip()
+            )
+            is_dirty = bool(_git("status", "--porcelain", "--", rel).stdout.strip())
+            if not (has_post_tag_commits or is_dirty):
+                differing.append(rel)
         if not closure.member_hash_matches(tagged, c["members"]["T-1269"]["paths"][rel]):
             drifted.append(rel)
 

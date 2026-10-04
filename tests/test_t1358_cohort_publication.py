@@ -84,7 +84,8 @@ def test_member_hash_matches_proven_text_normalization():
     # apart: the live file must match the CURRENT content, and must NOT match
     # the historical cohort hash.
     pyproject_bytes = (ROOT / "pyproject.toml").read_bytes()
-    assert closure.member_hash_matches(pyproject_bytes, clean_clone_lf_hash)
+    assert closure.member_hash_matches(pyproject_bytes, hash_bytes(pyproject_bytes))
+    assert not closure.member_hash_matches(pyproject_bytes, clean_clone_lf_hash)
     assert not closure.member_hash_matches(pyproject_bytes, recorded_crlf_hash)
 
     # Substantive source drift is REFUSED

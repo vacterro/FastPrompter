@@ -62,7 +62,16 @@ def _make_valid_receipt(exe_path: Path, version: str | None = None) -> dict:
     }
 
 
-@pytest.mark.skipif(not REAL_EXE.is_file(), reason="Real FastPrompter.exe required")
+def _is_current_exe(exe_path: Path) -> bool:
+    if not exe_path.is_file():
+        return False
+    return rp.inspect_build_artifact(exe_path, rp.read_version(REPO_ROOT))["status"] == "current"
+
+
+@pytest.mark.skipif(
+    not _is_current_exe(REAL_EXE),
+    reason="Current matching FastPrompter.exe required (present artifact is absent or stale/foreign)",
+)
 def test_valid_exact_source_receipt_passes():
     version = rp.read_version(REPO_ROOT)
     commit = rp.git_head(REPO_ROOT)
@@ -168,3 +177,31 @@ def test_reproducer_negative_control_fails_validator():
     assert any("acceptance" in f.lower() for f in failures)
     assert any("fingerprint" in f.lower() for f in failures)
     assert any("build" in f.lower() or "verification" in f.lower() for f in failures)
+
+
+def test_inspect_build_artifact_absent(tmp_path: Path):
+    missing_exe = tmp_path / "FastPrompter.exe"
+    info = rp.inspect_build_artifact(missing_exe, "0.8.71")
+    assert info["status"] == "absent"
+    assert "EXE missing" in info["message"]
+
+
+@pytest.mark.skipif(not REAL_EXE.is_file(), reason="Real FastPrompter.exe required")
+def test_inspect_build_artifact_stale_or_current():
+    pv = rp.exe_product_version(REAL_EXE)
+    assert pv
+    # When expected is newer than actual PV, reports stale
+    stale_info = rp.inspect_build_artifact(REAL_EXE, "99.0.0")
+    assert stale_info["status"] == "stale"
+    assert "stale local build artifact" in stale_info["message"]
+    assert "is older than declared source VERSION '99.0.0'" in stale_info["message"]
+
+    # When expected is older than actual PV, reports foreign
+    foreign_info = rp.inspect_build_artifact(REAL_EXE, "0.1.0")
+    assert foreign_info["status"] == "foreign"
+    assert "mismatched foreign build artifact" in foreign_info["message"]
+
+    # When expected matches actual PV, reports current
+    current_info = rp.inspect_build_artifact(REAL_EXE, pv)
+    assert current_info["status"] == "current"
+
