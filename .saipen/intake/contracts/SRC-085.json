@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-085:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1417 bundle final-truth and share-safe privacy closure"
+    }
+  },
+  "derived_at": "2026-10-04T04:41:44Z",
+  "derived_from": "SRC-085",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "dadd433af58a28229d51c75313e15e1c7b635b719caebc544f610be5f42aa2e2"
+}

@@ -1,0 +1,48 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-10-04T09:48:29Z",
+  "evidence_class": "attested",
+  "findings_digest": "fe7a52b0554c2911b55fb6ca78106d540f654bd487ea78375fd62f6553d9a78f",
+  "gate": "core",
+  "integrity_digest": "7c8dbbda2ca02a0f",
+  "journal_op_id": "reverify.6a00b8ec0c51",
+  "original_closure": {
+    "claim_time": "2026-10-03T20:10:04Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-4279",
+    "owner": "saipen-cli",
+    "source_receipts": "SRC-082"
+  },
+  "own_problem_keys": [
+    "832bc5551758b710"
+  ],
+  "problem_count": 12,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001397",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "f200f6247917e813b249a6358bd4d76ce682167f",
+  "source_tree_fingerprint": "git-delta-v1:532879055857cfbdea74959905f7ca5531964b6da880ae0c8ab5c1c02d8c2f3d",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q:156 passed, 0 failed",
+      "executed": false,
+      "kind": "attested",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q:156 passed, 0 failed"
+    ],
+    "findings_digest": "fe7a52b0554c2911b55fb6ca78106d540f654bd487ea78375fd62f6553d9a78f",
+    "gate": "core"
+  },
+  "verification_contract_digest": "f2801a90caa36a2a",
+  "verifier": "saipen-cli",
+  "warning_count": 57,
+  "work": "T-1410"
+}

@@ -106,7 +106,7 @@ checks = {
     "utils/ count": rf"\*\*utils/\*\*: {live['utils']} ",
     "theme/ count": rf"\*\*theme/\*\*: {live['theme']} ",
     "i18n count": r"i18n/ \(33 locales \+ 5 infra files = 38\)",
-    "usage_limits count": rf"usage_limits/ \({live['usage_root']} \+ {live['usage_providers']} provider files = 22\)",
+    "usage_limits count": rf"usage_limits/ \({live['usage_root']} \+ {live['usage_providers']} provider files = {live['usage_root'] + live['usage_providers']}\)",
     "total count": rf"\*\*Total\*\*: {live['total']} ",
     "theme catalog": r"15 built-in color themes",
 }

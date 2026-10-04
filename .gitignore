@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.coverage
+.coverage.*
 # Release staging clones: a `git clone` of this repo used to assemble a release
 # candidate. The nested clone carries its own .git, so `git ls-files --others
 # --directory` reports it as a directory entry, and the SAIPEN source identity

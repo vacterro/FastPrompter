@@ -1,0 +1,50 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-10-04T12:31:08Z",
+  "evidence_class": "executed",
+  "findings_digest": "3459c494c2ef306483de10cabdebf95b4dc116e7f62839dd25b19e7f41acf7ad",
+  "gate": "core",
+  "integrity_digest": "dc6fcd5d9c61cffe",
+  "journal_op_id": "reverify.9fe4bd09c1ef",
+  "original_closure": {
+    "claim_time": "2026-10-04T02:00:00Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-4193",
+    "owner": "saipen-cli"
+  },
+  "own_problem_keys": [
+    "0b3937c833605c59"
+  ],
+  "problem_count": 11,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001408",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "f200f6247917e813b249a6358bd4d76ce682167f",
+  "source_tree_fingerprint": "git-delta-v1:21a310b0b0833f657bba018072709c76608e9fe7a5b94dba38a018ea8bcc1548",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_usage_limits.py tests/test_usage_limits_antigravity.py tests/test_usage_limits_claude_accounts.py tests/test_usage_limits_cli.py tests/test_usage_limits_colors.py tests/test_usage_limits_discovery.py tests/test_usage_limits_freebuff.py tests/test_usage_limits_gauge_layout.py tests/test_usage_limits_hide_zero.py tests/test_usage_limits_notifications_flood.py tests/test_usage_limits_sai_accounts.py tests/test_usage_limits_shutdown.py tests/test_usage_limits_tooltip_compact.py tests/test_usage_limits_troubleshooter.py tests/test_usage_limits_zcode.py -q",
+      "duration_ms": 31273,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 581,
+      "output_digest": "36abad5444fec15c",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_usage_limits.py tests/test_usage_limits_antigravity.py tests/test_usage_limits_claude_accounts.py tests/test_usage_limits_cli.py tests/test_usage_limits_colors.py tests/test_usage_limits_discovery.py tests/test_usage_limits_freebuff.py tests/test_usage_limits_gauge_layout.py tests/test_usage_limits_hide_zero.py tests/test_usage_limits_notifications_flood.py tests/test_usage_limits_sai_accounts.py tests/test_usage_limits_shutdown.py tests/test_usage_limits_tooltip_compact.py tests/test_usage_limits_troubleshooter.py tests/test_usage_limits_zcode.py -q"
+    ],
+    "findings_digest": "3459c494c2ef306483de10cabdebf95b4dc116e7f62839dd25b19e7f41acf7ad",
+    "gate": "core"
+  },
+  "verification_contract_digest": "b6325e2c452dee47",
+  "verifier": "saipen-cli",
+  "warning_count": 54,
+  "work": "T-1405"
+}

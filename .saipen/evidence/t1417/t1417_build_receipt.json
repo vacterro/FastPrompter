@@ -1,0 +1,41 @@
+{
+  "ticket": "T-1417",
+  "phase": "BUILD",
+  "kind": "build receipt",
+  "files_changed": [
+    "src/fastprompter/core/silo_bundle.py",
+    "src/fastprompter/core/silo_index.py",
+    "tests/test_silo_bundle_final_truth_t1417.py"
+  ],
+  "changes": [
+    "Planner never hard-depends on indexing: plan_bundle no longer builds silo.index.json. The structured projection is a PUBLICATION fact, built, validated and degraded in write_bundle() alone, so no index-builder exception can escape planning and no 'Pack With Options' admission can depend on one.",
+    "Final Markdown links only members that were actually written: write_bundle builds included_bundle_map from the included set, so a source that vanished between planning and publication cannot become a media/... link to a file that is not in the ZIP. It becomes the honest omission marker instead.",
+    "silo_index.omitted_media_members(): because the textual link is gone by design, the remaining omission marker is matched back to the missing item by display name, so requirements keep a truthful missing_media record without reintroducing a link to a file that is not there. Wired into build_silo_index and both build_fallback_index sites.",
+    "Context-aware path redaction replaces the one greedier regex: _consume_local_path / _cut_trailing_prose / _ends_a_filename consume a bare token only up to a real filename, so a two-token path followed by prose no longer renders as a half-redacted token glued to its own trailing prose. Quoted and angle-bracketed spans are cut on their own delimiter, which proves the end instead of guessing it.",
+    "One _share_safe field-level privacy boundary, applied at plan_bundle entry -- the earliest point where a user-derived string can become a generated artifact. It runs per FIELD, never as a regex over serialized JSON. Because the title also mints the archive name and the Markdown member name, sanitizing only at the manifest would still have published the local path as an archive member.",
+    "Manifest warnings carry portable facts only (code + phase), never str(exc): INDEX_PARSE_ERROR, FALLBACK_INDEX_ERROR, INDEX_VALIDATION_FAILED, FALLBACK_INDEX_VALIDATION_FAILED. Raw exceptions stay in the local application log.",
+    "Capabilities describe the FINAL archive: _bundle_capabilities(index_data) sets structured_requirements, reverse_media_links, detached_media_blocks and media_evidence from whether an index was actually published; degraded_index_fallback stays an engine fact, since the engine can degrade whether or not THIS archive did.",
+    "README no longer asks for an index that may not exist, and always names the one that does.",
+    "Fingerprint schema 5 -> 6: the derived index left the payload (it is not knowable before publication) and items are sorted by member, so a preflight fingerprint and a published fingerprint describe one logical payload. Smart reuse does not regress."
+  ],
+  "policy_held": [
+    "Canonical live silo text is untouched; only generated share-safe copies are sanitized (origin_text keeps the operator's bytes verbatim).",
+    "SHA256 values, stable enum codes, already-safe member names and normal remote URLs are never sanitized.",
+    "No absolute local workstation path may reach exported Markdown, README, manifest user-derived fields or the index.",
+    "T-1416 behaviour preserved: 3-tier index degradation, detached media association, media_evidence, manifest schema 6, index schema 4, local reference omission, the operator 17-screenshot fixture, and the deliberate basename-survives policy (an omission marker hides the path, not the name)."
+  ],
+  "verification": {
+    "new_suite": "tests/test_silo_bundle_final_truth_t1417.py -- 37 passed (RED written first, then GREEN)",
+    "regression_matrix": "pytest -k 'bundle or selection or coverage' tests -- 318 passed, 0 failed (T-1409..T-1416 plus T-1417)",
+    "ruff": "clean on all three touched files",
+    "compileall": "clean on src/fastprompter and the new suite",
+    "full_suite": "python -m pytest tests -v -p no:randomly -- 4568 passed, 25 failed, 19 skipped in 930s. Zero failures are in silo_bundle.py, silo_index.py or the T-1417 suite; every failure traces to a defect the T-1409..T-1416 wave introduced and T-1417 did not touch."
+  },
+  "full_suite_failure_triage": {
+    "T-1419 (23 tests, one root cause)": "hk_pack_selection, pack_coverage_fade and show_pack_coverage were added to core/default_profile.py by T-1414/T-1415 without a matching classification in tools/set_default_from_current.py, so assert_policy_covers fails closed. Affects 21 tests in tests/test_bake_corrective_t1298.py, 1 in tests/test_set_default_from_current.py, 1 in tests/test_usage_limits_freebuff.py.",
+    "T-1420 (1 test)": "'Structured index degraded' and 'Structured index unavailable' are passed to tr() by T-1416 at main.py but were never added to core/i18n/en.py. Fails tests/test_i18n_key_inventory.py::test_every_literal_tr_key_is_in_the_en_master.",
+    "T-1421 (1 test)": "core/typecheck_ui_vocab.py WORDS is stale against the re-extraction over the 33 regenerated locale packs. Fails tests/test_typecheck_vocab.py::test_generated_vocabulary_equals_source_extraction.",
+    "provenance": "All three confirmed pre-existing: each offending line is an uncommitted addition absent at HEAD (git show HEAD:core/default_profile.py and git show HEAD:main.py contain none of them), and none lives in a file T-1417 modified."
+  },
+  "gate_note": "An earlier full-suite run died with exit 127 at roughly 78% with no pytest summary, i.e. the interpreter was killed rather than a test failing. The identical rerun completed normally, so that abort was resource-dependent and non-deterministic, not a reproducible defect."
+}

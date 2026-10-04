@@ -1,0 +1,59 @@
+{
+  "requirements": {
+    "SRC-091:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_audit_13_layer_t1427.py passed 7/7, tests/test_usage_limits_identity_t239.py passed 33/33",
+      "text": "CORE-001: Verified provider identity becomes authoritative quota-pool projection across usage limit service, UI capacity presentation, and notification deduplication",
+      "verification": "tests/test_audit_13_layer_t1427.py and tests/test_usage_limits_identity_t239.py",
+      "work": "T-1427"
+    },
+    "SRC-091:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_startup_backup.py passed 10/10 with test_silo_identity_backfill_does_not_mutate_disk_before_snapshot_published and test_silo_identity_backfill_does_not_mutate_disk_on_snapshot_failure",
+      "text": "CORE-002: _load_silo_identities does not commit to disk before startup safety snapshot is published; repairs in memory and persists via save transaction",
+      "verification": "pytest tests/test_startup_backup.py",
+      "work": "T-1427"
+    },
+    "SRC-091:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "tests_smoke/test_close_reopen.py and tests_smoke/test_pre_exit_finalization_ownership.py passed; tests/test_audit_13_layer_t1427.py passed",
+      "text": "W2-001: Ordinary window close remains resident action without calling QApplication.quit or retiring workers; quit_app remains single canonical quit entry",
+      "verification": "pytest tests_smoke/test_close_reopen.py tests_smoke/test_pre_exit_finalization_ownership.py tests/test_audit_13_layer_t1427.py",
+      "work": "T-1427"
+    },
+    "SRC-091:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_usage_limits_shutdown.py passed 10/10; tests/test_audit_13_layer_t1427.py passed",
+      "text": "W2-002: UsageLimitService.shutdown retains ownership of unfinished timed-out futures across repeat calls; repeat shutdown remains bounded; executor shutdown waits only when all futures terminal",
+      "verification": "pytest tests/test_usage_limits_shutdown.py tests/test_audit_13_layer_t1427.py",
+      "work": "T-1427"
+    },
+    "SRC-091:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_audit_13_layer_t1427.py passed; sync sweep wired in _on_push_done, _sync_rebind_folder, and _resync_profile_runtime",
+      "text": "PERF-001: Sync binding metadata cardinality bounded; retire unused lease entries once unconfigured and unfenced; reset/sweep profile-scoped sync caches together on profile switch",
+      "verification": "pytest tests/test_audit_13_layer_t1427.py",
+      "work": "T-1427"
+    },
+    "SRC-091:R006": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "tests/test_audit_13_layer_t1427.py passed; audited settings-only mutations across main.py",
+      "text": "PERF-002: Audit and narrow settings-only mutations to mark_dirty('settings') so single-domain setting changes like sound_volume do not trigger full multi-domain DB scan",
+      "verification": "pytest tests/test_audit_13_layer_t1427.py",
+      "work": "T-1427"
+    }
+  },
+  "schema_version": 1
+}

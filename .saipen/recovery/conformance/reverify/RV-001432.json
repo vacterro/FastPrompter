@@ -1,0 +1,51 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-10-04T12:50:25Z",
+  "evidence_class": "executed",
+  "findings_digest": "381ba28e4ae6f09485c5161e391d5724b4642cda99e7da62ae6a720881c806fa",
+  "gate": "core",
+  "integrity_digest": "d80f9e7a9d9993e8",
+  "journal_op_id": "reverify.b7afae2550b2",
+  "original_closure": {
+    "claim_time": "2026-10-03T20:10:04Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-4279",
+    "owner": "saipen-cli",
+    "source_receipts": "SRC-082"
+  },
+  "own_problem_keys": [
+    "832bc5551758b710"
+  ],
+  "problem_count": 10,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001432",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "f200f6247917e813b249a6358bd4d76ce682167f",
+  "source_tree_fingerprint": "git-delta-v1:ed1b350e28e006b7970059c5db43b3baab5b5534d5c78066fb1cb4bf03f33cfc",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q",
+      "duration_ms": 2678,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 329,
+      "output_digest": "4fbc4b60e81ebd3e",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q"
+    ],
+    "findings_digest": "381ba28e4ae6f09485c5161e391d5724b4642cda99e7da62ae6a720881c806fa",
+    "gate": "core"
+  },
+  "verification_contract_digest": "221e789b43f210c5",
+  "verifier": "saipen-cli",
+  "warning_count": 54,
+  "work": "T-1410"
+}

@@ -518,7 +518,7 @@ def test_manifest_records_the_app_version_field(win):
     with zipfile.ZipFile(win._last_bundle_path) as zf:
         manifest = json.loads(zf.read("manifest.json"))
     assert manifest["app_version"] == "9.9.9"
-    assert manifest["schema_version"] in (1, 2, 3, 4)
+    assert manifest["schema_version"] in (1, 2, 3, 4, 5, 6)
 
 
 def test_app_version_is_cached_and_never_raises(tmp_path):

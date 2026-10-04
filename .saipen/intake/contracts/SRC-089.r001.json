@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-089:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Cover manifest digest stamping, the hash cache, and the coverage-receipt gates that are still unexecuted"
+    }
+  },
+  "derived_at": "2026-10-04T12:23:03Z",
+  "derived_from": "SRC-089",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "8b274dad68d122e5484f8950c09e8f5d75eb7d902cbf85a35610583ae4fe51f4"
+}

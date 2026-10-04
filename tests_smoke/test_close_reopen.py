@@ -76,9 +76,14 @@ def test_resident_close_keeps_workers_alive_and_reopen_still_saves(
     monkeypatch.setattr(win, "_sync_shutdown",
                         lambda: retired.append("sync") or None, raising=False)
 
-# resident close: the window hides, the process keeps running
+    quit_calls = []
+    monkeypatch.setattr(m.QApplication, "quit",
+                        lambda: quit_calls.append("quit"))
+
+    # resident close: the window hides, the process keeps running
     win.close()
     _app.processEvents()
+    assert quit_calls == [], "a resident close must not call QApplication.quit"
     assert retired == [], "a resident close must not retire workers"
     assert getattr(win, "_sync_shutting_down", False) is False
 

@@ -1,0 +1,47 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-10-04T07:07:48Z",
+  "evidence_class": "executed",
+  "findings_digest": "948925d487695d9b9d59d66e99cf706449735d785e7f90decbded7230f046f25",
+  "gate": "core",
+  "integrity_digest": "6fbe4b63b48e3fef",
+  "journal_op_id": "reverify.30cf62631899",
+  "original_closure": {
+    "claim_time": "2026-10-04T02:00:00Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-4193",
+    "owner": "saipen-cli"
+  },
+  "own_problem_keys": [
+    "0b3937c833605c59"
+  ],
+  "problem_count": 14,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001381",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "f200f6247917e813b249a6358bd4d76ce682167f",
+  "source_tree_fingerprint": "git-delta-v1:ff48177178aed5e5fbb06350f2a7b027eb5f1e5a38e7eb8c3e6d475943e7a977",
+  "verdict": "PASS_WITH_CARRIED_DEBT",
+  "verification": [
+    {
+      "command": "strict_gate:core",
+      "default_contract": true,
+      "executed": true,
+      "result": "PASS_WITH_CARRIED_DEBT"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "strict_gate:core"
+    ],
+    "findings_digest": "948925d487695d9b9d59d66e99cf706449735d785e7f90decbded7230f046f25",
+    "gate": "core"
+  },
+  "verification_contract_digest": "c8fe5ad87ab553f3",
+  "verifier": "saipen-cli",
+  "warning_count": 57,
+  "work": "T-1405"
+}

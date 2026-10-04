@@ -33,11 +33,43 @@
       "source_sha256": "ab144590df2fa060d77288d41abe8a42e73d06a2a9952226ac1bf0c0e37a373c"
     },
     "SRC-083": {
-      "linked_work": null,
+      "linked_work": "T-1411",
       "source_sha256": "f1769ae8d3f9222f019dd45554ea183aef912145404179a5d379d0a011e304ad"
+    },
+    "SRC-084": {
+      "linked_work": "T-1417",
+      "source_sha256": "21363696e3906b64ef63c4b58117c691cd53d8bab221783eadb22051125f5f0a"
+    },
+    "SRC-085": {
+      "linked_work": "T-1417",
+      "source_sha256": "dadd433af58a28229d51c75313e15e1c7b635b719caebc544f610be5f42aa2e2"
+    },
+    "SRC-086": {
+      "linked_work": null,
+      "source_sha256": "5a0a54f018fbd9e0bf25b9c43561ac068e54379e83d1f30623c04b7ddb1e1a7d"
+    },
+    "SRC-087": {
+      "linked_work": "T-1423",
+      "source_sha256": "526221f2ab8895e082ccb24e25e41e40db28858bf2ce75f06c1e1483deed8a19"
+    },
+    "SRC-088": {
+      "linked_work": "T-1424",
+      "source_sha256": "c344195c9a0f46c45daecf9a1f57e9fcc5f589c47c45ac03f40c2312c545a117"
+    },
+    "SRC-089": {
+      "linked_work": "T-1425",
+      "source_sha256": "8b274dad68d122e5484f8950c09e8f5d75eb7d902cbf85a35610583ae4fe51f4"
+    },
+    "SRC-090": {
+      "linked_work": "T-1426",
+      "source_sha256": "b9c376ce718e0121ae9d0446de333bca995218ddad378af653d243ef23b01475"
+    },
+    "SRC-092": {
+      "linked_work": "T-1428",
+      "source_sha256": "39e9c024ac6f86333707c0a6909cc223880558bb1b90e0eaaadcdb2da8fd4bae"
     }
   },
-  "next_id": 84,
+  "next_id": 93,
   "schema_version": 1,
   "tombstones": {
     "SRC-003": {
@@ -1185,6 +1217,22 @@
       "requirements": 1,
       "schema_version": 1,
       "source_sha256": "d4c9c8958ac7ce76b38c151f6aa919983da80684d5b2423450095cfec5849417",
+      "status": "CLOSED",
+      "unresolved": 0
+    },
+    "SRC-091": {
+      "actionable": 6,
+      "archive_ref": ".saipen/archive/source/SRC-091.md",
+      "closed_at": "2026-10-04T15:27:35Z",
+      "closure_event": null,
+      "linked_work": "T-1427",
+      "linked_works": [
+        "T-1427"
+      ],
+      "receipt_id": "SRC-091",
+      "requirements": 6,
+      "schema_version": 1,
+      "source_sha256": "c009e20e0493045f99254f2591fbfc6fff7f08bfc80353b3e61b41b1020d9a84",
       "status": "CLOSED",
       "unresolved": 0
     }

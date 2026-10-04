@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-087:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1423 closed with verification evidence in LOG: review -> PASS [target: T-1423] conf: high -- independent re-run, not read from the VERIFY claim: pytest -q -p no:cacheprovider tests/test_silo_index_validate_refusals_t1423.py -> 37 passed in 0.17s; the seven neighbouring silo suites on their own -> 121 passed, 0 failed, 1.65s; the eight together with coverage -> 158 passed, 0 failed, 2.72s; ruff check on the new file -> All checks passed. Review",
+      "text": "Cover every validate_index_structure refusal branch of the silo bundle publication gate",
+      "verification": "the Work this request created reached its own verification gate; see the T-1423 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1423"
+    }
+  },
+  "schema_version": 1
+}

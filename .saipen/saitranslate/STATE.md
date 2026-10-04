@@ -1,12 +1,12 @@
 ---
 phase: DONE
-task: "TRANSLATE-018: ee re-cut -- 30 lanes honest coverage_pct + DE/EST/JA guide mirrors; UI surface zero-delta, docs surface open"
-next_action: "WAIT: manual-verify -- TRANSLATE-018 draft @ 05df824/e8c53d82: UI surface closed (oracle VALIDATION PASSED, 0 errors, 0 false coverage claims, packs == modules, 1479 canonical keys) and 30 lanes' coverage_pct corrected + DE/EST/JA guide mirrors re-cut. NOT collectable: docs surface is 4/32 languages with no source-digest proof, README mirrors are 12-line stubs without the switcher, and the EN wiki still links a removed watcher page. Core must decide coverage_pct in tools/sync_saitranslate.py, ticket the docs backlog (incl. UKR + Ded), fix the EN wiki source, and pick one OUTBOX home."
+task: "TRANSLATE-020: ee re-cut -- 1971 keys, 0 errors, 100% coverage across 33 locales"
+next_action: "WAIT: collect -- TRANSLATE-020 ready in kitchen/OUTBOX.md"
 blocker: ""
 agent: saitranslate
 saipen_version: 7
 mode: read-only
-updated: "2026-09-18T12:21:42Z"
+updated: "2026-10-04T19:57:00Z"
 transition_from: DONE
-role_revision: "sha256:f241e6b83c39e9b46bfa586638efb0374bbb39889646f723b9189bbb4912c0c5"
+role_revision: "sha256:7d18729f8d94eb58471ae3bb5fad9151e8499fea291e574b26439c5c89012e41"
 ---

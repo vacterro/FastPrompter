@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.72 - 2026-10-04
+
+- **Pack Silo structured AI-ingestion and bundle engine:** export and package silos
+  into self-contained archives with portable Markdown, deterministic requirements
+  (`silo.index.json`), reverse media mapping, and structured manifests. Supports
+  content-identical smart reuse, history retention pruning, and atomic publication.
+- **Pack Silo hotkeys & gesture controls:** hover on the Pack header control reveals
+  all available hotkeys and gestures (Shift+Click options dialog, Ctrl+Click force
+  repack, Alt+Click open folder, Ctrl+Shift+Click copy last bundle to clipboard).
+- **Comprehensive 33-locale translation reconciliation:** 100% coverage across all 33
+  supported language lanes (1,971 canonical keys), full UI surface parity.
+
 ## 0.8.71 - 2026-10-03
 
 - **The Ctrl+E header can date the note instead of the keystroke:** a new

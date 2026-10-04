@@ -124,8 +124,20 @@ class LimitAccountSelector(QWidget):
         accounts = ordered_accounts(
             self._service.state_copy.accounts, self.main_win.data)
         hidden = hidden_account_keys(self.main_win.data)
+        # Accounts proven to be the SAME provider account. Two configured slots
+        # on one Google login are two execution contexts and ONE quota pool; the
+        # row says so instead of letting the panel imply a second pool.
+        #
+        # This is an ANNOTATION, never the mechanism. The deduplication that
+        # decides capacity lives in the service and is exercised there directly,
+        # so a service without the accessor degrades to "no label to draw" —
+        # never to "these accounts are shared", and never to a merge.
+        report = getattr(self._service, "identity_report", None)
+        shared = report().get("shared_with", {}) if callable(report) else {}
+        names = {a.key: a.display_name for a in accounts}
         signature = tuple((a.key, a.display_name, a.source_path,
-                           a.key in hidden) for a in accounts)
+                           a.key in hidden, shared.get(a.key, ""))
+                          for a in accounts)
         if not force and signature == self._signature:
             return
         self._signature = signature
@@ -163,6 +175,17 @@ class LimitAccountSelector(QWidget):
             # in it must not open rich text or become a mnemonic underline.
             detected.setTextFormat(Qt.TextFormat.PlainText)
             detected.setToolTip(account.source_path)
+            peer_key = shared.get(account.key, "")
+            if peer_key:
+                # A quiet marker, never an error. Both slots work; they simply
+                # do not have two quotas between them.
+                peer_name = names.get(peer_key, peer_key)
+                detected.setText(
+                    f"{account.display_name} — "
+                    f"{tr('Same provider account as')} {peer_name}")
+                detected.setToolTip(tr(
+                    "Both slots are signed in to the same provider account, "
+                    "so they share a single quota pool."))
             self._grid.addWidget(detected, row, 1)
 
             name_edit = QLineEdit()

@@ -1,0 +1,68 @@
+{
+  "ticket": "T-1417",
+  "phase": "VERIFY",
+  "verdict": "PASS",
+  "confidence": "high",
+  "contract_checked": "Each numbered requirement of the T-1417 SAIHANDOFF, demonstrated by a named test rather than by inspection.",
+  "claims": [
+    {
+      "requirement": "Planner never hard-depends on indexing; Pack With Options still opens",
+      "evidence": "test_planner_survives_primary_index_exception, test_planner_survives_all_index_machinery_unavailable, test_options_dialog_admission_does_not_require_an_index. plan_bundle no longer calls build_silo_index; the projection is built and degraded in write_bundle alone."
+    },
+    {
+      "requirement": "ZIP publishes even when the full and fallback index both fail",
+      "evidence": "test_write_publishes_when_full_and_fallback_index_both_fail"
+    },
+    {
+      "requirement": "Final Markdown names only members that exist in the archive",
+      "evidence": "test_late_missing_media_leaves_no_broken_markdown_member_link, plus a sweep over every requirement asserting the missing member is claimed by nobody."
+    },
+    {
+      "requirement": "The index still records missing_media after the textual link is gone",
+      "evidence": "omitted_media_members() in core/silo_index.py, wired into build_silo_index and both build_fallback_index sites."
+    },
+    {
+      "requirement": "Context-aware path redaction across the 11-case matrix, with 6 false-positive-safety cases",
+      "evidence": "test_absolute_local_paths_redact_completely (11 params), test_sanitizer_preserves_false_positive_safety (6 params), test_markdown_target_with_spaces_is_redacted_as_one_token, test_trailing_prose_after_a_bare_path_is_not_swallowed."
+    },
+    {
+      "requirement": "Every generated share-safe textual surface is privacy-clean; the live document is untouched",
+      "evidence": "test_readme_user_title_cannot_leak_absolute_path, test_manifest_metadata_cannot_leak_absolute_path, test_exported_markdown_cannot_leak_absolute_path."
+    },
+    {
+      "requirement": "No raw exception text in the share archive, but the diagnostic is not destroyed",
+      "evidence": "test_raw_exception_text_cannot_leak_local_paths (archive side), test_raw_exception_text_is_kept_in_the_local_log_not_the_archive (logger side)."
+    },
+    {
+      "requirement": "Capabilities and README describe the actual published bundle",
+      "evidence": "test_unavailable_index_has_factual_capability_flags, test_full_index_keeps_factual_capability_flags_true, test_readme_never_asks_for_an_absent_index, test_readme_points_at_an_index_that_exists."
+    },
+    {
+      "requirement": "Preflight and published fingerprints describe one logical payload; smart reuse does not regress",
+      "evidence": "test_published_fingerprint_equals_preflight_for_unchanged_bundle, test_late_vanishing_media_changes_the_published_fingerprint. FINGERPRINT_SCHEMA 5 -> 6."
+    },
+    {
+      "requirement": "Hostile end-to-end bundle is truthful and private",
+      "evidence": "test_hostile_end_to_end_bundle_is_truthful_and_private"
+    },
+    {
+      "requirement": "Operator 17-screenshot fixture preserved",
+      "evidence": "test_operator_seventeen_screenshot_case_remains_full"
+    }
+  ],
+  "commands": [
+    "python -m pytest tests/test_silo_bundle_final_truth_t1417.py tests/test_silo_bundle_resilience_t1416.py -q -p no:randomly -- 50 passed",
+    "python -m pytest tests -k 'bundle or selection or coverage' -q -p no:randomly -- 319 passed, 4293 deselected",
+    "python -m ruff check <silo_bundle.py silo_index.py test_silo_bundle_final_truth_t1417.py> -- All checks passed",
+    "python -m compileall -q src/fastprompter tests/test_silo_bundle_final_truth_t1417.py -- clean",
+    "python -m pytest tests -v -p no:randomly -- 4568 passed, 25 failed, 19 skipped in 930s"
+  ],
+  "known_failures_not_caused_by_this_ticket": {
+    "T-1419": "23 tests. hk_pack_selection, pack_coverage_fade and show_pack_coverage were added to core/default_profile.py by the T-1414/T-1415 wave with no classification in tools/set_default_from_current.py, so assert_policy_covers fails closed.",
+    "T-1420": "1 test. Two T-1416 toast strings reach tr() but are absent from core/i18n/en.py.",
+    "T-1421": "1 test. core/typecheck_ui_vocab.py is stale against the 33 regenerated locale packs.",
+    "consequence": "saipen validate therefore reports CONFORMANCE_UNHEALTHY / CURRENT_FAIL. That is a true statement about the repository, and it is not evidence against T-1417: none of the 25 failures touches a file this ticket modified, and each offending line is an uncommitted addition absent at HEAD."
+  },
+  "non_deterministic_abort": "An earlier full-suite run died with exit 127 near 78% with no pytest summary, meaning the interpreter was killed rather than a test failing. The identical rerun completed and produced the counts above, so the abort was resource-dependent and did not reproduce.",
+  "do_not_revert_confirmed": "3-tier index degradation, detached media association, media_evidence, manifest schema 6, index schema 4, local reference omission and the operator SAITULS regression all still hold; T-1416's 13 tests pass unchanged alongside the 37 new ones."
+}

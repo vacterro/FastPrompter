@@ -255,3 +255,97 @@ def test_pack_silo_has_a_real_key_and_exactly_one_owner():
     import fastprompter.ui.editor as editor_mod
     editor_src = inspect.getsource(editor_mod)
     assert '"Ctrl+Shift+P"' not in editor_src
+
+
+# --- T-1428: Universal hotkeys hover audit ----------------------------------
+
+def test_t1428_pack_hover_shows_all_packing_hotkeys():
+    """T-1428: hovering Pack shows Pack Silo, Fast Pack Selection, and Export Silo keys."""
+    from fastprompter.ui.editor import VaultTextEdit
+
+    win = _Win(
+        hk_pack_silo="Ctrl+Shift+P",
+        hk_pack_selection="Ctrl+Shift+C",
+        hk_export_silo="Ctrl+Shift+S",
+    )
+    editor = VaultTextEdit.__new__(VaultTextEdit)
+    editor.main_win = win
+    tip = editor._pack_tooltip_text("EN")
+
+    assert "Pack Silo (Ctrl+Shift+P)" in tip
+    assert "Fast Pack Selection: Ctrl+Shift+C" in tip
+    assert "Export Silo to file: Ctrl+Shift+S" in tip
+    assert "Click: Smart Quick Pack" in tip
+    assert "Shift+Click: Pack With Options" in tip
+    assert "Ctrl+Click: Force Repack" in tip
+    assert "Ctrl+Shift+Click: Copy Last Bundle" in tip
+    assert "Alt+Click: Open Last Bundle Folder" in tip
+    assert "Right-click: more bundle actions" in tip
+
+
+def test_t1428_pack_hover_updates_when_rebound():
+    """T-1428: custom bindings for Pack appear immediately in hover."""
+    from fastprompter.ui.editor import VaultTextEdit
+
+    win = _Win(
+        hk_pack_silo="Alt+Shift+P",
+        hk_pack_selection="Alt+Shift+C",
+        hk_export_silo="Alt+Shift+S",
+    )
+    editor = VaultTextEdit.__new__(VaultTextEdit)
+    editor.main_win = win
+    tip = editor._pack_tooltip_text("EN")
+
+    assert "Pack Silo (Alt+Shift+P)" in tip
+    assert "Fast Pack Selection: Alt+Shift+C" in tip
+    assert "Export Silo to file: Alt+Shift+S" in tip
+
+
+def test_t1428_audit_table_covers_all_toolbar_buttons():
+    """T-1428: Every toolbar button with a hotkey is listed and resolved."""
+    required_buttons = {
+        "btn_settings_toggle": "hk_settings",
+        "btn_settings_toggle_right": "hk_settings",
+        "btn_pin_top": "always_on_top_hotkey",
+        "btn_line_nums": "hk_line_nums",
+        "btn_toggle_search": "hk_find",
+        "btn_files": "toggle_files_hotkey",
+        "btn_sidebar_toggle": "toggle_sidebar_hotkey",
+        "btn_copy": "copy",
+        "btn_help": "help",
+        "btn_silo_up": "prev_silo",
+        "btn_silo_down": "next_silo",
+        "btn_home": "home",
+        "btn_end": "end",
+        "lbl_date": "hk_timers",
+    }
+    rows_dict = {attr: key for attr, _desc, key in SHORTCUT_TOOLTIP_ROWS}
+    for attr, key in required_buttons.items():
+        assert attr in rows_dict, f"{attr} missing from SHORTCUT_TOOLTIP_ROWS"
+        assert rows_dict[attr] == key, f"{attr} mapped to wrong key {rows_dict[attr]}"
+
+
+@pytest.mark.usefixtures("qapp")
+def test_t1428_runtime_rebind_updates_toolbar_tooltips():
+    """T-1428: Settings, Pin, Line Nums, Files update dynamically on rebind."""
+    win = _Win()
+    win.btn_settings_toggle = QPushButton("S")
+    win.btn_pin_top = QPushButton("P")
+    win.btn_line_nums = QPushButton("L")
+    win.apply_shortcut_tooltips()
+
+    # Defaults
+    assert "Alt+`" in win.btn_settings_toggle.toolTip()
+    assert "Alt+S" in win.btn_pin_top.toolTip()
+    assert "Alt+Z" in win.btn_line_nums.toolTip()
+
+    # Rebind
+    win.data["hk_settings"] = "Ctrl+Alt+S"
+    win.data["always_on_top_hotkey"] = "Ctrl+Shift+T"
+    win.data["hk_line_nums"] = "Ctrl+Shift+L"
+    win.apply_shortcut_tooltips()
+
+    assert "Ctrl+Alt+S" in win.btn_settings_toggle.toolTip()
+    assert "Ctrl+Shift+T" in win.btn_pin_top.toolTip()
+    assert "Ctrl+Shift+L" in win.btn_line_nums.toolTip()
+

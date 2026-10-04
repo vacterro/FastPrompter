@@ -1,4 +1,14 @@
 {
-  "requirements": {},
+  "requirements": {
+    "SRC-083:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1411 declared 3-file suite re-run green on the current tree: 83 passed, 0 failed, exit 0 (BOARD's 134 claim does not reproduce; the files collect 83 today)",
+      "text": "SAIHANDOFF T-1411 SMART SILO BUNDLE HISTORY: content-identical reuse, per-silo persistent last bundle, retention/one-version mode, fix header-derived names, modifier actions, remembered quick-pack defaults",
+      "verification": "the Work this request created reached its own verification gate on the current tree; see LOG DEC E-4280",
+      "work": "T-1411"
+    }
+  },
   "schema_version": 1
 }

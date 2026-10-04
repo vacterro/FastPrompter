@@ -381,6 +381,13 @@ def build_settings_tabs(self):
                         or (self.text_area.line_number_area.update() if hasattr(self, "text_area") and hasattr(self.text_area, "line_number_area") else None)
     )
 
+    self.cb_pack_coverage = create_footer_cb(
+        "📦 Pack Coverage",
+        "Visual indicators for bundled vs fresh requirements\n(subtle gutter marks; never alters text or files)",
+        self.data.get("show_pack_coverage", "False") == "True",
+        self.toggle_pack_coverage,
+    )
+
     self.cb_token_count = create_footer_cb(
         "\ud83d\udd22 Token Counter",
         "Show an estimated input-token count beside the line count",
@@ -1562,7 +1569,7 @@ def build_settings_tabs(self):
             self.cb_lock_cursor, self.cb_double_line, blink_row,
         ]),
         _settings_group("Line appearance", [
-            self.cb_line_numbers, self.cb_line_marks, self.cb_zebra,
+            self.cb_line_numbers, self.cb_line_marks, self.cb_pack_coverage, self.cb_zebra,
             self.cb_bold_titles, self.lbl_align, self.cb_align_combo,
         ]),
         _settings_group("Line metadata", [

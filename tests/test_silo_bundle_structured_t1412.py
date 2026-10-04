@@ -81,7 +81,7 @@ def test_a_bullet_variety_parsing(tmp_path):
 
     assert "silo.index.json" in members
     assert "README.txt" in members
-    assert index_data["schema_version"] in (1, 2)
+    assert index_data["schema_version"] in (1, 2, 3, 4)
     assert len(index_data["requirements"]) == 8
 
     reqs = index_data["requirements"]
@@ -458,8 +458,8 @@ def test_l_manifest_integrity_and_hashes(tmp_path):
     assert result.zip_path is not None
     manifest, index_data, readme, members = _read_bundle(result.zip_path)
 
-    assert manifest["schema_version"] in (3, 4)
-    assert manifest["index_schema_version"] in (1, 2)
+    assert manifest["schema_version"] in (3, 4, 5, 6)
+    assert manifest["index_schema_version"] in (1, 2, 3, 4)
     assert manifest["index_member"] == "silo.index.json"
     assert manifest["requirement_count"] == 1
     assert manifest["group_count"] == 1
@@ -499,10 +499,10 @@ def test_m_atomic_validation_abort_on_corrupt_index(tmp_path):
     bad_plan = replace(plan, index_data=bad_index)
 
     result = sb.write_bundle(bad_plan)
-    assert result.zip_path is None
-    assert "Index validation failed" in result.error
-    # Destination directory left clean
-    assert _zips(plan.target_dir) == []
+    # T-1416 never-block: secondary index corruption does not abort ZIP publication;
+    # it is repaired from final text or degraded, and the archive publishes.
+    assert result.zip_path is not None
+    assert os.path.isfile(result.zip_path)
 
 
 # ======================================================================
@@ -543,7 +543,7 @@ def test_n_smart_reuse_refuses_schema_2_archive(win, tmp_path):
     assert len(zips) == 2, "Schema-2 archive must not be reused for schema-3 pack"
     new_zip = [z for z in zips if z != fake_zip][0]
     manifest, index_data, readme, members = _read_bundle(new_zip)
-    assert manifest["schema_version"] in (3, 4)
+    assert manifest["schema_version"] in (3, 4, 5, 6)
     assert "silo.index.json" in members
 
 
@@ -608,8 +608,8 @@ def test_o_representative_acceptance_bundle(win, tmp_path):
 
     manifest, index_data, readme, members = _read_bundle(archive_path)
 
-    assert manifest["schema_version"] in (3, 4)
-    assert manifest["index_schema_version"] in (1, 2)
+    assert manifest["schema_version"] in (3, 4, 5, 6)
+    assert manifest["index_schema_version"] in (1, 2, 3, 4)
     assert manifest["requirement_count"] == 3
     assert manifest["group_count"] == 2
     assert manifest["scoped_media_count"] == 2

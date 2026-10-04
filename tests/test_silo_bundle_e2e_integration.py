@@ -131,9 +131,9 @@ def test_realistic_pack_silo_e2e_lifecycle(tmp_path: Path):
         for dest in media_dest_names:
             assert dest in names
 
-        # Verify manifest schema 4
+        # Verify manifest schema 4/5/6
         manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
-        assert manifest["schema_version"] == 4
+        assert manifest["schema_version"] in (4, 5, 6)
         assert manifest["producer"] == "FastPrompter"
         assert manifest["bundle_kind"] == "silo_bundle"
         assert "hashes" in manifest
@@ -141,9 +141,9 @@ def test_realistic_pack_silo_e2e_lifecycle(tmp_path: Path):
         assert "silo.index.json" in manifest["hashes"]
         assert "README.txt" in manifest["hashes"]
 
-        # Verify silo.index.json schema 2
+        # Verify silo.index.json schema 2/3/4
         idx = json.loads(zf.read("silo.index.json").decode("utf-8"))
-        assert idx["schema_version"] == 2
+        assert idx["schema_version"] in (2, 3, 4)
         assert "requirements" in idx
         assert len(idx["requirements"]) >= 4
 

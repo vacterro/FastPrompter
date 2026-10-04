@@ -30,12 +30,16 @@ SPEC_BY_NAME = {hk.key_name: hk for hk in IN_APP_HOTKEYS}
 # with no shortcut, and its tooltip says so by saying nothing.
 FIXED_SHORTCUTS = {
     "strike": "Ctrl+T",            # editor.keyPressEvent
-    "clear": "Ctrl+Shift+C",       # add_fixed in setup_global_shortcuts
+    "clear": "Ctrl+Alt+C",         # add_fixed in setup_global_shortcuts
     "insert_line_up": "Alt+W",     # add_fixed
     "prev_silo": "Alt+Up",         # add_fixed
     "next_silo": "Alt+Down",       # add_fixed
     "redo": "Ctrl+Y",              # add_fixed
     "escape": "Esc",               # add_fixed
+    "copy": "Ctrl+C",              # add_fixed / standard
+    "help": "F1",                  # add_fixed
+    "home": "Home",                # add_fixed / navigation
+    "end": "End",                  # add_fixed / navigation
 }
 FIXED_SHORTCUTS.update({f"slot_{i}": f"Ctrl+{i}" for i in range(1, 10)})
 FIXED_SHORTCUTS["slot_10"] = "Ctrl+0"
@@ -127,4 +131,42 @@ SHORTCUT_TOOLTIP_ROWS = (
     # catalog so a tooltip can never drift from the binding.
     ("btn_strike", "Strikethrough ({})\nCross out selected text.", "strike"),
     ("btn_clear", "Clear ({})", "clear"),
+    ("btn_settings_toggle",
+     "Settings ({})\nConfigure hotkeys, theme, fonts, and UI scaling.",
+     "hk_settings"),
+    ("btn_settings_toggle_right",
+     "Settings ({})\nConfigure hotkeys, theme, fonts, and UI scaling.",
+     "hk_settings"),
+    ("btn_pin_top",
+     "Always on Top ({})\nKeep the window above all others.",
+     "always_on_top_hotkey"),
+    ("btn_line_nums",
+     "Line Numbers ({})\nShow / hide the line-number gutter\n(click the gutter to place colored margin marks).",
+     "hk_line_nums"),
+    ("btn_toggle_search",
+     "Find Text ({})\nShow / hide find and replace (Replace: Ctrl+H).",
+     "hk_find"),
+    ("btn_files",
+     "Files ({})\nAsset drawer for the active silo: drop any files in,\ndrag them out, preview, export. Stored as a plain folder\nin data/files — readable outside FastPrompter.",
+     "toggle_files_hotkey"),
+    ("btn_sidebar_toggle",
+     "Toggle Sidebar ({})\nShow or hide the right/left sidebar containing snippets and silos.",
+     "toggle_sidebar_hotkey"),
+    ("btn_copy",
+     "Copy all text ({})\nRight-click: Copy + Close FastPrompter.",
+     "copy"),
+    ("btn_help",
+     "Help ({})\nEvery hotkey, gesture and feature (click).",
+     "help"),
+    ("btn_silo_up", "Previous Silo ({})", "prev_silo"),
+    ("btn_silo_down", "Next Silo ({})", "next_silo"),
+    ("btn_home", "Home ({})", "home"),
+    ("btn_end",
+     "Jump to End ({})\nMove cursor to the bottom of the document.",
+     "end"),
+    ("lbl_date",
+     "Current date and time ({})\nClick to manage timers and limit resets\n"
+     "Shift+Click: add Temp Timer time\n"
+     "Ctrl+Shift+Click: remove Temp Timer",
+     "hk_timers"),
 )

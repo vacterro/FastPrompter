@@ -1,5 +1,19 @@
 # OUTBOX
 
+## W-042: qq re-cut @ f200f624 (04.10.26) — whole-wiki verification passes 0/0; READY
+- **status:** ready
+- **legacy:** false
+- **critical:** false
+- **summary:** FORCE-FRESH `qq` re-cut against HEAD f200f6247917e813b249a6358bd4d76ce682167f. Whole-wiki fact oracle `qq_verify_040.py` passes with 0 failures over 15 pages. Repaired module tree drift: 15 modules accounted for under core/, usage_limits/, and ui/ (`interval_presets.py`, `markdown_refs.py`, `profile_flags.py`, `silo_bundle.py`, `silo_coverage.py`, `silo_index.py`, `identity.py`, `sai_accounts.py`, `hotkey_spec.py`, `interaction_undo.py`, `project_numbox_reorder.py`, `shortcut_display.py`, `silo_bundle_actions.py`, `silo_bundle_dialog.py`, `silo_chest.py`), updated module counts (core 44, ui 75, usage_limits 24, total 191), deleted orphaned kitchen file `Watcher-Engine-Architecture.md`.
+- **producer:** saiwiki
+- **source_head:** f200f6247917e813b249a6358bd4d76ce682167f
+- **source_tree_fingerprint:** git-delta-v1:68dbf9f0ed20e6c7cafcd5702174db0574544c38c5de17181a8be848937e5fda
+- **role_revision:** sha256:54a42475a124ab0f27e83d600a284a9cc54d9668029c4828cfc48512b031df13
+- **coverage:** 15/15 maintained wiki pages covered by the oracle, 0 failures. `Module-Structure.md` re-cut with all 15 newly added modules and updated counts.
+- **payload:** `Module-Structure.md` + `qq_verify_040.py`.
+- **verified:** PASS -- ORACLE `python .saipen/extensions/subs/saiwiki/kitchen/qq_verify_040.py` -> 0 failures over 15 pages.
+- **instructions:** 1. Collect via `saipen collect saiwiki` (`qqq`) to apply updated pages to `docs/wiki/`. 2. After collect, rerun `qq_verify_040.py` from kitchen and expect 0 failures.
+
 ## W-041: qq re-cut @ 2be089df (21.09.26) — whole-wiki verification passes 0/0; READY
 - **status:** stale
 - **legacy:** false

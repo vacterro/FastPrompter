@@ -1,0 +1,19 @@
+{
+  "clauses": {
+    "SRC-091:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: Verified provider identity becomes authoritative quota-pool projection across usage limit service, UI capacity presentation, and notification deduplication"
+    },
+    "SRC-091:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-002: _load_silo_identities does not commit to disk before startup safety snapshot is published; repairs in memory and persists via save transaction"
+    }
+  },
+  "derived_at": "2026-10-04T14:49:26Z",
+  "derived_from": "SRC-091",
+  "interpretation_revision": 2,
+  "schema_version": 1,
+  "source_sha256": "c009e20e0493045f99254f2591fbfc6fff7f08bfc80353b3e61b41b1020d9a84"
+}

@@ -22,5 +22,6 @@
 ## TODO
 
 ## DONE
+- [x] HUNT-002 test_silo_coverage_ui_t1415.py DummyMainWindow.mark_dirty TypeError & clear_pack_coverage mark_dirty symmetry | critical: false
 
 ## BLOCKED

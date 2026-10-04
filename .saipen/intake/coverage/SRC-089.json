@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-089:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1425 closed with verification evidence in LOG: review -> PASS [target: T-1425] conf: high -- independent re-run: 23 passed ticket suite; 474 passed neighbour scope; both agree with VERIFY.",
+      "text": "Cover manifest digest stamping, the hash cache, and the coverage-receipt gates that are still unexecuted",
+      "verification": "the Work this request created reached its own verification gate; see the T-1425 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1425"
+    }
+  },
+  "schema_version": 1
+}

@@ -20,6 +20,7 @@ from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass, field
 
+from fastprompter.core.usage_limits import identity as _identity
 from fastprompter.core.usage_limits import sai_accounts as _sai_accounts
 from fastprompter.core.usage_limits.model import (
     OK,
@@ -130,6 +131,57 @@ class ServiceState:
     last_discovery: float = 0.0
     next_backoff: float = 0.0
     error: str = ""
+    # Configured execution contexts vs distinct provider identities, plus which
+    # accounts provably share one. See ``_rebuild_identity_report``.
+    identity_report: dict = field(default_factory=dict)
+    # Provider-identity switches seen this session. Fingerprints only.
+    identity_events: list = field(default_factory=list)
+
+
+class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
+    """ThreadPoolExecutor whose workers are daemon threads not tracked by _python_exit.
+
+    Standard ThreadPoolExecutor registers worker threads in _threads_queues, which
+    causes atexit._python_exit() to join() each worker indefinitely even if the app
+    requested a bounded exit.
+    """
+
+    def _adjust_thread_count(self):
+        import concurrent.futures.thread as _cft
+        import weakref
+
+        if self._idle_semaphore.acquire(timeout=0):
+            return
+
+        def weakref_cb(_, q=self._work_queue):
+            q.put(None)
+
+        num_threads = len(self._threads)
+        if num_threads < self._max_workers:
+            thread_name = "%s_%d" % (self._thread_name_prefix or self, num_threads)
+            t = threading.Thread(
+                name=thread_name,
+                target=_cft._worker,
+                args=(weakref.ref(self, weakref_cb), self._work_queue, self._initializer, self._initargs),
+                daemon=True,
+            )
+            t.start()
+            self._threads.add(t)
+
+
+@dataclass(frozen=True)
+class QuotaPool:
+    """Canonical provider quota pool projection (CORE-001).
+
+    Groups execution contexts that share an authenticated provider identity
+    into one quota capacity pool. Unresolved/unverified accounts keep distinct
+    pools (absence of proof never merges).
+    """
+    pool_id: str
+    canonical_key: str
+    member_keys: tuple[str, ...]
+    verified: bool
+    fingerprint: str
 
 
 class UsageLimitService:
@@ -149,7 +201,7 @@ class UsageLimitService:
         self._sweep_pending = False
         self._sweep_pending_rediscover = False
         self._providers: dict[str, UsageProvider] = self._build_providers()
-        self._executor = ThreadPoolExecutor(max_workers=POOL_SIZE)
+        self._executor = _DaemonThreadPoolExecutor(max_workers=POOL_SIZE)
         # Library callers historically receive an immediately discovered
         # roster. The Qt shell opts out and starts ``refresh(rediscover=True)``
         # only after its queued callback bridge exists, so filesystem discovery
@@ -272,7 +324,7 @@ class UsageLimitService:
             self._refresh_callbacks.clear()
             self._sweep_pending = False
             self._sweep_pending_rediscover = False
-            pending = list(self._active_futures)
+            pending = [f for f in self._active_futures if not f.done()]
 
         # ``cancel()`` returns False only for a probe that is already running or
         # finished, which is exactly the set worth waiting on. Futures cancelled
@@ -293,17 +345,29 @@ class UsageLimitService:
         if still_running:
             _done, unfinished = futures_wait(
                 still_running, timeout=max(0.0, timeout))
-        if not unfinished:
+
+        with self._lock:
+            # W2-002: retire only done or cancelled futures. Do NOT remove
+            # unfinished futures while they are still running, so a repeated
+            # shutdown continues to track them within its bounded timeout.
+            done_or_cancelled = {f for f in self._active_futures if f.done() or f.cancelled()}
+            self._active_futures.difference_update(done_or_cancelled)
+            self._state.status = "IDLE"
+            active_count = len(self._active_futures)
+
+        if active_count == 0 and not unfinished:
             # Everything is already finished, so this cannot block.
             try:
                 self._executor.shutdown(wait=True)
             except Exception:
                 pass
 
+        return not bool(unfinished)
+
+    def _retire_future(self, future: Future) -> None:
+        """Callback attached to probe futures for clean, decoupled retirement."""
         with self._lock:
-            self._active_futures.difference_update(pending)
-            self._state.status = "IDLE"
-        return not unfinished
+            self._active_futures.discard(future)
 
     # -- discovery ---------------------------------------------------------
     def _discover(self, *, request_id: int | None = None) -> bool:
@@ -338,6 +402,10 @@ class UsageLimitService:
             self._state.generation = base_gen + 1
             self._state.accounts = all_accounts
             self._state.last_discovery = time.monotonic()
+            # Rebuild immediately: a roster change can make two accounts the
+            # same identity (or stop being), and the panel must not render a
+            # phantom second pool while the first sweep is still running.
+            self._rebuild_identity_report()
             self._state.status = "IDLE"
         return True
 
@@ -538,13 +606,14 @@ class UsageLimitService:
                         raise RuntimeError("usage-limit service is stopping")
                     future = self._executor.submit(
                         self._probe_account, account, deadline, gen, req_id)
+                    future.add_done_callback(self._retire_future)
                     futures.append(future)
                     self._active_futures.add(future)
         except RuntimeError:
             for future in futures:
                 future.cancel()
             with self._lock:
-                self._active_futures.difference_update(futures)
+                self._active_futures.difference_update({f for f in futures if f.done() or f.cancelled()})
             return
         results: list[UsageSnapshot] = []
         errors = 0
@@ -568,7 +637,7 @@ class UsageLimitService:
                         errors += 1
         finally:
             with self._lock:
-                self._active_futures.difference_update(futures)
+                self._active_futures.difference_update({f for f in futures if f.done() or f.cancelled()})
 
         with self._lock:
             # CORE-001: only the latest monotonic request under the current
@@ -579,6 +648,21 @@ class UsageLimitService:
             for s in results:
                 key = s.account.key
                 prev = self._state.snapshots.get(key)
+                # Account switch: a different human signed in under this account.
+                # The previous reading belongs to the PREVIOUS identity and must
+                # never be served for the new one, so it is dropped rather than
+                # carried across. Banked resets go with it: they were earned by
+                # quota that no longer belongs to this slot.
+                if prev is not None and _identity.identity_changed(
+                        prev.provider_metadata, s.provider_metadata):
+                    self._state.identity_events.append({
+                        "account_key": key,
+                        "display_name": s.account.display_name,
+                        "previous": _identity.fingerprint_of(prev.provider_metadata),
+                        "current": _identity.fingerprint_of(s.provider_metadata),
+                        "observed_at": time.time(),
+                    })
+                    prev = None
                 if s.status == OK:
                     self._state.snapshots[key] = s
                 elif s.status in ("AUTH_REQUIRED", "IDENTITY_MISMATCH") or (prev is not None and prev.status != OK):
@@ -597,6 +681,7 @@ class UsageLimitService:
                     )
                 else:
                     self._state.snapshots[key] = s
+            self._rebuild_identity_report()
             self._state.status = "IDLE"
             self._state.last_sweep = now
             if errors > 0:
@@ -604,6 +689,116 @@ class UsageLimitService:
                 self._state.next_backoff = now + min(delay, BACKOFF_CAP_S)
                 self._state.status = "BACKOFF"
         self._fire()
+
+    # -- provider identity --------------------------------------------------
+    def _rebuild_identity_report(self) -> None:
+        """Recompute which accounts are the SAME provider account.
+
+        Two questions are answered here and they must never be collapsed:
+        how many execution contexts are configured, and how many distinct
+        provider identities those contexts actually represent. Capacity is the
+        second number. A roster of two slots that are one Google account has
+        one quota pool, and pretending otherwise is what makes a router burn the
+        same quota twice while believing it has redundancy.
+
+        Callers hold ``self._lock``.
+        """
+        accounts = [a for a in self._state.accounts if a.enabled]
+        entries = [(a.key, self._state.snapshots[a.key].provider_metadata
+                    if a.key in self._state.snapshots else {})
+                   for a in accounts]
+        duplicates = _identity.duplicate_report(entries)
+        by_key = {key: _identity.fingerprint_of(meta) for key, meta in entries}
+        pools = self._quota_pools_locked(accounts)
+        self._state.identity_report = {
+            # Configured execution contexts — what the operator set up.
+            "configured": len(accounts),
+            # Distinct provider identities — what capacity actually exists.
+            "unique_identities": len(pools),
+            # Canonical quota pools list (CORE-001)
+            "quota_pools": [dataclasses.asdict(p) for p in pools],
+            # cache key -> the canonical cache key it shares quota with.
+            "shared_with": duplicates,
+            "fingerprint_of": by_key,
+        }
+
+    def _quota_pools_locked(self, accounts: list[AccountRef] | None = None) -> list[QuotaPool]:
+        target_accounts = [a for a in self._state.accounts if a.enabled] if accounts is None else list(accounts)
+        snapshots = self._state.snapshots
+        entries = [
+            (a.key, snapshots[a.key].provider_metadata if a.key in snapshots else {})
+            for a in target_accounts
+        ]
+        groups = _identity.group_by_identity(entries)
+        assigned: set[str] = set()
+        pools: list[QuotaPool] = []
+
+        # 1. Proven shared / verified identity groups in account order
+        for a in target_accounts:
+            if a.key in assigned:
+                continue
+            meta = snapshots.get(a.key).provider_metadata if a.key in snapshots else {}
+            fp = _identity.fingerprint_of(meta)
+            if fp and fp in groups:
+                members = [k for k in groups[fp] if k in {acc.key for acc in target_accounts}]
+                if members:
+                    canonical = members[0]
+                    pools.append(QuotaPool(
+                        pool_id=f"fp:{fp}",
+                        canonical_key=canonical,
+                        member_keys=tuple(members),
+                        verified=True,
+                        fingerprint=fp,
+                    ))
+                    assigned.update(members)
+
+        # 2. Unresolved / unverified accounts remain individual pools
+        for a in target_accounts:
+            if a.key in assigned:
+                continue
+            pools.append(QuotaPool(
+                pool_id=f"unresolved:{a.key}",
+                canonical_key=a.key,
+                member_keys=(a.key,),
+                verified=False,
+                fingerprint="",
+            ))
+            assigned.add(a.key)
+
+        return pools
+
+    def quota_pools(self, accounts: list[AccountRef] | None = None) -> list[QuotaPool]:
+        """Canonical quota-pool projection (CORE-001).
+
+        Groups accounts that share a verified provider identity into one
+        quota pool. Accounts with unverified/unresolved identities each remain
+        in their own distinct pool (absence of proof never merges).
+        """
+        with self._lock:
+            return self._quota_pools_locked(accounts)
+
+    def identity_report(self) -> dict:
+        """A snapshot of the identity index: counts, sharing, per-account fp."""
+        with self._lock:
+            return dict(self._state.identity_report)
+
+    def shared_identity_with(self, account_key: str) -> str:
+        """The canonical account key this one shares a provider identity with.
+
+        Empty when the identity is unique or unproven. Unproven NEVER returns a
+        peer: "I don't know who this is" must not be reported as "same as
+        someone else", which would delete capacity that really exists.
+        """
+        with self._lock:
+            return self._state.identity_report.get("shared_with", {}).get(account_key, "")
+
+    def identity_events(self) -> list[dict]:
+        """Provider-identity switches observed, newest last.
+
+        Carries fingerprints only — no token, no address, no quota.
+        """
+        with self._lock:
+            return list(self._state.identity_events)
 
     # -- auto-refresh scheduler --------------------------------------------
     def schedule_auto(self, interval_s: int | None = None) -> None:

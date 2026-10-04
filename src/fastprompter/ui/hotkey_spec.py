@@ -66,6 +66,8 @@ IN_APP_HOTKEYS = [
                lambda mw: mw.insert_divider_line()),
     HotkeySpec("hk_snap", "Ctrl+Q", "Cycle Snap Corners",
                lambda mw: mw.cycle_snap_corner()),
+    HotkeySpec("hk_pack_selection", "Ctrl+Shift+C", "Fast Pack Selection",
+               lambda mw: mw.fast_pack_selection()),
     # Window-owned globals: bound as QShortcuts in setup_global_shortcuts, but
     # listed here so the Shortcut settings shows the FULL set, none hidden.
     HotkeySpec("hk_audio_mute", "Ctrl+M", "Master Mute"),

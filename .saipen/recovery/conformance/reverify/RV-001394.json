@@ -1,0 +1,52 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-10-04T08:23:48Z",
+  "evidence_class": "executed",
+  "findings_digest": "a59daec1fc46b2eeef011d5aae55797205a0405bd8e4a2a7d51c456a61ef7e05",
+  "gate": "core",
+  "integrity_digest": "b50db23d1641e7fe",
+  "journal_op_id": "reverify.1f9fee4ab682",
+  "original_closure": {
+    "claim_time": "2026-10-03T20:10:04Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-4190",
+    "owner": "saipen-cli",
+    "source_receipts": "SRC-082"
+  },
+  "own_problem_keys": [
+    "13c1ddf5c50ac2ff",
+    "832bc5551758b710"
+  ],
+  "problem_count": 6,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001394",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "f200f6247917e813b249a6358bd4d76ce682167f",
+  "source_tree_fingerprint": "git-delta-v1:ff48177178aed5e5fbb06350f2a7b027eb5f1e5a38e7eb8c3e6d475943e7a977",
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q -p no:randomly",
+      "duration_ms": 2745,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 329,
+      "output_digest": "c2bc10af4ef76fe4",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q -p no:randomly"
+    ],
+    "findings_digest": "a59daec1fc46b2eeef011d5aae55797205a0405bd8e4a2a7d51c456a61ef7e05",
+    "gate": "core"
+  },
+  "verification_contract_digest": "05f671f615b3d92e",
+  "verifier": "saipen-cli",
+  "warning_count": 57,
+  "work": "T-1410"
+}

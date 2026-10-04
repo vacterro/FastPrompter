@@ -1,0 +1,52 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-10-04T08:24:10Z",
+  "evidence_class": "executed",
+  "findings_digest": "a59daec1fc46b2eeef011d5aae55797205a0405bd8e4a2a7d51c456a61ef7e05",
+  "gate": "core",
+  "integrity_digest": "6d7bdaeb86e904a7",
+  "journal_op_id": "reverify.52bca02d4a24",
+  "original_closure": {
+    "claim_time": "2026-10-04T00:15:00Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-4199",
+    "owner": "saipen-cli",
+    "source_receipts": "SRC-083"
+  },
+  "own_problem_keys": [
+    "17033b1b40b52225",
+    "71b6ad19f2ded628"
+  ],
+  "problem_count": 6,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001395",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "f200f6247917e813b249a6358bd4d76ce682167f",
+  "source_tree_fingerprint": "git-delta-v1:ff48177178aed5e5fbb06350f2a7b027eb5f1e5a38e7eb8c3e6d475943e7a977",
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_silo_bundle_history_t1411.py tests/test_silo_bundle_clipboard_t1409.py tests/test_silo_bundle_core_t1409.py -q -p no:randomly",
+      "duration_ms": 2121,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 179,
+      "output_digest": "7e5df585263ff33b",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_silo_bundle_history_t1411.py tests/test_silo_bundle_clipboard_t1409.py tests/test_silo_bundle_core_t1409.py -q -p no:randomly"
+    ],
+    "findings_digest": "a59daec1fc46b2eeef011d5aae55797205a0405bd8e4a2a7d51c456a61ef7e05",
+    "gate": "core"
+  },
+  "verification_contract_digest": "657c430148c34fe9",
+  "verifier": "saipen-cli",
+  "warning_count": 57,
+  "work": "T-1411"
+}

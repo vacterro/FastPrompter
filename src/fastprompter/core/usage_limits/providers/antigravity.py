@@ -52,6 +52,7 @@ from fastprompter.core.usage_limits.model import (
     qualified_key,
     stable_id_for,
 )
+from fastprompter.core.usage_limits import identity as _identity
 from fastprompter.core.usage_limits.providers import UsageProvider, _antigravity_cli
 from fastprompter.core.usage_limits.providers._antigravity_brain import (
     latest_refusal,
@@ -61,6 +62,19 @@ from fastprompter.core.usage_limits.providers._antigravity_brain import (
 # 429 describes. Its duration is NOT known (the message quotes only the
 # remaining delay), which also keeps it out of the cross-window gating logic.
 QUOTA = "quota"
+
+
+def _identity_fragment() -> dict:
+    """Proven provider identity for the account this process can actually read.
+
+    Absent entirely when nothing is proven. It is never filled in from the
+    quota: ``agy /usage`` knows how much is left, not who is spending it, and
+    an account showing 100% is not thereby identified.
+    """
+    reading = _antigravity_cli.read_identity()
+    if not reading.get("fingerprint"):
+        return {}
+    return _identity.describe(reading["fingerprint"], reading.get("source", ""))
 
 # How long after a block's reset the refilled window is still reported, so the
 # reset alert has a chance to fire before the state honestly becomes unknown.
@@ -189,6 +203,13 @@ class AntigravityProvider(UsageProvider):
                 "capability": "antigravity-cli",
                 "strategy": "agy-usage",
                 "pools": pools,
+                # Provenance. ``agy /usage`` returns quota and nothing else, so
+                # the identity attached to this reading comes from the credential
+                # store THIS process just read — not from the numbers, and not
+                # from the account's label.
+                "source_session": "current-user",
+                "observed_at": reading["captured_at"],
+                **_identity_fragment(),
             },
         )
 
@@ -229,6 +250,7 @@ class AntigravityProvider(UsageProvider):
                 "capability": "antigravity-refusals",
                 "strategy": "brain-message-429",
                 "observed_at": refusal["observed_at"],
+                **_identity_fragment(),
             },
         )
 
@@ -241,7 +263,8 @@ def _unavailable(account: AccountRef, code: str, summary: str) -> UsageSnapshot:
         error_code=code,
         error_summary=summary,
         provider_metadata={"capability": "antigravity-refusals",
-                           "strategy": "brain-message-429"},
+                           "strategy": "brain-message-429",
+                           **_identity_fragment()},
     )
 
 
@@ -253,7 +276,8 @@ def _auth_required(account: AccountRef, summary: str) -> UsageSnapshot:
         error_code="cli_not_logged_in",
         error_summary=summary,
         provider_metadata={"capability": "antigravity-cli",
-                           "strategy": "agy-usage"},
+                           "strategy": "agy-usage",
+                           **_identity_fragment()},
     )
 
 

@@ -2879,21 +2879,11 @@ class FastPrompterState:
             target[key] = sid
         if len(target) != len(existing):
             changed = True
-        if changed:
-            try:
-                with self.conn:
-                    self.conn.execute("DELETE FROM silo_identity_v1")
-                    self.conn.executemany(
-                        "INSERT OR REPLACE INTO silo_identity_v1 "
-                        "(category, is_archive, slot, silo_id) "
-                        "VALUES (?,?,?,?)",
-                        [(cat, is_arc, slot, sid)
-                         for (cat, is_arc, slot), sid in target.items()])
-            except _sq.Error:
-                logger.exception(
-                    "silo identity backfill failed; identities rebuild on "
-                    "the next successful save")
-        # expose to the app: (category, is_archive, slot) -> silo_id
+        # CORE-002: do NOT commit identity backfill to disk here before the
+        # startup safety snapshot is published. The repaired target mapping is
+        # kept in memory, marked dirty, and committed through
+        # _sync_silo_identities_locked() in the first save transaction under the
+        # canonical snapshot barrier.
         self.silo_identities = target
         self._silo_id_dirty = changed
         return target

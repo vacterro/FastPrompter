@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-084:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "T-1417 bundle final-truth/privacy closure: planner must survive index failure, final markdown must match zip members, sanitize all share-safe text, no raw exception leaks, factual capabilities"
+    }
+  },
+  "derived_at": "2026-10-04T09:37:30Z",
+  "derived_from": "SRC-084",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "21363696e3906b64ef63c4b58117c691cd53d8bab221783eadb22051125f5f0a"
+}

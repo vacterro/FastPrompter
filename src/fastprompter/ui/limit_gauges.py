@@ -955,16 +955,57 @@ class LimitGauges(QWidget):
             "style='margin-left:2px; border-collapse:collapse;'>"
         )
 
+        # Two slots on ONE Google account read as two rows of quota here, and
+        # this hover card is where an operator forms the "how much capacity do
+        # I have" impression. The cluster marks stay one-per-slot on purpose:
+        # merging them means rewriting the width reservation, which is the one
+        # piece of this widget that has already broken quota display once (see
+        # _clusters_width). So the accounting is corrected in words instead -- a
+        # shared row names the peer it shares with, and the reading is qualified
+        # rather than contradicted.
+        report = getattr(self._service, "identity_report", None)
+        shared = report().get("shared_with", {}) if callable(report) else {}
+        peer_names = {
+            a.key: html.escape(self._elide(
+                account_display_name(a, self.main_win.data), self.NAME_CHARS))
+            for a in accounts}
+
+        pools_getter = getattr(self._service, "quota_pools", None)
+        quota_pools = pools_getter(accounts) if callable(pools_getter) else []
+        pool_by_key = {}
+        for p in quota_pools:
+            if len(p.member_keys) > 1:
+                for k in p.member_keys:
+                    pool_by_key[k] = p
+        rendered_pools = set()
+
         for a in accounts:
+            if a.key in pool_by_key:
+                p = pool_by_key[a.key]
+                if p.pool_id not in rendered_pools:
+                    rendered_pools.add(p.pool_id)
+                    p_name = _PROVIDER_LABEL.get(getattr(a, "provider_id", ""), getattr(a, "provider_id", "").title())
+                    parts.append(
+                        f"<tr><td colspan='4' style='padding-top:6px; padding-bottom:2px; border-bottom:1px solid #776a3a;'>"
+                        f"<b style='color:#e0b43c;'>[{tr('Shared Provider Quota Pool')}: {p_name}]</b> "
+                        f"<span style='color:#9a8b5f; font-size:10px;'>({len(p.member_keys)} {tr('linked contexts')})</span></td></tr>"
+                    )
+
             s = snap.snapshots.get(a.key)
             header = html.escape(self._elide(
                 account_display_name(a, self.main_win.data), self.NAME_CHARS))
+            peer_key = shared.get(a.key, "")
+            shared_note = (
+                " <span style='color:#9a8b5f; font-size:10px;'>("
+                + tr("Same provider account as")
+                + " " + peer_names.get(peer_key, html.escape(peer_key))
+                + ")</span>") if peer_key else ""
             v_color = reset_color(self.main_win, getattr(a, "provider_id", ""))
             title_style = f" style='color:{v_color};'" if v_color else ""
             if not s:
                 parts.append(
                     f"<tr><td colspan='4' style='padding-top:4px; padding-bottom:2px;'>"
-                    f"<b{title_style}>{header}</b>: "
+                    f"<b{title_style}>{header}</b>{shared_note}: "
                     f"<span style='color:#888888;'>"
                     + tr("not probed yet") + "</span></td></tr>"
                 )
@@ -1003,7 +1044,7 @@ class LimitGauges(QWidget):
                             f"font-weight:bold;'>&nbsp;{format_amount(fb_total)}"
                             f"&nbsp;</span>")
             parts.append(
-                f"<tr><td colspan='4' style='padding-top:5px; padding-bottom:2px; border-bottom:1px solid #4a3e28;'><b{title_style}>{header}</b>{plan}{fb_badge}{stale}{freshness}{banked}</td></tr>"
+                f"<tr><td colspan='4' style='padding-top:5px; padding-bottom:2px; border-bottom:1px solid #4a3e28;'><b{title_style}>{header}</b>{shared_note}{plan}{fb_badge}{stale}{freshness}{banked}</td></tr>"
             )
 
             if s.status in (OK, STALE):

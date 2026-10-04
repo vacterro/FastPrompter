@@ -23,6 +23,12 @@ from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
 from fastprompter.ui.edit_guard import edit_block
+from fastprompter.ui.interaction_undo import (
+    CursorSelectionState,
+    SelectionInteractionRecord,
+    is_meaningful_selection_transition,
+    get_document_interaction_history,
+)
 from fastprompter.ui.markdown_highlighter import QUEUED_BIT, SENT_BIT
 from fastprompter.ui.qt_lifetime import weak_qt_callback
 from fastprompter.utils.paths import exists_within
@@ -384,13 +390,51 @@ class LineNumberArea(QWidget):
         if event.buttons() & Qt.MouseButton.LeftButton:
             if self.editor._gutter_anchor_block is not None:
                 self.editor.margin_select_line(event.pos().y(), extend=True)
+
+        # T-1415: Tooltip on pack coverage marker hover
+        if self.editor.is_pack_coverage_visible() and event.pos().x() >= self.width() - 8:
+            block = self.editor._block_at_y(self.hover_y)
+            tip = ""
+            if block is not None and self.editor._coverage_map:
+                line_no = block.blockNumber() + 1
+                state, item = self.editor._coverage_map.get_line_state(line_no)
+                if state is not None and item is not None:
+                    tip = self.editor._format_coverage_tooltip(state, item)
+            if tip:
+                from PyQt6.QtWidgets import QToolTip
+                QToolTip.showText(event.globalPosition().toPoint(), tip, self)
+            else:
+                from PyQt6.QtWidgets import QToolTip
+                QToolTip.hideText()
+        else:
+            from PyQt6.QtWidgets import QToolTip
+            QToolTip.hideText()
+
         self.update()
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
+        from PyQt6.QtWidgets import QToolTip
+        QToolTip.hideText()
         self.hover_y = -1
         self.update()
         super().leaveEvent(event)
+
+    def helpEvent(self, event):
+        if self.editor.is_pack_coverage_visible() and event.pos().x() >= self.width() - 8:
+            block = self.editor._block_at_y(event.pos().y())
+            tip = ""
+            if block is not None and self.editor._coverage_map:
+                line_no = block.blockNumber() + 1
+                state, item = self.editor._coverage_map.get_line_state(line_no)
+                if state is not None and item is not None:
+                    tip = self.editor._format_coverage_tooltip(state, item)
+            if tip:
+                from PyQt6.QtWidgets import QToolTip
+                QToolTip.showText(event.globalPos(), tip, self)
+                event.accept()
+                return None
+        return super().helpEvent(event)
 
 
 class _BlockData(QTextBlockUserData):
@@ -550,6 +594,19 @@ class VaultTextEdit(QTextEdit):
         if hasattr(_switched, "connect"):
             _switched.connect(self._on_preview_mode_changed)
 
+        # T-1415: Pack Coverage Overlay Experiment
+        self._coverage_map = None
+        self._session_pack_coverage_hidden = False
+        self._coverage_fade_start_time = 0.0
+        self._coverage_fade_timer = QTimer(self)
+        self._coverage_fade_timer.setInterval(100)
+        self._coverage_fade_timer.timeout.connect(self._on_coverage_fade_tick)
+        self._coverage_reconcile_timer = QTimer(self)
+        self._coverage_reconcile_timer.setSingleShot(True)
+        self._coverage_reconcile_timer.setInterval(250)
+        self._coverage_reconcile_timer.timeout.connect(self.refresh_pack_coverage)
+        self.textChanged.connect(self._on_text_changed_coverage)
+
         # Persistent Ctrl+click word selections: list of QTextCursor objects.
         # Toggle with Ctrl+click; clear all with Ctrl+triple-click on any
         # word. Cursors track their own document and stay valid across edits
@@ -576,6 +633,95 @@ class VaultTextEdit(QTextEdit):
         self._idle_timer.setInterval(2000)
         self._idle_timer.timeout.connect(self._on_idle_timeout)
         self.verticalScrollBar().valueChanged.connect(self._kick_idle_timer)
+
+        # T-1426: Ephemeral selection interaction tracking for user-intent undo/redo
+        self._mouse_gesture_pre_state = None
+        self._mouse_gesture_doc_rev = -1
+        self._mouse_gesture_undo_steps = -1
+        self._in_mouse_gesture = False
+        self._last_key_was_shift_nav = False
+        self._suppress_interaction_recording = False
+
+    def _capture_cursor_state(self) -> CursorSelectionState:
+        cur = self.textCursor()
+        scroll = self.verticalScrollBar().value()
+        return CursorSelectionState(
+            anchor=cur.anchor(),
+            position=cur.position(),
+            scroll=scroll,
+        )
+
+    def _apply_cursor_state(self, state: CursorSelectionState) -> bool:
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            return False
+        max_pos = max(0, doc.characterCount() - 1)
+        if (state.anchor > max_pos or state.position > max_pos
+                or state.anchor < 0 or state.position < 0):
+            return False
+
+        self._suppress_interaction_recording = True
+        try:
+            cur = self.textCursor()
+            cur.setPosition(state.anchor, QTextCursor.MoveMode.MoveAnchor)
+            cur.setPosition(state.position, QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(cur)
+            if state.scroll is not None:
+                self.verticalScrollBar().setValue(state.scroll)
+            self.ensureCursorVisible()
+            self.setFocus()
+            return True
+        finally:
+            self._suppress_interaction_recording = False
+
+    def _record_selection_interaction_if_meaningful(
+        self, before: CursorSelectionState, after: CursorSelectionState
+    ) -> bool:
+        if getattr(self, "_suppress_interaction_recording", False):
+            return False
+        if not is_meaningful_selection_transition(before, after):
+            return False
+
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            return False
+
+        history = get_document_interaction_history(doc)
+        if history is None:
+            return False
+
+        top = history.peek_undo()
+        if top is not None and top.before == before and top.after == after:
+            return False
+
+        mw = getattr(self, "main_win", None)
+        seq = mw._bump_action_seq() if mw and hasattr(mw, "_bump_action_seq") else 0
+        text_steps = doc.availableUndoSteps()
+        doc_gen = getattr(doc, "_fastprompter_generation", 0)
+        text_len = max(0, doc.characterCount() - 1)
+
+        record = SelectionInteractionRecord(
+            before=before,
+            after=after,
+            doc_id=id(doc),
+            doc_generation=doc_gen,
+            text_length=text_len,
+            text_undo_steps=text_steps,
+            action_seq=seq,
+        )
+        history.push(record)
+
+        if mw and hasattr(mw, "_undo_kinds"):
+            kinds = mw._undo_kinds()
+            if kinds:
+                mw._undo_kinds()[:] = [k for k in kinds if k != "interaction"]
+        return True
+
+    def selectAll(self):
+        pre = self._capture_cursor_state()
+        super().selectAll()
+        post = self._capture_cursor_state()
+        self._record_selection_interaction_if_meaningful(pre, post)
 
     def _first_visible_block(self):
         doc = self.document()
@@ -883,6 +1029,213 @@ class VaultTextEdit(QTextEdit):
             numbers = QColor("#808080")
         return bg, numbers
 
+    def is_pack_coverage_visible(self) -> bool:
+        """True if pack coverage overlay is enabled and not hidden for session (T-1415 § 4, 33)."""
+        if getattr(self, "_session_pack_coverage_hidden", False):
+            return False
+        main_win = getattr(self, "main_win", None)
+        if not main_win or not hasattr(main_win, "data"):
+            return False
+        return main_win.data.get("show_pack_coverage", "False") == "True"
+
+    def _on_text_changed_coverage(self):
+        if self.is_pack_coverage_visible():
+            self._coverage_reconcile_timer.start()
+
+    def refresh_pack_coverage(self, trigger_fade=False):
+        """Reconcile live document text against coverage ledger (T-1415 §§ 5, 27)."""
+        if not self.is_pack_coverage_visible():
+            self._coverage_map = None
+            if self._gutter_active():
+                self.line_number_area.update()
+            self.viewport().update()
+            return
+
+        main_win = getattr(self, "main_win", None)
+        if not main_win or not hasattr(main_win, "_get_coverage_store"):
+            return
+
+        store = main_win._get_coverage_store()
+        silo_id = getattr(main_win, "_active_silo_id", lambda: None)()
+        ledger = store.get_ledger(str(silo_id)) if silo_id else None
+
+        cutoff = 0.0
+        if getattr(self, "_coverage_fade_start_time", 0.0) > 0.0:
+            cutoff = self._coverage_fade_start_time
+
+        from fastprompter.core import silo_coverage as sc
+        text = self.toPlainText()
+        self._coverage_map = sc.reconcile_pack_coverage(text, ledger, recent_epoch_cutoff=cutoff)
+
+        if trigger_fade and main_win.data.get("pack_coverage_fade", "True") == "True":
+            self._start_coverage_fade()
+
+        if self._gutter_active():
+            self.line_number_area.update()
+        self.viewport().update()
+
+    def trigger_pack_coverage_event(self):
+        """Called immediately when a bundle coverage event is recorded (T-1415 § 23)."""
+        import time
+        self._coverage_fade_start_time = time.time()
+        self.refresh_pack_coverage(trigger_fade=True)
+
+    def _start_coverage_fade(self):
+        if hasattr(self, "_coverage_fade_timer"):
+            self._coverage_fade_timer.start()
+
+    def _on_coverage_fade_tick(self):
+        import time
+        now = time.time()
+        elapsed = now - getattr(self, "_coverage_fade_start_time", 0.0)
+        if elapsed >= 2.5:
+            self._coverage_fade_timer.stop()
+            self._coverage_fade_start_time = 0.0
+            self.refresh_pack_coverage(trigger_fade=False)
+        else:
+            if self._gutter_active():
+                self.line_number_area.update()
+            self.viewport().update()
+
+    def _coverage_theme_colors(self):
+        """Derive accent and covered colors from the active theme or palette (T-1415 § 37)."""
+        raw = {}
+        try:
+            cache = getattr(self.main_win, "_theme_cache", None)
+            if cache:
+                raw = cache.get("raw_colors") or {}
+            custom = getattr(self.main_win, "_get_custom_colors", lambda: {})()
+            if isinstance(custom, dict):
+                raw = {**raw, **custom}
+        except Exception:
+            pass
+        accent = raw.get("accent") or raw.get("btn_text")
+        if not accent:
+            accent = self.palette().highlight().color().name()
+        covered = raw.get("border_light") or raw.get("text_main")
+        if not covered:
+            covered = self.palette().text().color().name()
+        return accent, covered
+
+    def _paint_coverage_marker(self, painter, line_no, top, height, is_hovered=False, cov_x=1):
+        """Render coverage indicator (fresh notch, full bar, or partial dashed) (T-1415 §§ 3, 12, 23, 26)."""
+        if not self._coverage_map:
+            return
+        cov_state, _item = self._coverage_map.get_line_state(line_no)
+        if cov_state is None:
+            return
+
+        from fastprompter.core.silo_coverage import CoverageState
+
+        accent_color, covered_color = self._coverage_theme_colors()
+        cov_w = 2
+        h = max(1, height)
+
+        fade_progress = 0.0
+        if getattr(self, "_coverage_fade_start_time", 0.0) > 0.0:
+            import time
+            fade_progress = min(1.0, max(0.0, (time.time() - self._coverage_fade_start_time) / 2.5))
+
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        if cov_state == CoverageState.FRESH:
+            notch_h = min(4, max(2, h - 4))
+            notch_y = top + (h - notch_h) // 2
+            c = QColor(accent_color)
+            c.setAlpha(int(255 * (0.95 if is_hovered else 0.80)))
+            painter.setBrush(c)
+            painter.drawRect(cov_x, notch_y, cov_w, notch_h)
+
+        elif cov_state in (CoverageState.FULL, CoverageState.RECENT_FULL):
+            c = QColor(accent_color if cov_state == CoverageState.RECENT_FULL else covered_color)
+            if cov_state == CoverageState.RECENT_FULL:
+                op = 0.85 - fade_progress * (0.85 - 0.22)
+            else:
+                op = 0.55 if is_hovered else 0.22
+            c.setAlpha(int(255 * op))
+            painter.setBrush(c)
+            painter.drawRect(cov_x, top + 1, cov_w, max(1, h - 2))
+
+        elif cov_state in (CoverageState.PARTIAL, CoverageState.RECENT_PARTIAL):
+            c = QColor(accent_color if cov_state == CoverageState.RECENT_PARTIAL else covered_color)
+            if cov_state == CoverageState.RECENT_PARTIAL:
+                op = 0.85 - fade_progress * (0.85 - 0.22)
+            else:
+                op = 0.55 if is_hovered else 0.22
+            c.setAlpha(int(255 * op))
+            painter.setBrush(c)
+            seg_y = top + 1
+            max_y = top + max(1, h - 2)
+            while seg_y < max_y:
+                seg_h = min(2, max_y - seg_y)
+                painter.drawRect(cov_x, seg_y, cov_w, seg_h)
+                seg_y += 4
+
+    def _format_coverage_tooltip(self, state, item):
+        """Format compact factual metadata for marker hover (T-1415 § 31)."""
+        if not item or not state:
+            return ""
+        from fastprompter.core.silo_coverage import CoverageState
+        lang = getattr(self.main_win, "_current_lang", "EN")
+        if state == CoverageState.FRESH:
+            return tr("Not bundled in this form", lang)
+
+        receipt = item.receipt
+        if not receipt:
+            return tr("Not bundled in this form", lang)
+
+        parts = []
+        if receipt.coverage_kind == "full":
+            parts.append(tr("Bundled", lang))
+        else:
+            parts.append(tr("Partially bundled", lang))
+
+        if receipt.last_bundled_epoch > 0:
+            import datetime
+            dt = datetime.datetime.fromtimestamp(receipt.last_bundled_epoch)
+            parts.append(f"{tr('Last: {}', lang).format(dt.strftime('%d %b %H:%M'))}")
+
+        if receipt.bundle_kind:
+            via = (
+                tr("Fast Selection", lang)
+                if receipt.bundle_kind == "selection_bundle"
+                else tr("Full Silo", lang)
+            )
+            parts.append(f"{tr('Via: {}', lang).format(via)}")
+
+        if receipt.times_bundled > 1:
+            parts.append(tr("Bundled {} times", lang).format(receipt.times_bundled))
+
+        if not receipt.clipboard_success:
+            parts.append(tr("Clipboard copy failed", lang))
+
+        return "\n".join(parts)
+
+    def _toggle_pack_coverage_from_menu(self, checked):
+        self._session_pack_coverage_hidden = False
+        if hasattr(self.main_win, "toggle_pack_coverage"):
+            self.main_win.toggle_pack_coverage(checked)
+
+    def hide_pack_coverage_session(self):
+        """Temporary hide for this session without changing saved setting (T-1415 § 33)."""
+        self._session_pack_coverage_hidden = True
+        self.refresh_pack_coverage()
+
+    def _confirm_clear_coverage_history(self):
+        """Confirm and clear coverage history for active silo (T-1415 § 34)."""
+        from PyQt6.QtWidgets import QMessageBox
+        lang = getattr(self.main_win, '_current_lang', 'EN')
+        reply = QMessageBox.question(
+            self,
+            tr("Clear Coverage History", lang),
+            tr("Are you sure you want to clear pack coverage history for the active silo? This will not delete any ZIP archives or modify text.", lang),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            if hasattr(self.main_win, "clear_pack_coverage_for_current_silo"):
+                self.main_win.clear_pack_coverage_for_current_silo()
+
     def gutter_rows(self, limit=200):
         """Which blocks get a number, and how tall their row really is.
 
@@ -1010,6 +1363,18 @@ class VaultTextEdit(QTextEdit):
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(stripe)
                     painter.drawRect(width - 3, top + 1, 2, max(1, h - 2))
+
+                # T-1415: Pack Coverage Overlay Gutter Rendering
+                if self.is_pack_coverage_visible() and self._coverage_map:
+                    self._paint_coverage_marker(
+                        painter,
+                        block_number + 1,
+                        top,
+                        row_height,
+                        is_hovered=is_hovered,
+                        cov_x=(self.line_number_area.width() - 6 if queue_state
+                               else self.line_number_area.width() - 3),
+                    )
 
         finally:
             painter.end()
@@ -2954,6 +3319,12 @@ class VaultTextEdit(QTextEdit):
             return
         if (not sip.isdeleted(self)
                 and event.button() == Qt.MouseButton.LeftButton):
+            if not getattr(self, "_in_mouse_gesture", False) and not getattr(self, "_suppress_interaction_recording", False):
+                self._mouse_gesture_pre_state = self._capture_cursor_state()
+                doc = self.document()
+                self._mouse_gesture_doc_rev = doc.revision() if doc else -1
+                self._mouse_gesture_undo_steps = doc.availableUndoSteps() if doc else -1
+                self._in_mouse_gesture = True
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                 self._ctrl_click_bump(event.pos())
             if self.image_hit_at(event.pos()) is not None:
@@ -3022,6 +3393,13 @@ class VaultTextEdit(QTextEdit):
     def mousePressEvent(self, event):
         if sip.isdeleted(self):
             return
+        if (event.button() == Qt.MouseButton.LeftButton
+                and not getattr(self, "_suppress_interaction_recording", False)):
+            self._mouse_gesture_pre_state = self._capture_cursor_state()
+            doc = self.document()
+            self._mouse_gesture_doc_rev = doc.revision() if doc else -1
+            self._mouse_gesture_undo_steps = doc.availableUndoSteps() if doc else -1
+            self._in_mouse_gesture = True
         try:
             # Live Preview: remember a link under the press (open is deferred to
             # release, so a drag/selection that starts on a link still works).
@@ -3334,6 +3712,17 @@ class VaultTextEdit(QTextEdit):
 
     def mouseReleaseEvent(self, event):
         line_drag_source = getattr(self, "_line_drag_source_block", None)
+        if getattr(self, "_in_mouse_gesture", False) and (
+            line_drag_source is not None
+            or getattr(self, "_fold_pressed_block", None) is not None
+            or getattr(self, "_link_copy_pressed", None) is not None
+            or getattr(self, "_image_copy_pressed", None) is not None
+            or getattr(self, "_copy_pressed_block", None) is not None
+            or getattr(self, "_ts_pressed_block", None) is not None
+            or getattr(self, "_silo_bundle_pressed_block", None) is not None
+        ):
+            self._in_mouse_gesture = False
+            self._mouse_gesture_pre_state = None
         if line_drag_source is not None and event.button() == Qt.MouseButton.LeftButton:
             was_active = getattr(self, "_line_drag_active", False)
             hover = getattr(self, "_line_drag_hover_block", None)
@@ -3409,6 +3798,19 @@ class VaultTextEdit(QTextEdit):
             event.accept()
             return
         super().mouseReleaseEvent(event)
+        if getattr(self, "_in_mouse_gesture", False) and event.button() == Qt.MouseButton.LeftButton:
+            self._in_mouse_gesture = False
+            pre = getattr(self, "_mouse_gesture_pre_state", None)
+            self._mouse_gesture_pre_state = None
+            if pre is not None and not getattr(self, "_suppress_interaction_recording", False):
+                doc = self.document()
+                if doc is not None and not sip.isdeleted(doc):
+                    post = self._capture_cursor_state()
+                    doc_rev = doc.revision()
+                    undo_steps = doc.availableUndoSteps()
+                    if (doc_rev == getattr(self, "_mouse_gesture_doc_rev", -1)
+                            and undo_steps == getattr(self, "_mouse_gesture_undo_steps", -1)):
+                        self._record_selection_interaction_if_meaningful(pre, post)
         # Live Preview: a plain click that landed on a link (and didn't turn
         # into a drag/selection) opens it. Deferred from press so dragging
         # across a link still selects text.
@@ -3798,6 +4200,19 @@ class VaultTextEdit(QTextEdit):
         shortcut and does not show it is the defect this fixes, so the glyph
         is no exception.
         """
+        # T-1415: Tooltip on viewport coverage marker (when gutter is disabled)
+        if not self._gutter_active() and self.is_pack_coverage_visible() and event.pos().x() <= 8:
+            blk = self.cursorForPosition(event.pos()).block()
+            if blk.isValid() and self._coverage_map:
+                state, item = self._coverage_map.get_line_state(blk.blockNumber() + 1)
+                if state is not None and item is not None:
+                    tip = self._format_coverage_tooltip(state, item)
+                    if tip:
+                        from PyQt6.QtWidgets import QToolTip
+                        QToolTip.showText(event.globalPos(), tip, self)
+                        event.accept()
+                        return None
+
         try:
             if self._silo_bundle_block_at(event.pos()) is None:
                 return super().helpEvent(event)
@@ -3805,23 +4220,33 @@ class VaultTextEdit(QTextEdit):
             return super().helpEvent(event)
         from PyQt6.QtWidgets import QToolTip
         lang = getattr(self.main_win, '_current_lang', 'EN')
-        from fastprompter.ui.shortcut_display import resolve, tooltip_with_shortcut
-        tip = (
-            tr("Pack Silo", lang)
-            + "\n" + tr("Click: Smart Quick Pack (reuses identical bundle)", lang)
-            + "\n" + tr("Shift+Click: Pack With Options", lang)
-            + "\n" + tr("Ctrl+Click: Force Repack", lang)
-            + "\n" + tr("Ctrl+Shift+Click: Copy Last Bundle", lang)
-            + "\n" + tr("Alt+Click: Open Last Bundle Folder", lang)
-            + "\n" + tr("Right-click: more bundle actions", lang)
-        )
-        QToolTip.showText(
-            event.globalPos(),
-            tooltip_with_shortcut(tip, resolve(self.main_win, "hk_pack_silo"),
-                                  lang),
-            self)
+        tip = self._pack_tooltip_text(lang)
+        QToolTip.showText(event.globalPos(), tip, self)
         event.accept()
         return None
+
+    def _pack_tooltip_text(self, lang="EN"):
+        """T-1409 / T-1428: Complete hover cheat sheet for the header Pack control.
+        Shows all keyboard and mouse shortcuts for bundling/packing."""
+        from fastprompter.ui.shortcut_display import resolve
+        hk_pack = resolve(self.main_win, "hk_pack_silo")
+        hk_sel = resolve(self.main_win, "hk_pack_selection")
+        hk_export = resolve(self.main_win, "hk_export_silo")
+        title = tr("Pack Silo ({})", lang).format(hk_pack) if hk_pack else tr("Pack Silo", lang)
+        lines = [title]
+        if hk_sel:
+            lines.append(f"{tr('Fast Pack Selection', lang)}: {hk_sel}")
+        if hk_export:
+            lines.append(f"{tr('Export Silo to file', lang)}: {hk_export}")
+        lines.extend([
+            tr("Click: Smart Quick Pack (reuses identical bundle)", lang),
+            tr("Shift+Click: Pack With Options", lang),
+            tr("Ctrl+Click: Force Repack", lang),
+            tr("Ctrl+Shift+Click: Copy Last Bundle", lang),
+            tr("Alt+Click: Open Last Bundle Folder", lang),
+            tr("Right-click: more bundle actions", lang),
+        ])
+        return "\n".join(lines)
 
     def _silo_bundle_dispatch_fallback(self, _checked=False):
         self._silo_bundle_dispatch(False)
@@ -3909,6 +4334,26 @@ class VaultTextEdit(QTextEdit):
         menu.addAction(tr("Pack Silo", lang), self._silo_bundle_dispatch_fallback)
         menu.addAction(tr("Pack Silo With Options…", lang),
                        self._silo_bundle_dispatch_with_options)
+        pack_sel_act = menu.addAction(
+            f"{tr('Fast Pack Selection', lang)}\tCtrl+Shift+C",
+            lambda: self.main_win.fast_pack_selection(),
+        )
+        if not self.textCursor().hasSelection():
+            pack_sel_act.setEnabled(False)
+
+        # T-1415: Pack Coverage Overlay submenu
+        cov_menu = menu.addMenu(tr("Pack Coverage", lang))
+        show_cov_act = cov_menu.addAction(tr("Show Pack Coverage", lang))
+        show_cov_act.setCheckable(True)
+        show_cov_act.setChecked(self.is_pack_coverage_visible())
+        show_cov_act.triggered.connect(self._toggle_pack_coverage_from_menu)
+
+        if self.is_pack_coverage_visible():
+            hide_session_act = cov_menu.addAction(tr("Hide Pack Coverage for This Session", lang))
+            hide_session_act.triggered.connect(self.hide_pack_coverage_session)
+
+        clear_cov_act = cov_menu.addAction(tr("Clear Coverage History for This Silo…", lang))
+        clear_cov_act.triggered.connect(self._confirm_clear_coverage_history)
         menu.addSeparator()
         menu.addAction(tr("Expand All Folds", lang), self.unfold_all)
         # rare toolbar actions live here too (hidden from narrow headers)
@@ -5180,6 +5625,53 @@ class VaultTextEdit(QTextEdit):
     }
 
     def keyPressEvent(self, event):
+        if getattr(self, "_suppress_interaction_recording", False):
+            self._key_press_impl(event)
+            return
+
+        mods = event.modifiers()
+        is_ctrl_or_ctrl_shift = (
+            mods == Qt.KeyboardModifier.ControlModifier
+            or mods == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+        )
+        k = event.key()
+        physical = _SCAN_TO_KEY.get(event.nativeScanCode())
+        if is_ctrl_or_ctrl_shift and (k in (Qt.Key.Key_Z, Qt.Key.Key_Y) or physical in (Qt.Key.Key_Z, Qt.Key.Key_Y)):
+            self._key_press_impl(event)
+            return
+
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            self._key_press_impl(event)
+            return
+
+        pre_state = self._capture_cursor_state()
+        pre_rev = doc.revision()
+        pre_steps = doc.availableUndoSteps()
+        is_repeat = event.isAutoRepeat()
+
+        self._key_press_impl(event)
+
+        cur_doc = self.document()
+        if cur_doc is not doc or cur_doc is None or sip.isdeleted(cur_doc):
+            return
+        if getattr(self, "_suppress_interaction_recording", False):
+            return
+
+        if cur_doc.revision() != pre_rev or cur_doc.availableUndoSteps() != pre_steps:
+            return
+
+        post_state = self._capture_cursor_state()
+        if is_repeat:
+            history = get_document_interaction_history(cur_doc)
+            if history and history.can_undo():
+                history.update_top_after(post_state)
+            else:
+                self._record_selection_interaction_if_meaningful(pre_state, post_state)
+        else:
+            self._record_selection_interaction_if_meaningful(pre_state, post_state)
+
+    def _key_press_impl(self, event):
         if event.key() == Qt.Key.Key_Escape and getattr(self, "_line_drag_source_block", None) is not None:
             self._cancel_line_drag()
             event.accept()
@@ -5301,18 +5793,22 @@ class VaultTextEdit(QTextEdit):
             # so under a non-Latin layout they never fire. Only that case is
             # intercepted — on a Latin layout the event still falls through
             # to Qt exactly as before.
+            if std_key == Qt.Key.Key_A:
+                self.selectAll()
+                event.accept()
+                return
             if std_key != event.key():
-                if std_key == Qt.Key.Key_A:
-                    self.selectAll()
-                    event.accept()
-                    return
                 if std_key == Qt.Key.Key_X and not self.isReadOnly():
                     self.cut()
                     event.accept()
                     return
 
-        if mods == Qt.KeyboardModifier.ControlModifier and event.key() in (Qt.Key.Key_Z, Qt.Key.Key_Y):
-            if event.key() == Qt.Key.Key_Z:
+        is_ctrl_z = (mods == Qt.KeyboardModifier.ControlModifier and (event.key() == Qt.Key.Key_Z or std_key == Qt.Key.Key_Z))
+        is_ctrl_y = (mods == Qt.KeyboardModifier.ControlModifier and (event.key() == Qt.Key.Key_Y or std_key == Qt.Key.Key_Y))
+        is_ctrl_shift_z = (mods == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier) and (event.key() == Qt.Key.Key_Z or std_key == Qt.Key.Key_Z))
+
+        if is_ctrl_z or is_ctrl_y or is_ctrl_shift_z:
+            if is_ctrl_z:
                 if hasattr(mw, "_smart_undo"): mw._smart_undo()
             else:
                 if hasattr(mw, "_smart_redo"): mw._smart_redo()
@@ -5656,6 +6152,19 @@ class VaultTextEdit(QTextEdit):
             return
         doc = self.document()
         if doc and not sip.isdeleted(doc):
+            mw = getattr(self, "main_win", None)
+            in_undo_redo = (
+                getattr(self, "_suppress_interaction_recording", False)
+                or (mw and (getattr(mw, "_in_smart_undo", False) or getattr(mw, "_in_smart_redo", False)))
+            )
+            if not in_undo_redo and (removed > 0 or added > 0):
+                history = getattr(doc, "_fastprompter_interaction_history", None)
+                if history is not None:
+                    history.clear_redo()
+                if mw and hasattr(mw, "_undo_kinds"):
+                    kinds = mw._undo_kinds()
+                    if kinds and "interaction" in kinds:
+                        mw._undo_kinds()[:] = [k for k in kinds if k != "interaction"]
             first = doc.findBlock(position)
             last = doc.findBlock(max(position, position + added))
             
@@ -6122,6 +6631,11 @@ class VaultTextEdit(QTextEdit):
                         if zebra_enabled and bnum % 2 == 1 and not is_code_block:
                             line_rect = QRectF(0, br.top(), vp_rect.width(), br.height())
                             painter.fillRect(line_rect, zebra_odd)
+
+                        # T-1415: Viewport edge pack coverage marker when gutter is inactive
+                        if not self._gutter_active() and self.is_pack_coverage_visible() and self._coverage_map:
+                            self._paint_coverage_marker(painter, bnum + 1, int(br.top()), int(br.height()),
+                                                        is_hovered=False, cov_x=1)
 
                         # Inline copy button on opening code fences:
                         # click copies the block's content to the clipboard

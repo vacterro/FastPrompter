@@ -36,6 +36,7 @@ Nothing is estimated: no bucket, no window.
 
 from __future__ import annotations
 
+import base64
 import datetime
 import hashlib
 import json
@@ -54,15 +55,15 @@ from fastprompter.core.usage_limits.cli_tools import resolve_binary, run_cli
 _rejected_auth_signature: str | None = None
 
 
-def _credential_signature() -> str | None:
-    """Digest of a usable Antigravity credential, or ``None``.
+def _read_credential() -> tuple[bytes, dict]:
+    """The stored Antigravity credential as ``(raw, parsed)``, or ``("", {})``.
 
-    The digest changes when an explicit login refreshes/replaces the token, so
-    a previously rejected credential becomes eligible automatically without a
-    FastPrompter restart.
+    Deliberately narrow: the payload carries live OAuth tokens, so only the two
+    callers below may touch it and neither logs, returns or forwards it. Both
+    reduce it immediately to a non-secret digest or claim.
     """
     if os.name != "nt":
-        return None
+        return b"", {}
     try:
         import ctypes
         from ctypes import wintypes
@@ -87,22 +88,110 @@ def _credential_signature() -> str | None:
         pcred = ctypes.POINTER(_CREDENTIAL)()
         if not advapi32.CredReadW(
                 "gemini:antigravity", 1, 0, ctypes.byref(pcred)) or not pcred:
-            return None
+            return b"", {}
         try:
             cred = pcred.contents
             if not cred.CredentialBlob or cred.CredentialBlobSize <= 0:
-                return None
+                return b"", {}
             raw = ctypes.string_at(cred.CredentialBlob, cred.CredentialBlobSize)
             data = json.loads(raw.decode("utf-8", errors="replace"))
             token_info = data.get("token") or {}
             if not (token_info.get("access_token") or
                     token_info.get("refresh_token")):
-                return None
-            return hashlib.sha256(raw).hexdigest()
+                return b"", {}
+            return raw, data
         finally:
             advapi32.CredFree(pcred)
     except Exception:
+        return b"", {}
+
+
+def _credential_signature() -> str | None:
+    """Digest of a usable Antigravity credential, or ``None``.
+
+    The digest changes when an explicit login refreshes/replaces the token, so
+    a previously rejected credential becomes eligible automatically without a
+    FastPrompter restart.
+
+    This is a ROTATION detector and never an identity: it changes on every
+    token refresh, which is precisely what this caller wants and precisely
+    what an account fingerprint must not do. See :func:`read_identity`.
+    """
+    raw, _data = _read_credential()
+    if not raw:
         return None
+    return hashlib.sha256(raw).hexdigest()
+
+
+# -- provider identity ------------------------------------------------------
+#
+# The one fact that separates "two Windows users" from "two Google accounts":
+# the ``sub`` claim inside Antigravity's stored Google id_token. It is the
+# provider's own stable account id. It survives reconnect, broker restart,
+# SAITULS restart, Windows restart and every OAuth token refresh, and it changes
+# only when a different human signs in.
+#
+# Quota can never stand in for it. Two distinct accounts legitimately both read
+# 100%; one account legitimately reads 100% in two independent pools. Only
+# authenticated provider metadata proves identity.
+#
+# Only the claim is read. The token is never returned, logged or retained, and
+# the fingerprint is a one-way digest, so no email address ever reaches a cache
+# key, a log line or a UI row.
+
+IDENTITY_SOURCE_SUB = "google_id_token_sub"
+IDENTITY_SOURCE_EMAIL = "google_id_token_email"
+
+
+def _jwt_claims(id_token) -> dict:
+    """The claim set of a JWT, or ``{}``.
+
+    No signature verification: the token came out of this machine's own
+    credential store, and nothing here trusts it for anything but a non-secret
+    subject id. An unparsable token yields no identity, which is the honest
+    answer rather than a guess.
+    """
+    if not isinstance(id_token, str) or id_token.count(".") < 2:
+        return {}
+    try:
+        segment = id_token.split(".")[1]
+        padded = segment + "=" * (-len(segment) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded.encode()))
+    except Exception:
+        return {}
+    return claims if isinstance(claims, dict) else {}
+
+
+def _fingerprint(value: str) -> str:
+    """One-way digest of a provider subject id; never reversible to its source."""
+    return hashlib.sha256(value.strip().encode()).hexdigest()[:16]
+
+
+def read_identity() -> dict:
+    """The PROVIDER ACCOUNT behind the current user's Antigravity credential.
+
+    Returns ``{}`` when no identity can be proven: an unauthenticated machine,
+    an unparsable token, or a token carrying no subject. An empty answer is not
+    an error and never a merge signal — an account with no proven identity keeps
+    its own private cache entry instead of being folded into anyone else's.
+
+    The reading is scoped to this process's Windows user, which is the entire
+    point of it: it describes the identity whose credential store was actually
+    read, so it can never be borrowed by an account running as somebody else.
+    """
+    _raw, data = _read_credential()
+    if not data:
+        return {}
+    claims = _jwt_claims(data.get("id_token", ""))
+    subject = claims.get("sub")
+    if isinstance(subject, str) and subject.strip():
+        return {"fingerprint": _fingerprint(subject),
+                "source": IDENTITY_SOURCE_SUB, "verified": True}
+    email = claims.get("email")
+    if isinstance(email, str) and email.strip():
+        return {"fingerprint": _fingerprint(email.strip().lower()),
+                "source": IDENTITY_SOURCE_EMAIL, "verified": True}
+    return {}
 
 
 def is_authenticated() -> bool:

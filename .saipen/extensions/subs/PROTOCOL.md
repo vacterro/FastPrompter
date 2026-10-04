@@ -144,6 +144,24 @@ File: `<name>/kitchen/OUTBOX.md`. The only channel back to the main agent.
 `critical: true` = bug, broken behavior, data loss, security issue.
 `critical: false` = improvement, docs, refactor, cosmetic.
 
+**Run the bar before you leave the role. A non-zero exit means the write is
+refused.** `saipen outbox check <your-role>` applies the SAME closed grammar the
+collect gate applies, read through the same one-path resolver, and exits 1
+naming every violation. It is read-only, so it cannot turn a violation into
+compliance -- it refuses, it never repairs, and a package that is merely
+well-formatted is not the same as a package that is correct.
+
+This step exists because the grammar is otherwise only read at CONSUMPTION.
+A subSaipen appends its package by editing this file, and the strict parse
+over it runs under `--gate collect:<role>` -- while producer findings are
+deliberately WARN under `core` (T-568), so a role nobody collects can hold a
+malformed package indefinitely and the main project still reports conformant.
+That is not hypothetical: one OUTBOX written in a single session carried a
+malformed package heading, a `source_tree_fingerprint` holding English prose
+instead of the canonical digest, a `status` outside the enum above, and four
+duplicate fields, and nothing objected for the rest of that session. Run the
+check; fix what it names; run it again until it exits 0.
+
 **Not enough information is a `blocked` entry, never a guess.** CORE.md §1.11
 requires a Core agent short of a fact to stop and write a `WAIT:` naming it.
 A subSaipen cannot do that -- it has no `WAIT:` any human reads; its own

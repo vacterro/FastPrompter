@@ -96,6 +96,11 @@ from fastprompter.theme.themes import THEMES
 from fastprompter.ui.cursor_mixin import CursorMixin
 from fastprompter.ui.edit_guard import edit_block
 from fastprompter.ui.editor import VaultTextEdit
+from fastprompter.ui.interaction_undo import (
+    CursorSelectionState,
+    SelectionInteractionRecord,
+    get_document_interaction_history,
+)
 from fastprompter.ui.fancy_zones import FancyZoneOverlay
 from fastprompter.ui.formatting_mixin import FormattingMixin
 from fastprompter.ui.hotkey_mixin import HotkeyMixin
@@ -1322,6 +1327,10 @@ class FastPrompter(
     def _tray_visible(self):
         return self.data.get("tray_visible", "True") == "True"
 
+    @property
+    def text_edit(self):
+        return getattr(self, "text_area", None)
+
 
     def __init__(self):
         super().__init__()
@@ -1997,6 +2006,11 @@ class FastPrompter(
                     and getattr(s, "error_code", "") in EXPECTED_QUIET_CODES)
         unavailable = sum(1 for s in snapshots.values()
                           if getattr(s, "status", None) == "UNAVAILABLE") - quiet
+        pools = svc.quota_pools(accounts) if hasattr(svc, "quota_pools") else []
+        quota_count = len(pools) if pools else n
+        pool_suffix = (f" ({n} contexts / {quota_count} provider quota account{'s' if quota_count != 1 else ''})"
+                       if n != quota_count else "")
+
         if snap.status == "DISCOVERING":
             lbl.setText("scanning accounts…")
         elif snap.accounts and n == 0:
@@ -2005,7 +2019,10 @@ class FastPrompter(
             lbl.setText("no accounts found (~/.codex, ~/.codex-*, ~/.claude, "
                         "~/.gemini/antigravity)")
         elif not snapshots:
-            lbl.setText(f"discovered {n} account(s) — probing…")
+            if n != quota_count:
+                lbl.setText(f"discovered {n} contexts ({quota_count} provider quota account{'s' if quota_count != 1 else ''}) — probing…")
+            else:
+                lbl.setText(f"discovered {n} account(s) — probing…")
         elif err or unavailable:
             details = []
             if err:
@@ -2014,15 +2031,18 @@ class FastPrompter(
                 details.append(f"{unavailable} unavailable")
             if stale:
                 details.append(f"{stale} stale")
-            lbl.setText(f"{ok + stale}/{n} readable · {' · '.join(details)} · "
+            lbl.setText(f"{ok + stale}/{n} readable{pool_suffix} · {' · '.join(details)} · "
                         "hover gauges for details")
         elif stale:
-            lbl.setText(f"{ok + stale}/{n} readable · {stale} stale")
+            lbl.setText(f"{ok + stale}/{n} readable{pool_suffix} · {stale} stale")
         elif quiet:
-            lbl.setText(f"{ok}/{n} accounts OK · {quiet} idle "
+            lbl.setText(f"{ok}/{n} accounts OK{pool_suffix} · {quiet} idle "
                         "(reports only when the provider refuses work)")
         else:
-            lbl.setText(f"{ok}/{n} accounts OK")
+            if n != quota_count:
+                lbl.setText(f"{ok}/{n} accounts OK ({n} contexts / {quota_count} provider quota account{'s' if quota_count != 1 else ''})")
+            else:
+                lbl.setText(f"{ok}/{n} accounts OK")
         # This label lives in the LAZY settings panel ("Passed events" group in
         # settings_builder), so until that panel is built nothing owns it — and
         # setVisible(True) on a parentless widget does not mean "show this
@@ -3796,7 +3816,7 @@ class FastPrompter(
         if not isinstance(rules, list):
             rules = [dict(self._INTERVAL_NOTIF_DEFAULT)]
             self.data["interval_notifs"] = rules
-            self.mark_dirty()
+            self.mark_dirty("settings")
             return rules
         healed = []
         seen_ids = set()
@@ -3815,7 +3835,7 @@ class FastPrompter(
                 changed = True
         if changed:
             self.data["interval_notifs"] = healed
-            self.mark_dirty()
+            self.mark_dirty("settings")
         return healed
 
     def _check_interval_notifs(self):
@@ -3912,7 +3932,7 @@ class FastPrompter(
                             if "last_fired_minute" in rule:
                                 orig["last_fired_minute"] = rule["last_fired_minute"]
                             break
-            self.mark_dirty()
+            self.mark_dirty("settings")
 
     def _fire_interval_notif(self, rule):
         """Sound (default newday @ vol 0.5) + optional notification."""
@@ -4303,13 +4323,13 @@ class FastPrompter(
                 self, lambda w: w._decrement_focus_lock()))
         if chosen.isValid():
             self.data["hover_line_color"] = chosen.name()
-            self.mark_dirty()
+            self.mark_dirty("settings")
             self.text_area.viewport().update()
 
     def reset_hover_colour(self):
         """Back to following the theme accent."""
         self.data["hover_line_color"] = "auto"
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self.text_area.viewport().update()
 
     def _sync_snippets_toggle_button(self):
@@ -4330,7 +4350,7 @@ class FastPrompter(
         # restart even if the user never switches projects afterwards
         self.capture_silo_session()
         self.play_tick_sound(not hidden)
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self.refresh_snippets_panel()
         self._sync_snippets_toggle_button()
 
@@ -4468,7 +4488,7 @@ class FastPrompter(
             cur = self.data.get("close_on_focus_loss", "True") == "True"
             new_val = not cur
             self.data["close_on_focus_loss"] = "True" if new_val else "False"
-            self.mark_dirty()
+            self.mark_dirty("settings")
             self.play_tick_sound(new_val)
 
     def _increment_focus_lock(self):
@@ -4522,7 +4542,7 @@ class FastPrompter(
         enabled = bool(enabled)
         self.data["auto_bullet"] = "True" if enabled else "False"
         self._refresh_bullet_toggle()
-        self.mark_dirty()
+        self.mark_dirty("settings")
         return enabled
 
     def _refresh_bullet_toggle(self):
@@ -4669,7 +4689,7 @@ class FastPrompter(
         self._style_toolbar_gaps(self.data.get("customize_toolbar", "False") == "True")
         if save:
             self.data["toolbar_order"] = ",".join(order)
-            self.mark_dirty()
+            self.mark_dirty("settings")
         # widths/visibility depend on width tier — re-pack after reorder
         # (skipped during initial header build, before the editor exists)
         if hasattr(self, "text_area"):
@@ -4734,11 +4754,11 @@ class FastPrompter(
 
         self.data["toolbar_order"] = ",".join(order)
         self.apply_toolbar_order()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def on_customize_toolbar_toggled(self, checked):
         self.data["customize_toolbar"] = "True" if checked else "False"
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self.refresh_toolbar_customize_state()
 
     def refresh_toolbar_customize_state(self):
@@ -4884,7 +4904,7 @@ class FastPrompter(
             return None
         comp = self._allocate_category_dir(cat, mapping)
         mapping[cat] = comp
-        self.mark_dirty()
+        self.mark_dirty("settings")
         return comp
 
     def _allocate_category_dir(self, cat, mapping):
@@ -4979,14 +4999,14 @@ class FastPrompter(
                     result = self._rename_silo_folder(cat, cur, base)
                     if result in ("RENAMED", "NOT_NEEDED"):
                         fmap[key] = base
-                        self.mark_dirty()
+                        self.mark_dirty("settings")
             return fmap[key]
         # first assignment: adopt an existing on-disk folder if it's unclaimed,
         # else pick a unique name
         taken = set(fmap.values())
         if base not in taken and _probe_exists(base):
             fmap[key] = base
-            self.mark_dirty()
+            self.mark_dirty("settings")
             return base
         name, n = base, 2
         while name in taken:
@@ -5000,7 +5020,7 @@ class FastPrompter(
         if not in_range or not (text.strip() or _probe_exists(name)):
             return name
         fmap[key] = name
-        self.mark_dirty()
+        self.mark_dirty("settings")
         return name
 
     def _folder_on_disk(self, cat, name):
@@ -5092,7 +5112,7 @@ class FastPrompter(
         # CORE-003: the text->folder association is consumed once the folder
         # it referenced has been restored (no stale/ambiguous link lingers).
         self.data.get("trash_text_folder", {}).pop(md_basename, None)
-        self.mark_dirty()
+        self.mark_dirty("settings")
         return name
 
     def _rename_silo_folder(self, cat, old_name, new_name):
@@ -5202,6 +5222,28 @@ class FastPrompter(
         if cand.startswith("#"):
             cand = cand.lstrip("#").strip()
         return (cand or "silo")[:100]
+
+    def active_silo_title(self, fallback="Selection"):
+        """The active silo's display title: its primary heading or first line, else fallback."""
+        fallback_label = ""
+        try:
+            slot = int(getattr(self, "active_temp_slot", 0))
+            fallback_label = self.silo_queue_label(slot)
+        except Exception:
+            pass
+        doc_text = ""
+        try:
+            doc_text = self._editor_text_snapshot()
+        except Exception:
+            pass
+        if not doc_text:
+            ta = getattr(self, "text_area", None) or getattr(self, "text_edit", None)
+            if ta and hasattr(ta, "toPlainText"):
+                try:
+                    doc_text = ta.toPlainText()
+                except Exception:
+                    pass
+        return self._silo_bundle_title(doc_text, fallback=fallback_label or fallback) or fallback
 
     def _silo_media_meta(self, silo_id):
         """{canonical path: first-seen epoch} for one silo, or {}.
@@ -5498,6 +5540,10 @@ class FastPrompter(
                 cands.append(r)
         return cands
 
+    def _silo_bundle_candidates_for_target(self, silo_id, target_dir):
+        """Reusable candidate bundle records for this silo and target_dir (alias for T-1414)."""
+        return self._silo_bundle_history_candidates(silo_id, target_dir)
+
     def _silo_bundle_last_existing(self, silo_id):
         """Newest existing managed archive record for THIS silo (T-1411 § 8)."""
         hist = self._silo_bundle_history(silo_id, clean_missing=True)
@@ -5509,8 +5555,9 @@ class FastPrompter(
 
     def _silo_bundle_record_success(self, silo_id, zip_path, display_title, fingerprint,
                                    target_dir, options_sig, archive_size, archive_mtime_ns,
-                                   signatures=None, silo_dir=None, keep_versions=5):
-        """Record successful bundle in history and apply retention (T-1411 §§ 7, 26)."""
+                                   signatures=None, silo_dir=None, keep_versions=5,
+                                   bundle_kind="silo_bundle"):
+        """Record successful bundle in history and apply retention (T-1411 §§ 7, 26, T-1414)."""
         if not silo_id or not zip_path:
             return
         store = self.data.get("silo_bundle_history")
@@ -5527,6 +5574,7 @@ class FastPrompter(
             "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
             "display_title": display_title,
             "content_fingerprint": fingerprint,
+            "bundle_kind": bundle_kind,
             "target_dir": target_dir,
             "options_signature": {
                 "include_text": options_sig.get("include_text"),
@@ -5540,10 +5588,14 @@ class FastPrompter(
         records.insert(0, new_rec)
 
         from fastprompter.core import silo_bundle as sb
-        exports_dir = os.path.join(silo_dir, "exports") if silo_dir else target_dir
+        exports_dir = (
+            target_dir if bundle_kind == "selection_bundle"
+            else (os.path.join(silo_dir, "exports") if silo_dir else target_dir)
+        )
         pruned_records, _pruned_paths = sb.prune_silo_history(
             records, canonical_exports_dir=exports_dir,
-            keep_versions=keep_versions, prune_custom=False)
+            keep_versions=keep_versions, prune_custom=False,
+            bundle_kind=bundle_kind)
 
         store[str(silo_id)] = {
             "records": pruned_records,
@@ -5554,7 +5606,7 @@ class FastPrompter(
         except Exception:
             pass
 
-    def _silo_bundle_apply_retention(self, silo_id, silo_dir, keep_versions=5):
+    def _silo_bundle_apply_retention(self, silo_id, silo_dir, keep_versions=5, bundle_kind=None):
         """Apply retention on existing history (e.g. after reuse hit with changed retention)."""
         if not silo_id:
             return
@@ -5566,16 +5618,95 @@ class FastPrompter(
         if not records:
             return
         from fastprompter.core import silo_bundle as sb
-        exports_dir = os.path.join(silo_dir, "exports") if silo_dir else ""
+        exports_dir = (
+            os.path.join(silo_dir, "exports", "fast")
+            if bundle_kind == "selection_bundle" and silo_dir
+            else (os.path.join(silo_dir, "exports") if silo_dir else "")
+        )
         pruned_records, _pruned_paths = sb.prune_silo_history(
             records, canonical_exports_dir=exports_dir,
-            keep_versions=keep_versions, prune_custom=False)
+            keep_versions=keep_versions, prune_custom=False,
+            bundle_kind=bundle_kind)
         hist["records"] = pruned_records
         store[str(silo_id)] = hist
         try:
             self.save_data_to_db()
         except Exception:
             pass
+
+    def _get_coverage_store(self):
+        """Lazy-load the CoverageStore from persistent profile data (T-1415 § 19)."""
+        if not hasattr(self, "_coverage_store") or self._coverage_store is None:
+            from fastprompter.core import silo_coverage as sc
+            raw = self.data.get("silo_pack_coverage")
+            self._coverage_store = sc.CoverageStore.from_dict(raw)
+        return self._coverage_store
+
+    def _record_bundle_coverage(
+        self,
+        silo_id,
+        bundle_kind,
+        archive_name,
+        document_text,
+        selected_text=None,
+        media_files=(),
+        clipboard_success=True,
+    ):
+        """Record a successful bundle coverage event and update live editor overlay (T-1415 §§ 9, 10, 16)."""
+        if not silo_id or not document_text:
+            return
+        from fastprompter.core import silo_coverage as sc
+        store = self._get_coverage_store()
+        event = sc.create_bundle_coverage_event(
+            silo_id=str(silo_id),
+            bundle_kind=str(bundle_kind),
+            archive_name=str(archive_name),
+            markdown_text=str(document_text),
+            selected_text=str(selected_text) if selected_text is not None else None,
+            clipboard_success=bool(clipboard_success),
+        )
+        store.record_event(event)
+        self.data["silo_pack_coverage"] = store.to_dict()
+        try:
+            self.save_data_to_db()
+        except Exception:
+            pass
+        text_edit = getattr(self, "text_edit", None) or getattr(self, "text_area", None)
+        if text_edit and hasattr(text_edit, "trigger_pack_coverage_event"):
+            text_edit.trigger_pack_coverage_event()
+
+    def clear_pack_coverage_for_current_silo(self):
+        """Clear pack coverage history for the active silo without deleting ZIPs (T-1415 § 34)."""
+        silo_id = self._active_silo_id()
+        if not silo_id:
+            return
+        store = self._get_coverage_store()
+        store.clear_silo(str(silo_id))
+        self.data["silo_pack_coverage"] = store.to_dict()
+        self.mark_dirty("settings")
+        try:
+            self.save_data_to_db()
+        except Exception:
+            pass
+        text_edit = getattr(self, "text_edit", None) or getattr(self, "text_area", None)
+        if text_edit and hasattr(text_edit, "refresh_pack_coverage"):
+            text_edit.refresh_pack_coverage()
+
+    def toggle_pack_coverage(self, checked):
+        """Toggle the Pack Coverage Overlay setting (T-1415 § 4)."""
+        self.data["show_pack_coverage"] = "True" if checked else "False"
+        if hasattr(self, "cb_pack_coverage"):
+            self.cb_pack_coverage.blockSignals(True)
+            self.cb_pack_coverage.setChecked(bool(checked))
+            self.cb_pack_coverage.blockSignals(False)
+        self.mark_dirty("settings")
+        try:
+            self.save_data_to_db()
+        except Exception:
+            pass
+        text_edit = getattr(self, "text_edit", None) or getattr(self, "text_area", None)
+        if text_edit and hasattr(text_edit, "refresh_pack_coverage"):
+            text_edit.refresh_pack_coverage()
 
     def _silo_bundle_capture(self, options=None):
         """Freeze everything one bundle needs, on the GUI thread, at click time."""
@@ -5659,6 +5790,217 @@ class FastPrompter(
         }
 
     # --- entry points -------------------------------------------------
+    def fast_pack_selection(self):
+        """Ctrl+Shift+C: Fast Pack Selection (T-1414).
+
+        Takes ONLY selected text and its referenced local media, generates
+        structured sidecars, builds a compact ZIP in <silo>/exports/fast/,
+        and places the ZIP path onto the Windows clipboard.
+        """
+        lang = getattr(self, "_current_lang", "EN")
+        editor = getattr(self, "text_area", None) or getattr(self, "text_edit", None)
+        if not editor:
+            return None
+        cursor = editor.textCursor()
+        if not cursor.hasSelection():
+            self._show_in_app_toast(
+                tr("Select text to pack first.", lang),
+                "",
+                header=tr("Fast Pack", lang),
+                duration_ms=4000,
+            )
+            return None
+
+        doc_text = editor.toPlainText()
+        sel_start = cursor.selectionStart()
+        sel_end = cursor.selectionEnd()
+
+        from fastprompter.core import silo_bundle as sb
+        exp_start, exp_end = sb.expand_selection_token_boundaries(
+            doc_text, sel_start, sel_end
+        )
+        selected_text = doc_text[exp_start:exp_end]
+        if sb.is_blank_selection(selected_text):
+            self._show_in_app_toast(
+                tr("Select text to pack first.", lang),
+                "",
+                header=tr("Fast Pack", lang),
+                duration_ms=4000,
+            )
+            return None
+
+        # Guard in-flight
+        with _BUNDLE_OP_LOCK:
+            registry = getattr(self, "_bundle_ops", None) or {}
+            silo_id = self._active_silo_id()
+            for running in registry.values():
+                if running.capture.get("silo_id") == silo_id:
+                    self._show_in_app_toast(
+                        tr("Packing already in progress", lang),
+                        "",
+                        header=tr("Fast Pack", lang),
+                        duration_ms=4000,
+                    )
+                    return None
+
+        try:
+            slot = int(self.active_temp_slot)
+            is_archive = bool(getattr(self, "active_is_archive", False))
+        except Exception:
+            slot, is_archive = 0, False
+
+        silo_dir = self._silo_folder_dir(slot, is_archive)
+        if not silo_dir:
+            self._silo_bundle_report_unavailable()
+            return None
+
+        target_dir = os.path.join(silo_dir, "exports", "fast")
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except OSError as exc:
+            self._show_in_app_toast(
+                tr("Could not publish the archive: ", lang) + str(exc)[:160],
+                "",
+                header=tr("Fast Pack", lang),
+                duration_ms=6000,
+            )
+            return None
+
+        line_start = doc_text[:exp_start].count("\n") + 1
+        line_end = line_start + selected_text.count("\n")
+        title = (
+            self.active_silo_title()
+            if hasattr(self, "active_silo_title")
+            else self._silo_bundle_title(doc_text, fallback="Selection")
+        ) or "Selection"
+        category = (
+            (self.get_current_category() if hasattr(self, "get_current_category") else "")
+            or getattr(self, "active_project", "")
+            or ""
+        )
+        app_version = getattr(self, "VERSION", "0.8.72")
+
+        plan = sb.plan_selection_bundle(
+            selected_text=selected_text,
+            title=title,
+            target_dir=target_dir,
+            silo_dir=silo_dir,
+            category=category,
+            app_version=app_version,
+            line_start=line_start,
+            line_end=line_end,
+        )
+
+        # Smart reuse check
+        cands = self._silo_bundle_candidates_for_target(silo_id, target_dir)
+        eff_opts = {"keep_versions": 5}
+        for cand in cands:
+            if cand.get("bundle_kind") != "selection_bundle":
+                continue
+            cand_fp = cand.get("content_fingerprint")
+            if not cand_fp or cand_fp != plan.manifest.get("content_fingerprint"):
+                continue
+            cand_path = cand.get("path")
+            if not cand_path or not os.path.isfile(cand_path):
+                continue
+            if sb.verify_reuse_candidate(
+                cand_path,
+                cand_fp,
+                cand.get("archive_size"),
+                cand.get("archive_mtime_ns"),
+            ):
+                self._last_bundle_path = cand_path
+                self._silo_bundle_apply_retention(
+                    silo_id, silo_dir, keep_versions=5, bundle_kind="selection_bundle"
+                )
+                from fastprompter.ui.image_viewer import copy_files_to_clipboard
+                copied = copy_files_to_clipboard([cand_path])
+                if hasattr(self, "_record_bundle_coverage"):
+                    self._record_bundle_coverage(
+                        silo_id=silo_id,
+                        bundle_kind="selection_bundle",
+                        archive_name=os.path.basename(cand_path),
+                        document_text=doc_text,
+                        selected_text=selected_text,
+                        clipboard_success=bool(copied),
+                    )
+                status = (
+                    tr("Existing archive copied to clipboard", lang)
+                    if copied
+                    else tr("Clipboard unavailable", lang)
+                )
+                self._show_in_app_toast(
+                    tr("Bundle unchanged", lang),
+                    f"{os.path.basename(cand_path)}",
+                    header=tr("Fast Pack", lang),
+                    status=status,
+                    duration_ms=5000,
+                    actions=[(tr("Open folder", lang), lambda: self._reveal_path(target_dir))],
+                )
+                return cand_path
+
+        # Write fresh bundle
+        result = sb.write_bundle(plan)
+        if result.error or not result.zip_path:
+            self._show_in_app_toast(
+                tr("Nothing was written and the clipboard was left alone.", lang),
+                "",
+                header=tr("Fast Pack", lang),
+                status=tr("Could not publish the archive: ", lang) + str(result.error)[:160],
+                duration_ms=7000,
+            )
+            return None
+
+        zip_path = result.zip_path
+        self._last_bundle_path = zip_path
+        self._silo_bundle_record_success(
+            silo_id=silo_id,
+            zip_path=zip_path,
+            display_title=f"Fast: {title}",
+            fingerprint=result.fingerprint,
+            target_dir=target_dir,
+            options_sig=eff_opts,
+            archive_size=result.archive_size,
+            archive_mtime_ns=result.archive_mtime_ns,
+            signatures=result.signatures,
+            silo_dir=silo_dir,
+            keep_versions=5,
+            bundle_kind="selection_bundle",
+        )
+
+        from fastprompter.ui.image_viewer import copy_files_to_clipboard
+        copied = copy_files_to_clipboard([zip_path])
+        if hasattr(self, "_record_bundle_coverage"):
+            self._record_bundle_coverage(
+                silo_id=silo_id,
+                bundle_kind="selection_bundle",
+                archive_name=os.path.basename(zip_path),
+                document_text=doc_text,
+                selected_text=selected_text,
+                clipboard_success=bool(copied),
+            )
+        idx_status = getattr(result, "index_status", "full")
+        status = (
+            tr("Copied to clipboard", lang)
+            if copied
+            else tr("Clipboard unavailable", lang)
+        )
+        if idx_status == "degraded":
+            status += " · " + tr("Structured index degraded", lang)
+        elif idx_status == "unavailable":
+            status += " · " + tr("Structured index unavailable", lang)
+        item_count = len(result.items)
+        detail = tr("%n item(s) packed", lang).replace("%n", str(item_count))
+        self._show_in_app_toast(
+            f"{os.path.basename(zip_path)}\n{detail}",
+            "",
+            header=tr("Fast Pack", lang),
+            status=status,
+            duration_ms=6000,
+            actions=[(tr("Open folder", lang), lambda: self._reveal_path(target_dir))],
+        )
+        return zip_path
+
     def silo_bundle_quick_pack(self):
         """Left click on the Pack control: smart quick pack with defaults."""
         return self._silo_bundle_request({"guard_inflight": True})
@@ -5861,6 +6203,15 @@ class FastPrompter(
 
             from fastprompter.ui.image_viewer import copy_files_to_clipboard
             copied = copy_files_to_clipboard([zip_path])
+            if hasattr(self, "_record_bundle_coverage") and op.capture.get("plan_kwargs", {}).get("include_text", True):
+                self._record_bundle_coverage(
+                    silo_id=silo_id,
+                    bundle_kind="silo_bundle",
+                    archive_name=os.path.basename(zip_path),
+                    document_text=op.capture.get("plan_kwargs", {}).get("text", ""),
+                    selected_text=None,
+                    clipboard_success=bool(copied),
+                )
             status = (tr("Existing archive copied to clipboard", lang) if copied
                       else tr("Clipboard unavailable", lang))
             self._show_in_app_toast(
@@ -5904,9 +6255,19 @@ class FastPrompter(
 
         from fastprompter.ui.image_viewer import copy_files_to_clipboard
         copied = copy_files_to_clipboard([zip_path])
+        if hasattr(self, "_record_bundle_coverage") and op.capture.get("plan_kwargs", {}).get("include_text", True):
+            self._record_bundle_coverage(
+                silo_id=silo_id,
+                bundle_kind="silo_bundle",
+                archive_name=os.path.basename(zip_path),
+                document_text=op.capture.get("plan_kwargs", {}).get("text", ""),
+                selected_text=None,
+                clipboard_success=bool(copied),
+            )
 
         missing = len(getattr(result, "missing", ()) or ())
         packed = len(getattr(result, "items", ()) or ())
+        idx_status = getattr(result, "index_status", "full")
         if missing:
             status = tr("Partial bundle", lang) + ": " + tr(
                 "%n source file(s) were missing", lang).replace(
@@ -5915,6 +6276,12 @@ class FastPrompter(
         else:
             status = tr("%n item(s) packed", lang).replace("%n", str(packed))
             accent = None
+        if idx_status == "degraded":
+            status += " · " + tr("Structured index degraded", lang)
+            accent = accent or "#e0a03c"
+        elif idx_status == "unavailable":
+            status += " · " + tr("Structured index unavailable", lang)
+            accent = accent or "#e0a03c"
         status += " · " + (tr("Copied to clipboard", lang) if copied
                            else tr("Clipboard unavailable", lang))
 
@@ -6257,14 +6624,14 @@ class FastPrompter(
             # storage that no longer backs its owner.
             self._revoke_container_for_old_files_root(start)
             self.data["files_root"] = path
-            self.mark_dirty()
+            self.mark_dirty("settings")
             self._update_files_button()
             self.refresh_temp_presets()
 
     def reset_files_root(self):
         self._revoke_container_for_old_files_root(self._files_root())
         self.data["files_root"] = ""
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self._update_files_button()
 
     def open_sound_settings_dialog(self):
@@ -6667,7 +7034,7 @@ class FastPrompter(
                 # file manager was opened and closed (T-721 fixed the
                 # auto-hide path, but not the 📁 toggle).
                 self._show_files_dock(False)
-                self.mark_dirty()
+                self.mark_dirty("settings")
                 return
         self.open_file_container()
 
@@ -6678,7 +7045,7 @@ class FastPrompter(
         self._ensure_file_container()
         if was_open:
             self.open_file_container()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def open_file_container(self, global_idx=None, is_archive=False):
         from fastprompter.ui.file_container import silo_slug
@@ -7411,7 +7778,7 @@ class FastPrompter(
         if word not in words:
             words.append(word)
         self._typo_dict_cache = None  # the pool grew — rebuild on next use
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self._typo_check_tick()
 
     def clear_typo_words(self):
@@ -7425,7 +7792,7 @@ class FastPrompter(
             return
         self.data["typo_user_words"] = []
         self._typo_dict_cache = None
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self._typo_check_tick()
 
     def _save_sync_include(self):
@@ -7438,7 +7805,7 @@ class FastPrompter(
             self.data.setdefault("project_sync_all", {})[
                 self.get_current_category() or ""] = cfg
             self._rescan_project_sync()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def _save_sync_exclude(self):
         raw = self.ed_sync_exclude.text().strip()
@@ -7450,7 +7817,7 @@ class FastPrompter(
             self.data.setdefault("project_sync_all", {})[
                 self.get_current_category() or ""] = cfg
             self._rescan_project_sync()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def _save_sync_recursive(self, checked):
         """Apply the folder-depth setting to the active Sync-Project too."""
@@ -7462,7 +7829,7 @@ class FastPrompter(
                 self.get_current_category() or ""] = cfg
             self._rescan_project_sync()
             self._start_project_watcher()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def pick_passed_colour(self):
         from PyQt6.QtWidgets import QColorDialog
@@ -7475,7 +7842,7 @@ class FastPrompter(
             btn = getattr(self, "btn_passed_colour", None)
             if btn is not None and not sip.isdeleted(btn):
                 btn.setText(col.name())
-            self.mark_dirty()
+            self.mark_dirty("settings")
             self._apply_date_alert_style()
 
     def reset_passed_colour(self):
@@ -7483,7 +7850,7 @@ class FastPrompter(
         btn = getattr(self, "btn_passed_colour", None)
         if btn is not None and not sip.isdeleted(btn):
             btn.setText("#e05555")
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self._apply_date_alert_style()
 
     def pick_typo_colour(self):
@@ -7497,7 +7864,7 @@ class FastPrompter(
             btn = getattr(self, "btn_typo_colour", None)
             if btn is not None and not sip.isdeleted(btn):
                 btn.setText(col.name())
-            self.mark_dirty()
+            self.mark_dirty("settings")
             self._typo_check_tick()
 
     def build_spelling_menu(self, menu, pos):
@@ -7762,6 +8129,97 @@ class FastPrompter(
         with self._sync_commit_gate:
             self._sync_leases[key] = self._sync_leases.get(key, 0) + 1
         self._push_jobs_pending.pop(key, None)
+
+    def _configured_sync_binding_keys(self) -> set:
+        """Set of all (cat, slot, canonical_path) keys currently configured in this profile."""
+        keys = set()
+        cur_cat = self.get_current_category() or ""
+        for slot, path in (self.data.get("silo_links") or {}).items():
+            if isinstance(path, str) and path:
+                try:
+                    slot_int = int(slot)
+                except (ValueError, TypeError):
+                    slot_int = str(slot)
+                keys.add(self._sync_baseline_key(slot_int, path, cat=cur_cat))
+
+        for cat, links in (self.data.get("silo_links_all") or {}).items():
+            for slot, path in (links or {}).items():
+                if isinstance(path, str) and path:
+                    try:
+                        slot_int = int(slot)
+                    except (ValueError, TypeError):
+                        slot_int = str(slot)
+                    keys.add(self._sync_baseline_key(slot_int, path, cat=cat))
+
+        pscfg = self.data.get("project_sync") or {}
+        root = pscfg.get("root")
+        if root:
+            from fastprompter.core import project_sync as ps
+            abs_root = os.path.abspath(root)
+            for slot, rel in (self.data.get("project_sync_map") or {}).items():
+                if rel:
+                    full = ps.resolve_relative_path(abs_root, rel)
+                    if full:
+                        try:
+                            slot_int = int(slot)
+                        except (ValueError, TypeError):
+                            slot_int = str(slot)
+                        keys.add(self._sync_baseline_key(slot_int, full, cat=cur_cat))
+
+        for cat, cat_cfg in (self.data.get("project_sync_all") or {}).items():
+            cat_root = (cat_cfg or {}).get("root")
+            if not cat_root:
+                continue
+            from fastprompter.core import project_sync as ps
+            abs_root = os.path.abspath(cat_root)
+            m = (self.data.get("project_sync_map_all") or {}).get(cat, {})
+            for slot, rel in (m or {}).items():
+                if rel:
+                    full = ps.resolve_relative_path(abs_root, rel)
+                    if full:
+                        try:
+                            slot_int = int(slot)
+                        except (ValueError, TypeError):
+                            slot_int = str(slot)
+                        keys.add(self._sync_baseline_key(slot_int, full, cat=cat))
+        return keys
+
+    def _sweep_retired_sync_metadata(self):
+        """Retire orphan binding metadata and stale leases (PERF-001).
+
+        A lease key is only retained while:
+        1. the binding is currently configured in this profile, OR
+        2. a pending or in-flight push job references the key.
+        Once quiescent, stale historical leases and caches are swept.
+        """
+        if getattr(self, "_push_inflight", False):
+            return
+
+        live_keys = set(self._configured_sync_binding_keys())
+        pending = getattr(self, "_push_jobs_pending", {})
+        live_keys.update(pending.keys())
+
+        with self._sync_commit_gate:
+            leases = getattr(self, "_sync_leases", {})
+            stale_leases = [k for k in leases if k not in live_keys]
+            for k in stale_leases:
+                leases.pop(k, None)
+
+        eol_cache = getattr(self, "_sync_eol_cache", {})
+        for k in [k for k in eol_cache if k not in live_keys]:
+            eol_cache.pop(k, None)
+
+        bom_cache = getattr(self, "_sync_bom_cache", {})
+        for k in [k for k in bom_cache if k not in live_keys]:
+            bom_cache.pop(k, None)
+
+        unsafe = getattr(self, "_sync_unsafe_bindings", None)
+        if isinstance(unsafe, set):
+            unsafe.intersection_update(live_keys)
+
+        applied = getattr(self, "_sync_last_applied", {})
+        for k in [k for k in applied if k not in live_keys]:
+            applied.pop(k, None)
 
     def _establish_sync_writer_barrier(self):
         """Quiesce and revoke every captured Sync-Project push intent.
@@ -8225,6 +8683,8 @@ class FastPrompter(
                     logger.debug("sync push job dropped (%s): %s",
                                  status, os.path.basename(path))
             self._dispatch_push_jobs()
+            if not self._push_inflight and not self._push_jobs_pending:
+                self._sweep_retired_sync_metadata()
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("sync push completion failed", exc_info=True)
@@ -9164,7 +9624,9 @@ class FastPrompter(
             except Exception:
                 _log.exception("could not recapture pushes for the restored "
                                "Sync-Project binding")
+            self._sweep_retired_sync_metadata()
             return
+        self._sweep_retired_sync_metadata()
         self._start_project_watcher()
         self._update_project_tooltip()
         self.refresh_temp_presets()
@@ -9864,7 +10326,7 @@ class FastPrompter(
         self.btn_sidebar_toggle = QPushButton("☰")
         self.apply_button_size(self.btn_sidebar_toggle, 24, 24)
         self.btn_sidebar_toggle.setToolTip(tr(
-            "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.",
+            "Toggle Sidebar\nShow or hide the right/left sidebar containing snippets and silos.",
             getattr(self, "_current_lang", "EN")))
         self.btn_sidebar_toggle.clicked.connect(self.toggle_sidebar_visibility)
         self.header_layout.addWidget(self.btn_sidebar_toggle)
@@ -10087,7 +10549,7 @@ class FastPrompter(
         self.btn_help.clicked.connect(self.open_help_dialog)
 
         self.btn_copy = QPushButton(tr("Copy", getattr(self, "_current_lang", "EN")))
-        self.btn_copy.setToolTip(tr("Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter", getattr(self, "_current_lang", "EN")))
+        self.btn_copy.setToolTip(tr("Copy all text\nRight-click: Copy + Close FastPrompter", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_copy, 26)
         self.btn_copy.clicked.connect(self.copy_context_to_clipboard)
         self.btn_copy.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -10482,7 +10944,7 @@ class FastPrompter(
         self.spin_volume.setFixedWidth(100)
         self.spin_volume.setToolTip(tr("Global volume (0-100)", getattr(self, "_current_lang", "EN")))
         self.spin_volume.valueChanged.connect(
-            lambda v: (self.data.update({"sound_volume": f"{v/100:.2f}"}), self.mark_dirty())
+            lambda v: (self.data.update({"sound_volume": f"{v/100:.2f}"}), self.mark_dirty("settings"))
         )
 
         # --- Settings panel: hidden by default, toggled by the gear button. ---
@@ -10803,7 +11265,7 @@ class FastPrompter(
         self.btn_page_down.setToolTip("Next snippet page" + wheel_hint)
         self.btn_arc_page_up.setToolTip("Previous archive page" + wheel_hint)
         self.btn_arc_page_down.setToolTip("Next archive page" + wheel_hint)
-        self.cat_combo.setToolTip(tr("Projects — mouse wheel switches tabs", getattr(self, "_current_lang", "EN")))
+        self.cat_combo.setToolTip(tr("Projects (F1–F12) — mouse wheel switches tabs", getattr(self, "_current_lang", "EN")))
 
         self.archive_section.setParent(self.left_panel)
         self.archive_section.raise_()
@@ -11305,6 +11767,16 @@ class FastPrompter(
             self._typo_dict_cache = None
         if hasattr(self, "_sync_last_applied"):
             self._sync_last_applied.clear()
+        if hasattr(self, "_sync_eol_cache"):
+            self._sync_eol_cache.clear()
+        if hasattr(self, "_sync_bom_cache"):
+            self._sync_bom_cache.clear()
+        if hasattr(self, "_sync_unsafe_bindings"):
+            self._sync_unsafe_bindings.clear()
+        if hasattr(self, "_sync_leases"):
+            with getattr(self, "_sync_commit_gate", threading.Lock()):
+                self._sync_leases.clear()
+        self._sweep_retired_sync_metadata()
         self._start_project_watcher()
 
     def _resync_profile_widgets(self):
@@ -11843,7 +12315,7 @@ class FastPrompter(
             return
         self._current_lang = lang
         self.data["language"] = lang
-        self.mark_dirty()
+        self.mark_dirty("settings")
         self._apply_settings_language()
 
     def _widgets_with_english_source(self, widget_type, prefix):
@@ -12023,32 +12495,21 @@ class FastPrompter(
         # Re-apply hotkey tooltips (cheat sheet on Keys button)
         if hasattr(self, '_apply_tooltips'):
             self._apply_tooltips()
-        # T-1410: and re-derive the per-button shortcut hovers. A language
-        # switch has to translate the WORDS while the key stays live, so
-        # this runs after the text pass and owns the chord for the rows it
-        # lists -- which is why those rows are not re-formatted by hand below.
-        self.apply_shortcut_tooltips()
-
         # T-404: Live FULL-UI retranslation for header buttons
         btn_configs = [
-            ("btn_sidebar_toggle", None, "Toggle Sidebar (Alt+D)\nShow or hide the right/left sidebar containing snippets and silos.", None),
-            ("btn_new", "NEW", "NEW ({})", "hk_new_snippet"),
-            ("btn_save", "Save", "Save ({})", "hk_save_snippet"),
-            ("btn_home", "Home", "Home (Home)", None),
-            ("btn_end", "End", "Jump to End\nMove cursor to the bottom of the document.", None),
-            ("btn_add_line", "Line", "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet.", None),
-            ("btn_bold", "B", "Bold ({})\nMake selected text bold.", "hk_bold"),
-            ("btn_italic", "I", "Italic ({})\nMake selected text italic.", "hk_italic"),
-            ("btn_under", "U", "Underline ({})\nMake selected text underlined.", "hk_underline"),
-            ("btn_strike", "S", "Strikethrough (Ctrl+T)\nCross out selected text.", None),
-            ("btn_header", "H", "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\nthen land 2 lines below on a fresh bullet.", None),
+            ("btn_new", "NEW", None, None),
+            ("btn_save", "Save", None, None),
+            ("btn_home", "Home", None, None),
+            ("btn_end", "End", None, None),
+            ("btn_add_line", "Line", None, None),
+            ("btn_bold", "B", None, None),
+            ("btn_italic", "I", None, None),
+            ("btn_under", "U", None, None),
+            ("btn_strike", "S", None, None),
+            ("btn_header", "H", None, None),
             ("btn_clear_fmt", "Clear Fmt", "Clear Format\nRemove all explicit font styling from text.", None),
-            ("btn_settings_toggle", None, "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.", None),
-            ("btn_settings_toggle_right", None, "Settings\nConfigure hotkeys, theme, fonts, and UI scaling.", None),
-            ("btn_help", None, "Help — every hotkey, gesture and feature (click)", None),
-            ("btn_copy", "Copy", "Copy all text (Ctrl+C)\nRight-click: Copy + Close FastPrompter", None),
-            ("btn_clear", "Clear", "Clear (Ctrl+Shift+C)", None),
-            ("btn_files", None, "Files\nAsset drawer for the active silo: drop any files in,\ndrag them out, preview, export. Stored as a plain folder\nin data/files — readable outside FastPrompter.", None),
+            ("btn_copy", "Copy", None, None),
+            ("btn_clear", "Clear", None, None),
             ("btn_project_run", None, "Run Executable", None),
             ("btn_project_folder", None, "Open Project Folder", None),
             ("btn_trash", None, "Open Trash", None),
@@ -12067,6 +12528,10 @@ class FastPrompter(
                     else:
                         btn.setToolTip(tr(tip_base, lang))
 
+        # T-1410 / T-1428: re-derive per-control shortcut hovers after text pass.
+        # SHORTCUT_TOOLTIP_ROWS owns tooltips for every shortcut-backed control.
+        self.apply_shortcut_tooltips()
+
         if hasattr(self, "btn_bullet_toggle") and not sip.isdeleted(self.btn_bullet_toggle):
             state_str = tr("ON", lang) if self.data.get("auto_bullet", "False") == "True" else tr("OFF", lang)
             tt = tr("Auto-Bullet (Right-Click): {}\nLeft-Click: Convert selected lines between dashes and bullets.", lang)
@@ -12081,7 +12546,7 @@ class FastPrompter(
     def on_splitter_moved(self, pos, index):
         is_right = getattr(self, "_sidebar_right", False)
         self.data["splitter_sizes_right" if is_right else "splitter_sizes_left"] = self.splitter.sizes()
-        self.mark_dirty()
+        self.mark_dirty("settings")
 
     def open_drop_zones_settings(self):
         from fastprompter.ui.drop_overlay import DropZonesDialog
@@ -13661,24 +14126,125 @@ class FastPrompter(
             return not doc.isUndoAvailable()
         return self._text_undo_steps() <= top.get("_text_steps", 0)
 
+    def _active_interaction_history(self):
+        doc = self._active_doc()
+        if doc is None or sip.isdeleted(doc):
+            return None
+        return get_document_interaction_history(doc)
+
+    def _validate_interaction_record(self, record, doc):
+        if record is None or doc is None or sip.isdeleted(doc):
+            return False
+        if record.doc_id != id(doc):
+            return False
+        if record.doc_generation != getattr(doc, "_fastprompter_generation", 0):
+            return False
+        cur_steps = self._text_undo_steps()
+        if cur_steps <= record.text_undo_steps:
+            text_len = max(0, doc.characterCount() - 1)
+            if record.text_length != text_len:
+                return False
+        return True
+
+    def _prune_stale_interaction_undo(self, history, doc):
+        if history is None or doc is None or sip.isdeleted(doc):
+            return None
+        while history.undo_stack:
+            top = history.peek_undo()
+            if self._validate_interaction_record(top, doc):
+                return top
+            history.pop_undo()
+        return None
+
+    def _prune_stale_interaction_redo(self, history, doc):
+        if history is None or doc is None or sip.isdeleted(doc):
+            return None
+        while history.redo_stack:
+            top = history.peek_redo()
+            if self._validate_interaction_record(top, doc):
+                return top
+            history.pop_redo()
+        return None
+
+    def _undo_interaction(self):
+        doc = self._active_doc()
+        history = self._active_interaction_history()
+        if history is None or doc is None or sip.isdeleted(doc):
+            return False
+        record = self._prune_stale_interaction_undo(history, doc)
+        if record is None:
+            return False
+        history.pop_undo()
+        history.push_redo(record)
+        area = getattr(self, "text_area", None)
+        if area is not None and hasattr(area, "_apply_cursor_state"):
+            return area._apply_cursor_state(record.before)
+        return False
+
+    def _redo_interaction(self):
+        doc = self._active_doc()
+        history = self._active_interaction_history()
+        if history is None or doc is None or sip.isdeleted(doc):
+            return False
+        record = self._prune_stale_interaction_redo(history, doc)
+        if record is None:
+            return False
+        history.pop_redo()
+        history.push(record)
+        area = getattr(self, "text_area", None)
+        if area is not None and hasattr(area, "_apply_cursor_state"):
+            return area._apply_cursor_state(record.after)
+        return False
+
     def _smart_undo(self):
-        """Ctrl+Z: data undo (silo clear/delete/move/gap) or text undo."""
+        """Ctrl+Z: interaction, data, or text undo."""
         if getattr(self, "_in_smart_undo", False):
             return
         self._in_smart_undo = True
         self._increment_focus_lock()
         try:
             kinds = self._undo_kinds()
+            doc = self._active_doc()
+            history = self._active_interaction_history()
+            inter_top = self._prune_stale_interaction_undo(history, doc)
+            cur_text_steps = self._text_undo_steps()
+            has_text_undo = doc is not None and doc.isUndoAvailable()
+
+            # Determine if interaction undo is the newest user action
+            inter_is_newest = False
+            if inter_top is not None:
+                has_newer_text = has_text_undo and (cur_text_steps > inter_top.text_undo_steps)
+                if not has_newer_text:
+                    data_stack = getattr(self, "data_undo_stack", None)
+                    data_top = data_stack[-1] if data_stack else None
+                    if data_top is not None:
+                        data_seq = data_top.get("_seq", 0)
+                        if data_top.get("_doc_id") == id(doc):
+                            inter_is_newest = inter_top.action_seq >= data_seq
+                        else:
+                            inter_is_newest = inter_top.action_seq >= data_seq or not self._undo_prefers_data()
+                    else:
+                        inter_is_newest = True
+
+            if inter_is_newest:
+                if self._undo_interaction():
+                    kinds.append("interaction")
+                    self.play_sound("undo")
+                    return
+
             if self._undo_prefers_data():
                 if self.undo_action():
                     kinds.append("data")
                     return
-            doc = self._active_doc()
-            if doc is not None and doc.isUndoAvailable():
+
+            if has_text_undo:
                 self.text_area.undo()
                 self.text_area.invalidate_word_count()
                 self.play_sound("undo")
                 kinds.append("text")
+            elif inter_top is not None and self._undo_interaction():
+                kinds.append("interaction")
+                self.play_sound("undo")
             elif self.undo_action():
                 kinds.append("data")
                 self.play_sound("undo")
@@ -13728,6 +14294,12 @@ class FastPrompter(
             kinds = self._undo_kinds()
             kind = kinds.pop() if kinds else None
             doc = self._active_doc()
+            if kind == "interaction":
+                if self._redo_interaction():
+                    self.play_sound("redo")
+                    return
+                self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
+                return
             if kind == "text":
                 if doc is not None and doc.isRedoAvailable():
                     self.text_area.redo()
@@ -13757,6 +14329,9 @@ class FastPrompter(
             if doc is not None and doc.isRedoAvailable():
                 self.text_area.redo()
                 self.text_area.invalidate_word_count()
+                self.play_sound("redo")
+                return
+            if self._redo_interaction():
                 self.play_sound("redo")
                 return
             if self._persistent_text_step(forward=True):
@@ -14982,6 +15557,9 @@ class FastPrompter(
         # A new action invalidates the recorded undo order too, or Ctrl+Y would
         # try to replay steps that no longer have anything behind them.
         self._undo_kinds().clear()
+        history = self._active_interaction_history()
+        if history is not None:
+            history.clear_redo()
         # Lets Ctrl+Z pick data undo over text undo when this action is newer
         self._last_data_action_time = state["_seq"]
         self._save_undo_state()
@@ -15041,7 +15619,8 @@ class FastPrompter(
             btn = QPushButton(str(i + 1))
             btn.setFixedSize(size, size)
             btn.setCheckable(True)
-            btn.setToolTip(f"{i + 1}: {cat}")
+            hk_hint = f" (F{i + 1})" if i < 12 else ""
+            btn.setToolTip(f"{i + 1}: {cat}{hk_hint}")
             btn.is_squishable = True
             btn.setProperty("fp_numbox", "true")
             idx = i
@@ -16098,8 +16677,10 @@ class FastPrompter(
         # reopened resident process permanently retired. Worker retirement
         # belongs exclusively to _shutdown_application, which runs the same
         # close as part of the single canonical quiesce path.
+        # W2-001: Ordinary window close remains a resident-window action:
+        # persist/validate state and close/hide window; do NOT call QApplication.quit().
+        # quit_app() remains the single canonical user-level process-quit path.
         super().closeEvent(event)
-        QApplication.quit()
 
     def resizeEvent(self, event):
         if getattr(self, "is_locked", False) and getattr(self, "_locked_geometry", None):
@@ -20748,7 +21329,7 @@ class FastPrompter(
         # Ctrl+Y was text-only (handled inside the editor), so a data undo had
         # exactly one redo key and you had to know which one.
         add_fixed("Ctrl+Y", self._smart_redo)
-        add_fixed("Ctrl+Shift+C", self.clear_text)
+        add_fixed("Ctrl+Alt+C", self.clear_text)
         # Alt+W is Ctrl+W turned around: the new point goes ABOVE and the
         # existing text moves down. It used to insert the plain toolbar
         # divider, which had no settings of its own at all.
@@ -21287,6 +21868,10 @@ class FastPrompter(
         doc.setPlainText(text)
         if not large:
             doc.setUndoRedoEnabled(True)
+        doc._fastprompter_generation = getattr(doc, "_fastprompter_generation", 0) + 1
+        history = getattr(doc, "_fastprompter_interaction_history", None)
+        if history is not None:
+            history.clear()
 
     def hide_and_save(self):
         # every route out of the window restores the desktop, not just Ctrl+D

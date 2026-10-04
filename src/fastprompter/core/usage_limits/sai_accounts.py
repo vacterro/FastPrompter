@@ -355,6 +355,64 @@ def is_shared(account: AccountRef) -> bool:
     return (account.metadata or {}).get("origin") == "shared"
 
 
+def current_windows_user() -> str:
+    """The Windows user this process runs as, lowercased."""
+    return (os.environ.get("USERNAME") or os.environ.get("USER") or "").strip().lower()
+
+
+def local_read_is_context_safe(account: AccountRef) -> bool:
+    """Whether the LOCAL reader may speak for this account.
+
+    A local provider reader opens the credential store of whoever runs this
+    process. That is honest for a profile-directory account, which is a path
+    this application opens itself, and for a shared account that already IS the
+    current user. It is a lie for a shared account owned by a different Windows
+    user: the reading would come from the operator's own Antigravity session and
+    be filed under another account's name, which is one provider identity
+    masquerading as two.
+
+    An owner that cannot be determined is refused, because "unprovable" must
+    never resolve to "probably fine".
+    """
+    meta = account.metadata or {}
+    if not is_shared(account):
+        return True
+    backend = str(meta.get("execution_backend") or "").strip().lower()
+    if backend == "profile_directory":
+        return True
+    owner = str(meta.get("windows_user") or "").strip().lower()
+    if not owner:
+        return False
+    return owner == current_windows_user()
+
+
+def _identity_from_plane(payload: dict) -> dict:
+    """The plane's own provider identity claim, normalized for a snapshot.
+
+    The plane reads the credential store of the account's OWN Windows user, so
+    this is the authoritative answer for a shared account. Absent, unverified or
+    empty means the plane proved nothing, and the caller keeps an unresolved
+    identity rather than borrowing the current user's.
+    """
+    from fastprompter.core.usage_limits import identity as _identity
+    # The plane publishes it under `credential`, beside the other facts it read
+    # from that account's own credential store. Top level is accepted too so a
+    # flatter plane revision stays readable.
+    credential = payload.get("credential")
+    raw = credential.get("provider_identity") if isinstance(credential, dict) else None
+    if not isinstance(raw, dict):
+        raw = payload.get("provider_identity")
+    if not isinstance(raw, dict):
+        return {}
+    fingerprint = raw.get("fingerprint")
+    if not isinstance(fingerprint, str) or not fingerprint.strip():
+        return {}
+    if raw.get("verified") is not True:
+        return {}
+    return _identity.describe(fingerprint.strip().lower(),
+                              str(raw.get("source") or "sai-accounts"))
+
+
 def _windows_from_plane(windows: object, source: str) -> list:
     """Translate the plane's window list into this application's windows.
 
@@ -428,16 +486,23 @@ def probe_shared(account: AccountRef, deadline: float,
                              error_code="shared_source_offline",
                              error_summary="SAI Accounts did not answer")
 
+    identity = _identity_from_plane(payload)
     windows = _windows_from_plane(payload.get("windows"), "sai-accounts-usage")
     if windows:
         return UsageSnapshot(account=account, status=OK, windows=windows,
-                             fetched_at=time.time())
+                             fetched_at=time.time(),
+                             provider_metadata={
+                                 "source_session": "sai-accounts",
+                                 "observed_at": time.time(),
+                                 **identity,
+                             })
 
     auth_state = str(payload.get("auth_state") or "")
     if auth_state == "AUTH_REQUIRED":
         return UsageSnapshot(account=account, status=AUTH_REQUIRED, windows=[],
                              error_code="auth_required",
-                             error_summary="not authenticated")
+                             error_summary="not authenticated",
+                             provider_metadata=identity)
 
     skipped = str(payload.get("skipped_reason") or "")
     context_state = str(payload.get("context_state") or "")
@@ -445,12 +510,26 @@ def probe_shared(account: AccountRef, deadline: float,
         # The plane has no broker for this provider and says so. It makes no
         # claim about the reading, so the account keeps the reader it always
         # had — this is the standalone path, not a degraded one.
+        #
+        # But only when that reader can actually speak for THIS account. A
+        # reader running under the current user cannot answer for an account
+        # owned by another Windows user, and returning its numbers anyway is
+        # how one provider identity gets filed under two account names.
+        if not local_read_is_context_safe(account):
+            return UsageSnapshot(account=account, status=UNAVAILABLE, windows=[],
+                                 error_code="shared_context_unsafe",
+                                 error_summary=(
+                                     "this account runs as another Windows user; "
+                                     "reading it locally would report the current "
+                                     "user's Antigravity session"),
+                                 provider_metadata=identity)
         try:
             return local_probe(account, deadline)
         except Exception:
             return UsageSnapshot(account=account, status=UNAVAILABLE, windows=[],
                                  error_code="shared_local_read_failed",
-                                 error_summary="local read failed for a shared account")
+                                 error_summary="local read failed for a shared account",
+                                 provider_metadata=identity)
     if skipped or context_state in ("OFFLINE", "UNKNOWN"):
         summary = ("account context is offline" if context_state == "OFFLINE"
                    else f"SAI Accounts: {skipped or 'no reading'}")

@@ -155,8 +155,36 @@ def evaluate_limit_notifications(accounts, snapshots, rules, state,
         if (normalized_rule(raw)["enabled"] == "True"
             or normalized_rule(raw)["reset_enabled"] == "True")
     }
-    for account in accounts:
-        snap = snapshots.get(account.key)
+    # CORE-001: Canonicalize accounts by verified provider identity into quota pools.
+    # Group accounts sharing a verified fingerprint so only ONE alert and ONE suppression
+    # episode fires per physical provider quota pool, while preserving per-account rules.
+    from fastprompter.core.usage_limits import identity as _identity
+
+    entries = [
+        (a.key, snapshots.get(a.key).provider_metadata if snapshots.get(a.key) else {})
+        for a in accounts
+    ]
+    groups = _identity.group_by_identity(entries)
+
+    pool_members: list[list[AccountRef]] = []
+    assigned_keys = set()
+    for a in accounts:
+        if a.key in assigned_keys:
+            continue
+        meta = snapshots.get(a.key).provider_metadata if snapshots.get(a.key) else {}
+        fp = _identity.fingerprint_of(meta)
+        if fp and fp in groups:
+            members = [acc for acc in accounts if acc.key in groups[fp]]
+            pool_members.append(members)
+            for m in members:
+                assigned_keys.add(m.key)
+        else:
+            pool_members.append([a])
+            assigned_keys.add(a.key)
+
+    for members in pool_members:
+        canonical_account = members[0]
+        snap = snapshots.get(canonical_account.key)
         if snap is None or snap.status != OK:
             continue
         for window in resolved_windows(snap.windows, now=now):
@@ -170,17 +198,44 @@ def evaluate_limit_notifications(accounts, snapshots, rules, state,
             # state so it re-arms once the gate lifts.
             if window.gated_by:
                 continue
-            key = notification_key(account.key, window.key)
-            rule = normalized_rule(raw_rules.get(key))
-            low_enabled = rule["enabled"] == "True"
-            reset_enabled = rule["reset_enabled"] == "True"
-            if not low_enabled and not reset_enabled:
+
+            # Deterministic group rule semantics across pool members (CORE-001)
+            effective_rule = dict(DEFAULT_RULE)
+            any_low_enabled = False
+            any_reset_enabled = False
+            max_threshold = 20.0
+            first_sound_rule = None
+
+            for m in members:
+                m_key = notification_key(m.key, window.key)
+                m_rule = normalized_rule(raw_rules.get(m_key))
+                if m_rule["enabled"] == "True":
+                    any_low_enabled = True
+                    max_threshold = max(max_threshold, m_rule["threshold"])
+                    if first_sound_rule is None:
+                        first_sound_rule = m_rule
+                if m_rule["reset_enabled"] == "True":
+                    any_reset_enabled = True
+                    if first_sound_rule is None:
+                        first_sound_rule = m_rule
+
+            if first_sound_rule is not None:
+                effective_rule.update(first_sound_rule)
+            effective_rule["enabled"] = "True" if any_low_enabled else "False"
+            effective_rule["reset_enabled"] = "True" if any_reset_enabled else "False"
+            effective_rule["threshold"] = max_threshold
+
+            key = notification_key(canonical_account.key, window.key)
+            if not any_low_enabled and not any_reset_enabled:
                 new_state.pop(key, None)
+                for m in members[1:]:
+                    new_state.pop(notification_key(m.key, window.key), None)
                 continue
+
             prior = dict(new_state.get(key, {}))
             cycle = _cycle_token(window)
             remaining = max(0.0, min(100.0, float(window.remaining_percent)))
-            threshold = rule["threshold"]
+            threshold = effective_rule["threshold"]
             prior_remaining = prior.get("remaining")
             recovered = _recovered(prior_remaining, remaining)
 
@@ -200,7 +255,7 @@ def evaluate_limit_notifications(accounts, snapshots, rules, state,
             if dropped:
                 prior.pop("reset_alerted", None)
 
-            if recovered and reset_enabled and not prior.get("reset_alerted"):
+            if recovered and any_reset_enabled and not prior.get("reset_alerted"):
                 # A recovery episode is a SEMANTIC event, not merely an
                 # upward movement: only a CONFIRMED reset (near-full refill,
                 # see _classify_recovery) may notify. A 20% -> 60% climb
@@ -221,20 +276,33 @@ def evaluate_limit_notifications(accounts, snapshots, rules, state,
                             stale_reset = True
                     if not is_initial_poll and not stale_reset:
                         alerts.append(LimitAlert(
-                            "reset", key, account, window, rule))
+                            "reset", key, canonical_account, window, effective_rule))
                     prior["reset_alerted"] = True
 
             prior["remaining"] = remaining
-            if low_enabled and remaining <= threshold:
+            if any_low_enabled and remaining <= threshold:
                 if prior.get("low_alerted") != threshold:
                     alerts.append(LimitAlert(
-                        "low", key, account, window, rule))
+                        "low", key, canonical_account, window, effective_rule))
                     prior["low_alerted"] = threshold
             prior["last_cycle"] = cycle
             new_state[key] = prior
 
+            # Ensure duplicate member contexts share this suppression and don't linger
+            for m in members[1:]:
+                new_state.pop(notification_key(m.key, window.key), None)
+
     # Disabled/deleted rules cannot leave an unbounded graveyard behind.
     for key in list(new_state):
         if key not in enabled_rule_keys:
-            new_state.pop(key, None)
+            # Also keep if key is the canonical key for a member with an enabled rule
+            k_win = key.split("|")[-1] if "|" in key else ""
+            keep_canon = False
+            for members in pool_members:
+                if notification_key(members[0].key, k_win) == key:
+                    if any(notification_key(m.key, k_win) in enabled_rule_keys for m in members):
+                        keep_canon = True
+                        break
+            if not keep_canon:
+                new_state.pop(key, None)
     return alerts, new_state

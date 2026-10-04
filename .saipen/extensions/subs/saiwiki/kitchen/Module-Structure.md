@@ -26,13 +26,19 @@ src/fastprompter/
 │   ├── hotkey_filter.py        # QAbstractNativeEventFilter: WM_HOTKEY/WM_SYSCOMMAND dispatch
 │   ├── hotkeys.py              # Win32 RegisterHotKey + layout-aware VK resolution
 │   ├── instance_lock.py        # Win32 named-mutex single-instance ownership (T-788; T-1247: IPC no-ACK never authorizes a kill)
+│   ├── interval_presets.py     # Interval presets and duration options
 │   ├── ipc_server.py           # QLocalServer single-instance IPC
 │   ├── limits.py               # Agent reset-limit scanner + timer creation
 │   ├── logging.py              # Logger setup, rotating file handler
+│   ├── markdown_refs.py        # Markdown image and link reference extractor
 │   ├── pomodoro.py             # Pomodoro state machine (work/break)
+│   ├── profile_flags.py        # Runtime profile flags and mode toggles
 │   ├── problip.py              # Pure Problip scheduling model: states, intervals, cue timing (T-1238-A)
 │   ├── problip_store.py        # Global Problip persistence + statistics (problip.db, T-1238-A)
 │   ├── project_sync.py         # Sync-Project folder↔silo two-way sync, pure logic (Qt-free)
+│   ├── silo_bundle.py          # Silo bundle archive creation and manifest (T-1414, T-1416)
+│   ├── silo_coverage.py        # Silo pack coverage event tracking and history store (T-1415)
+│   ├── silo_index.py           # Silo structured index and search engine (T-1423)
 │   ├── silo_presets.py         # .md template loader — Fill from preset (T-715)
 │   ├── silo_export.py          # Drag a silo OUT to Explorer as a content-named .md (T-738)
 │   ├── sound_dependencies.py   # Sound playback dependency graph + conflict resolution (T-1238-G2)
@@ -59,8 +65,10 @@ src/fastprompter/
 │       ├── claude_statusline.py # Claude status-line bridge probe
 │       ├── cli_tools.py         # CLI tool discovery
 │       ├── freebuff_format.py   # Freebuff quota payload decoding
+│       ├── identity.py          # Provider account identity and fingerprinting (T-239)
 │       ├── model.py             # Account/quota data model
 │       ├── notifications.py     # Limit event → app notification routing (T-1249 reset classifier)
+│       ├── sai_accounts.py      # Account multi-provider aggregation and mapping (T-239)
 │       ├── service.py           # UsageLimitService: bounded probe executor, sweep generations, refresh/backoff
 │       ├── troubleshooter.py    # Multi-level troubleshooting + auto-healing of limit metrics
 │       └── providers/           # Per-vendor quota probes
@@ -93,7 +101,9 @@ src/fastprompter/
 │   ├── header_format_dialog.py # Date/time timestamp format dialog
 │   ├── help_dialog.py          # Keyboard shortcuts + interactive guide
 │   ├── hotkey_mixin.py         # Hotkey binding mixin for main window
+│   ├── hotkey_spec.py          # Hotkey specification and key binding definitions
 │   ├── image_viewer.py         # Local raster preview — decoded in Qt, never a shell association (T-1218)
+│   ├── interaction_undo.py     # Visual and selection interaction undo stack
 │   ├── kanban_widget.py        # Kanban board view widget (silo_kanban backend)
 │   ├── layout_shortcuts.py     # Physical VK shortcut mapping (layout-indep)
 │   ├── limit_account_selector.py # AI-limit account selector widget
@@ -107,6 +117,7 @@ src/fastprompter/
 │   ├── problip_controller.py   # Application-global Problip runtime (QObject, one per app)
 │   ├── problip_custom_sounds.py # Custom Problip sounds dialog over the managed sound library (T-1242)
 │   ├── problip_settings.py     # Fifth Settings tab: Problip page widgets (T-1238-C2)
+│   ├── project_numbox_reorder.py # Numbered project tabs reordering widget
 │   ├── qt_lifetime.py          # Qt callback helpers whose scheduling cannot extend widget lifetimes
 │   ├── qt_text_coords.py       # Single UTF-16 ↔ code-point conversion boundary: formatting spans + typo-span handover (T-1269)
 │   ├── reset_queue_card.py     # Reset-queue hover content: structured `# | Account | Pool | Window | Left` rich-text table (T-1279)
@@ -115,8 +126,12 @@ src/fastprompter/
 │   ├── scroll_sound.py         # Wheel scroll sound filter
 │   ├── search_mixin.py         # Multi-word AND search filter
 │   ├── send_selection_mixin.py # Send selection to: child/new silo, archive, another silo
+│   ├── shortcut_display.py     # Hotkey and shortcut overlay HUD display
 │   ├── settings.py             # Preferences dialog (themes, hotkeys, sounds)
 │   ├── settings_builder.py     # Settings tab construction + live retranslation
+│   ├── silo_bundle_actions.py  # Actions and triggers for silo bundle export (T-1414)
+│   ├── silo_bundle_dialog.py   # Dialog for silo bundle options and preview (T-1414)
+│   ├── silo_chest.py           # Silo chest container view and drawer
 │   ├── silo_kanban.py          # Markdown kanban board (T-630)
 │   ├── silo_settings_dialog.py # Per-silo config (color, project links)
 │   ├── silo_table.py           # Markdown table builder (T-630)
@@ -208,9 +223,9 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 38 modules + i18n/ (33 locales + 5 infra files = 38) + usage_limits/ (8 + 14 provider files = 22)
-- **ui/**: 68 modules
+- **core/**: 44 modules + i18n/ (33 locales + 5 infra files = 38) + usage_limits/ (10 + 14 provider files = 24)
+- **ui/**: 75 modules
 - **utils/**: 5 modules
 - **theme/**: 1 module
 - **top level**: main.py + __init__.py (2) + sound/problip/ catalog helpers (2)
-- **Total**: 176 `.py` files under `src/fastprompter/` (+ `presets/` ships as a non-code data dir; `sound/` ships ~1295 audio assets: 525 top-level + problip catalog + `_vault/` archive of 759 (614 vox, 140 fvox, gman + cs_style))
+- **Total**: 191 `.py` files under `src/fastprompter/` (+ `presets/` ships as a non-code data dir; `sound/` ships ~1295 audio assets: 525 top-level + problip catalog + `_vault/` archive of 759 (614 vox, 140 fvox, gman + cs_style))

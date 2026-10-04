@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-087:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Cover every validate_index_structure refusal branch of the silo bundle publication gate"
+    }
+  },
+  "derived_at": "2026-10-04T12:04:49Z",
+  "derived_from": "SRC-087",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "526221f2ab8895e082ccb24e25e41e40db28858bf2ce75f06c1e1483deed8a19"
+}

@@ -1,0 +1,34 @@
+{
+  "clauses": {
+    "SRC-091:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-001: Verified provider identity becomes authoritative quota-pool projection across usage limit service, UI capacity presentation, and notification deduplication"
+    },
+    "SRC-091:R002": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "CORE-002: _load_silo_identities does not commit to disk before startup safety snapshot is published; repairs in memory and persists via save transaction"
+    },
+    "SRC-091:R003": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-001: Ordinary window close remains resident action without calling QApplication.quit or retiring workers; quit_app remains single canonical quit entry"
+    },
+    "SRC-091:R004": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "W2-002: UsageLimitService.shutdown retains ownership of unfinished timed-out futures across repeat calls; repeat shutdown remains bounded; executor shutdown waits only when all futures terminal"
+    },
+    "SRC-091:R005": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "PERF-001: Sync binding metadata cardinality bounded; retire unused lease entries once unconfigured and unfenced; reset/sweep profile-scoped sync caches together on profile switch"
+    }
+  },
+  "derived_at": "2026-10-04T14:49:51Z",
+  "derived_from": "SRC-091",
+  "interpretation_revision": 5,
+  "schema_version": 1,
+  "source_sha256": "c009e20e0493045f99254f2591fbfc6fff7f08bfc80353b3e61b41b1020d9a84"
+}

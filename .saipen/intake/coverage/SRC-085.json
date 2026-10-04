@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-085:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1417 closed with verification evidence in LOG: verify -> PASS [target: T-1417] conf: high -- REVIEW independent re-run, deliberately not reusing VERIFY's claim. The tree was re-verified from scratch: 37 of 37 T-1417 tests, 13 of 13 T-1416 tests, and 319 bundle/selection/coverage regressions, with ruff and compileall clean. Oracle audit: the diff moves no existing oracle on this ticket. No test anywhere asserts fingerprint_schema, so the schema",
+      "text": "T-1417 bundle final-truth and share-safe privacy closure",
+      "verification": "the Work this request created reached its own verification gate; see the T-1417 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1417"
+    }
+  },
+  "schema_version": 1
+}

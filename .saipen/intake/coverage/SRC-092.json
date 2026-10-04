@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-092:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1428 closed with verification evidence in LOG: verify -> PASS [target: T-1428] conf: high -- pytest tests/test_shortcut_hover_t1410.py: 22 passed in 0.40s",
+      "text": "Show all hotkeys on hover for Pack header control and toolbar buttons",
+      "verification": "the Work this request created reached its own verification gate; see the T-1428 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1428"
+    }
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,14 @@
+{
+  "requirements": {
+    "SRC-088:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "disposition": "VERIFIED",
+      "evidence": "T-1424 closed with verification evidence in LOG: review -> PASS [target: T-1424] conf: high -- independent re-run, not read from the VERIFY claim: pytest -q -p no:cacheprovider tests/test_silo_degraded_publication_t1424.py -> 12 passed, 0 failed, 0.26s; the neighbour scope on its own -> 451 passed, 0 failed, 14.94s; both agree with VERIFY. Review pass 1 raised no finding, so review_passes: 1. Checked against the REVIEW questions rather than the ",
+      "text": "Cover the degraded publication path: build_fallback_index and get_build_provenance have no tests at all",
+      "verification": "the Work this request created reached its own verification gate; see the T-1424 VERIFY cycle in .saipen/LOG.md",
+      "work": "T-1424"
+    }
+  },
+  "schema_version": 1
+}

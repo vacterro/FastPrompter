@@ -240,7 +240,7 @@ def test_each_profile_gets_its_own_startup_backup_gate(
     assert a_ctx is not None, "profile A must get a startup-backup gate"
     # wait for A's snapshot to actually land
     deadline = time.monotonic() + 5
-    while not os.path.exists(db_a + ".bak") and time.monotonic() < deadline:
+    while (not os.path.exists(db_a + ".bak") or not state._startup_backup_ready.is_set()) and time.monotonic() < deadline:
         time.sleep(0.01)
     assert os.path.exists(db_a + ".bak")
     assert state._startup_backup_ready.is_set()
@@ -357,3 +357,117 @@ def test_failed_profile_init_restores_old_backup_context(
         "failed B init must restore A's backup context"
     assert state.profile_id == 1
     assert state.save_data_to_db("a text", force=True) is True
+
+
+def test_silo_identity_backfill_does_not_mutate_disk_before_snapshot_published(
+        tmp_path, monkeypatch):
+    """CORE-002: _load_silo_identities must NOT commit to disk before startup snapshot."""
+    import sqlite3
+    db = _make_large_current_db(tmp_path, "identity_backfill.db")
+    # Insert a silo row but NO silo_identity_v1 row, requiring backfill
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS silo_identity_v1 ("
+        "category TEXT NOT NULL, is_archive INTEGER NOT NULL, "
+        "slot INTEGER NOT NULL, silo_id TEXT NOT NULL, "
+        "PRIMARY KEY (category, is_archive, slot))")
+    conn.execute(
+        "INSERT OR REPLACE INTO temp_presets_v2 (category, slot, content) "
+        "VALUES ('default', 0, 'sample content')")
+    conn.execute("DELETE FROM silo_identity_v1")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(state_mod, "get_db_path", lambda profile_id=1: db)
+    _big(monkeypatch, db)
+
+    entered = threading.Event()
+    release = threading.Event()
+    real_prep = state_mod._prepare_backup_candidate
+
+    def blocking_prep(source_conn, dest_path, validate=True):
+        entered.set()
+        release.wait(5)
+        return real_prep(source_conn, dest_path, validate=validate)
+
+    monkeypatch.setattr(state_mod, "_prepare_backup_candidate", blocking_prep)
+
+    state = state_mod.FastPrompterState(profile_id=1)
+    assert entered.wait(5), "backup worker never started"
+
+    # While the backup Event is still blocked:
+    # 1. snapshot outcome is pending
+    ctx = state._startup_backup_ctx
+    assert not ctx.ready.is_set(), "backup must still be pending"
+
+    # 2. the live silo_identity_v1 table is empty (pre-init state, unchanged on disk)
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT * FROM silo_identity_v1").fetchall()
+    conn.close()
+    assert rows == [], "silo_identity_v1 was mutated on disk before snapshot was published!"
+
+    # 3. repaired identities exist only in memory and are marked dirty
+    assert getattr(state, "_silo_id_dirty", False) is True
+    assert ("default", 0, 0) in getattr(state, "silo_identities", {})
+
+    # Release snapshot publication
+    release.set()
+    deadline = time.monotonic() + 5
+    while not ctx.ready.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ctx.ready.is_set()
+
+    # Now perform the first durable save
+    assert state.save_data_to_db("sample content", force=True) is True
+
+    # Now identity rows are persisted on disk
+    conn = sqlite3.connect(db)
+    rows_after = conn.execute("SELECT * FROM silo_identity_v1").fetchall()
+    conn.close()
+    assert len(rows_after) > 0, "identities should be persisted after first successful save"
+
+
+def test_silo_identity_backfill_does_not_mutate_disk_on_snapshot_failure(
+        tmp_path, monkeypatch):
+    """CORE-002: failed snapshot leaves the disk identity anchor unchanged."""
+    import sqlite3
+    db = _make_large_current_db(tmp_path, "identity_failure.db")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS silo_identity_v1 ("
+        "category TEXT NOT NULL, is_archive INTEGER NOT NULL, "
+        "slot INTEGER NOT NULL, silo_id TEXT NOT NULL, "
+        "PRIMARY KEY (category, is_archive, slot))")
+    conn.execute(
+        "INSERT OR REPLACE INTO temp_presets_v2 (category, slot, content) "
+        "VALUES ('default', 0, 'sample content')")
+    conn.execute("DELETE FROM silo_identity_v1")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(state_mod, "get_db_path", lambda profile_id=1: db)
+    _big(monkeypatch, db)
+
+    def failing_prep(source_conn, dest_path, validate=True):
+        raise OSError("snapshot failed")
+
+    monkeypatch.setattr(state_mod, "_prepare_backup_candidate", failing_prep)
+
+    state = state_mod.FastPrompterState(profile_id=1)
+    deadline = time.monotonic() + 5
+    ctx = state._startup_backup_ctx
+    while not ctx.ready.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ctx.ready.is_set()
+    assert ctx.failed is True
+
+    # Save is refused because snapshot failed
+    assert state.save_data_to_db("sample content", force=True) is False
+
+    # Disk identity table is still empty (original on-disk state untouched)
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT * FROM silo_identity_v1").fetchall()
+    conn.close()
+    assert rows == [], "failed snapshot must leave on-disk identity rows untouched"
+
+

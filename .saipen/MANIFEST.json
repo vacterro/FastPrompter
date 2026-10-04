@@ -135,11 +135,11 @@
    "directory_rule"
   ]
  },
- "generated_at": "2026-10-03T23:58:27Z",
+ "generated_at": "2026-10-04T16:43:22Z",
  "generator": "saipen-audit-manifest/3",
  "kind": "saipen_audit_manifest",
  "memory_root": ".saipen",
- "protocol_version": "8.0.2",
+ "protocol_version": "8.1.0",
  "references": {
   "carriers": [
    {

@@ -1,0 +1,14 @@
+{
+  "clauses": {
+    "SRC-092:R001": {
+      "actionable": true,
+      "class": "requirement",
+      "text": "Show all hotkeys on hover for Pack header control and toolbar buttons"
+    }
+  },
+  "derived_at": "2026-10-04T15:51:36Z",
+  "derived_from": "SRC-092",
+  "interpretation_revision": 1,
+  "schema_version": 1,
+  "source_sha256": "39e9c024ac6f86333707c0a6909cc223880558bb1b90e0eaaadcdb2da8fd4bae"
+}

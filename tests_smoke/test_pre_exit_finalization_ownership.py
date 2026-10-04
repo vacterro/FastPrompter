@@ -340,18 +340,32 @@ def test_contract_h_direct_exit_static_guard():
     src_dir = Path(m.__file__).parent
     violations = []
 
-    approved = {
-        ("main.py", "QApplication.quit"),
+    approved_methods = {
+        ("main.py", "QApplication.quit"): {"quit_app"},
     }
 
     forbidden_attrs = {"quit", "exit"}
     forbidden_classes = {"QApplication", "QCoreApplication", "qApp"}
 
-    for py_file in src_dir.rglob("*.py"):
-        rel_path = py_file.relative_to(src_dir).as_posix()
-        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+    class ScopeVisitor(ast.NodeVisitor):
+        def __init__(self, rel_path):
+            self.rel_path = rel_path
+            self.current_func = None
+
+        def visit_FunctionDef(self, node):
+            old = self.current_func
+            self.current_func = node.name
+            self.generic_visit(node)
+            self.current_func = old
+
+        def visit_AsyncFunctionDef(self, node):
+            old = self.current_func
+            self.current_func = node.name
+            self.generic_visit(node)
+            self.current_func = old
+
+        def visit_Call(self, node):
+            if isinstance(node.func, ast.Attribute):
                 attr = node.func.attr
                 if attr in forbidden_attrs:
                     target = None
@@ -362,10 +376,18 @@ def test_contract_h_direct_exit_static_guard():
 
                     if target in forbidden_classes:
                         call_sig = f"{target}.{attr}"
-                        if (rel_path, call_sig) not in approved:
-                            violations.append((rel_path, node.lineno, call_sig))
+                        allowed_funcs = approved_methods.get((self.rel_path, call_sig))
+                        if allowed_funcs is None or self.current_func not in allowed_funcs:
+                            violations.append((self.rel_path, node.lineno, call_sig, self.current_func))
+            self.generic_visit(node)
+
+    for py_file in src_dir.rglob("*.py"):
+        rel_path = py_file.relative_to(src_dir).as_posix()
+        tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        ScopeVisitor(rel_path).visit(tree)
 
     assert violations == [], f"Direct exit calls found outside approved: {violations}"
+
 
 
 # Contract I: SYS.EXIT CONTROL FLOW

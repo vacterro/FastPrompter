@@ -69,6 +69,7 @@ def build_help_html(data, lang="EN") -> str:
         (hk("hk_export_silo", "Ctrl+Shift+S"), "Export the current silo to a .txt/.md file"),
         (hk("hk_pack_silo", "Ctrl+Shift+P"), "Pack the current silo into one portable ZIP "
                                 "and copy it to the clipboard"),
+        (hk("hk_pack_selection", "Ctrl+Shift+C"), "Pack selected text and referenced media into a ZIP"),
         ("Ctrl+Plus / Ctrl+Minus", "Fine-tune the UI scale"),
         (hk("hk_timers", "Ctrl+Shift+T"), "Open Timers"),
         (hk("hk_hashtags", "Alt+Shift+T"), "Open Hashtags"),

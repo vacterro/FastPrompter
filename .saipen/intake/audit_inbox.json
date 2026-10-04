@@ -39,6 +39,19 @@
       "size_bytes": 52855,
       "state": "DELETED"
     },
+    "audit/13.md": {
+      "binding": "exact",
+      "captured_at": "2026-10-04T14:44:28Z",
+      "closed_at": "2026-10-04T15:27:39Z",
+      "file_sha256": "c009e20e0493045f99254f2591fbfc6fff7f08bfc80353b3e61b41b1020d9a84",
+      "generation": 1,
+      "layer": 13,
+      "linked_work": "T-1427",
+      "receipt_id": "SRC-091",
+      "receipt_sha256": "c009e20e0493045f99254f2591fbfc6fff7f08bfc80353b3e61b41b1020d9a84",
+      "size_bytes": 53094,
+      "state": "DELETED"
+    },
     "audit/9.md": {
       "binding": "exact",
       "captured_at": "2026-09-10T01:40:45Z",

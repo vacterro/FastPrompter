@@ -1,0 +1,59 @@
+{
+  "agent": "saipen-cli",
+  "created_at": "2026-10-04T09:40:47Z",
+  "evidence_class": "mixed",
+  "findings_digest": "feee2be3c28749ca4a90797218270ee0a8b55ecf04fd795fe188b03cb1a2d868",
+  "gate": "core",
+  "integrity_digest": "cee497eb9fd2f7ba",
+  "journal_op_id": "reverify.bcf30dece2a8",
+  "original_closure": {
+    "claim_time": "2026-10-03T20:10:04Z",
+    "closure_mode": "own_patch",
+    "last_ticket_event": "E-4190",
+    "owner": "saipen-cli",
+    "source_receipts": "SRC-082"
+  },
+  "own_problem_keys": [
+    "13c1ddf5c50ac2ff",
+    "832bc5551758b710"
+  ],
+  "problem_count": 13,
+  "project_identity": "v:\\___vac\\__k\\__code\\_py\\_fastprompter",
+  "project_lineage": "lineage-c13f771bc2924a5a81b65fc79e5aca08",
+  "receipt_id": "RV-001396",
+  "ruleset_fingerprint": "82e5e183ae8f0fd909be3fa3627f00489cacaab813d942186c832db02a05a1c1",
+  "ruleset_version": 1,
+  "schema_version": 1,
+  "source_head": "f200f6247917e813b249a6358bd4d76ce682167f",
+  "source_tree_fingerprint": "git-delta-v1:532879055857cfbdea74959905f7ca5531964b6da880ae0c8ab5c1c02d8c2f3d",
+  "verdict": "FAIL",
+  "verification": [
+    {
+      "command": "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q:156 passed, 0 failed",
+      "executed": false,
+      "kind": "attested",
+      "result": "PASS"
+    },
+    {
+      "command": "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q",
+      "duration_ms": 2497,
+      "executed": true,
+      "exit_code": 0,
+      "output_bytes": 329,
+      "output_digest": "40f9781e63c6cf5d",
+      "result": "PASS"
+    }
+  ],
+  "verification_contract": {
+    "commands": [
+      "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q:156 passed, 0 failed",
+      "python -m pytest tests/test_shortcut_hover_t1410.py tests/test_toast_semantics_t1410.py tests/test_silo_bundle_admission_t1410.py tests/test_silo_bundle_core_t1409.py tests/test_silo_bundle_header_t1409.py tests/test_silo_bundle_dialog_t1409.py tests/test_silo_bundle_clipboard_t1409.py tests/test_hotkey_spec_single_source.py -q"
+    ],
+    "findings_digest": "feee2be3c28749ca4a90797218270ee0a8b55ecf04fd795fe188b03cb1a2d868",
+    "gate": "core"
+  },
+  "verification_contract_digest": "f8ddae77023be958",
+  "verifier": "saipen-cli",
+  "warning_count": 57,
+  "work": "T-1410"
+}
