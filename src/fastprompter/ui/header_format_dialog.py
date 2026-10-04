@@ -531,4 +531,9 @@ class HeaderFormatDialog(QDialog):
         self.main_win.mark_dirty()
         if hasattr(self.main_win, "le_hdr_fmt"):
             self.main_win.le_hdr_fmt.setText(cfg["format"])
+        cb_follow = getattr(self.main_win, "cb_header_follow", None)
+        if cb_follow is not None:
+            cb_follow.blockSignals(True)
+            cb_follow.setChecked(cfg["follow_edit"])
+            cb_follow.blockSignals(False)
         self.accept()

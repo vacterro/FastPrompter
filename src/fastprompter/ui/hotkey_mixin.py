@@ -25,13 +25,18 @@ class HotkeyMixin:
 
     def _apply_tooltips(self):
         """Update tooltip for hotkey-related buttons."""
-        h_global = self.data.get("global_hotkey", "Alt+X")
-        h_pie = self.data.get("pie_menu_hotkey", "Shift+Alt+X")
-        h_lock = self.data.get("lock_window_hotkey", "Alt+E")
-        h_aot = self.data.get("always_on_top_hotkey", "Alt+S")
-        h_sidebar = self.data.get("toggle_sidebar_hotkey", "Alt+D")
-        h_clickout = self.data.get("hide_on_clickout_hotkey", "Alt+A")
-        h_files = self.data.get("toggle_files_hotkey", "Alt+F")
+        from fastprompter.ui.shortcut_display import resolve
+
+        def hk(name):
+            return resolve(self, name) or "—"
+
+        h_global = hk("global_hotkey")
+        h_pie = hk("pie_menu_hotkey")
+        h_lock = hk("lock_window_hotkey")
+        h_aot = hk("always_on_top_hotkey")
+        h_sidebar = hk("toggle_sidebar_hotkey")
+        h_clickout = hk("hide_on_clickout_hotkey")
+        h_files = hk("toggle_files_hotkey")
 
         lang = self._current_lang
         if getattr(self, "cb_top", None) is not None and not _is_deleted(self.cb_top):
@@ -40,6 +45,12 @@ class HotkeyMixin:
             self.cb_lock_window.setToolTip(f"{tr('Lock Window', lang)} ({h_lock})")
 
         lang = self._current_lang
+        # T-1410: every chord below is read from the binding at the moment the
+        # sheet is built. They used to be twelve literal strings, which meant a
+        # rebound key left this blob advertising the key the user just gave up
+        # — the same class of drift as the per-button tooltips. The F1-F10 row
+        # is the one exception and stays a range: it names a fixed series, not
+        # one command's binding.
         shortcuts_info = (
             f"{tr('--- GLOBAL HOTKEYS (work anywhere) ---', lang)}\n"
             f"{tr('Toggle App Visibility', lang)}: {h_global}\n"
@@ -50,17 +61,17 @@ class HotkeyMixin:
             f"{tr('Toggle Sidebar', lang)}: {h_sidebar}\n"
             f"{tr('Toggle Hide-on-Clickout', lang)}: {h_clickout}\n"
             f"{tr('Toggle Files (asset drawer)', lang)}: {h_files}\n"
-            f"Ctrl+Q : {tr('Cycle Snap Corners (move across screens)', lang)}\n"
-            f"Ctrl+N : {tr('New Empty Snippet', lang)}\n"
-            f"Ctrl+S : {tr('Save Snippet', lang)}\n"
-            f"Ctrl+Z : {tr('Undo Text Change', lang)}\n"
-            f"Ctrl+D : {tr('Toggle Focus Mode', lang)}\n"
-            f"Ctrl+F : {tr('Find Text', lang)}\n"
-            f"Ctrl+H : {tr('Replace Text', lang)}\n"
-            f"Ctrl+Shift+S : {tr('Export/Save Silo to File', lang)}\n"
-            f"Esc : {tr('Hide Window & Auto-save', lang)}\n"
+            f"{hk('hk_snap')} : {tr('Cycle Snap Corners (move across screens)', lang)}\n"
+            f"{hk('hk_new_snippet')} : {tr('New Empty Snippet', lang)}\n"
+            f"{hk('hk_save_snippet')} : {tr('Save Snippet', lang)}\n"
+            f"{hk('hk_undo')} : {tr('Undo Text Change', lang)}\n"
+            f"{hk('hk_focus')} : {tr('Toggle Focus Mode', lang)}\n"
+            f"{hk('hk_find')} : {tr('Find Text', lang)}\n"
+            f"{hk('hk_replace')} : {tr('Replace Text', lang)}\n"
+            f"{hk('hk_export_silo')} : {tr('Export/Save Silo to File', lang)}\n"
+            f"{hk('escape')} : {tr('Hide Window & Auto-save', lang)}\n"
             f"F1 - F10 : {tr('Switch to Project 1-10 (set fkey_action=snippets for Snippet 1-10)', lang)}\n"
-            f"Ctrl+Alt+Shift+Q : {tr('Quit Application Completely', lang)}"
+            f"{hk('hk_quit')} : {tr('Quit Application Completely', lang)}"
         )
         if hasattr(self, "btn_hotkeys") and not _is_deleted(self.btn_hotkeys):
             self.btn_hotkeys.setToolTip(shortcuts_info)

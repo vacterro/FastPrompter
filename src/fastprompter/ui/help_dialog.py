@@ -67,6 +67,8 @@ def build_help_html(data, lang="EN") -> str:
         (hk("hk_snap", "Ctrl+Q"), "Snap the window through screen corners"),
         (hk("hk_focus", "Ctrl+D"), "Zen / focus mode (hide all chrome)"),
         (hk("hk_export_silo", "Ctrl+Shift+S"), "Export the current silo to a .txt/.md file"),
+        (hk("hk_pack_silo", "Ctrl+Shift+P"), "Pack the current silo into one portable ZIP "
+                                "and copy it to the clipboard"),
         ("Ctrl+Plus / Ctrl+Minus", "Fine-tune the UI scale"),
         (hk("hk_timers", "Ctrl+Shift+T"), "Open Timers"),
         (hk("hk_hashtags", "Alt+Shift+T"), "Open Hashtags"),
@@ -90,6 +92,11 @@ def build_help_html(data, lang="EN") -> str:
         ("Click &#9112; on a ``` code fence", "Copy that code block to the clipboard"),
         ("Click &#9662; on a header / fence",
          "Fold (collapse) the section; right-click editor &rarr; Expand All Folds"),
+        ("Click &#9636; on a silo header",
+         "The Pack control on a silo header: click reuses or bundles into one "
+         "portable ZIP &amp; copies it, Shift+click chooses what goes in, "
+         "Ctrl+click forces repack, Ctrl+Shift+click copies last bundle, "
+         "Alt+click opens last bundle folder, right-click opens actions."),
         ("Alt+drop files on the Files panel", "Add .url links instead of copies"),
         ("Drag files over the editor",
          "A grid of drop zones appear: insert as text, "

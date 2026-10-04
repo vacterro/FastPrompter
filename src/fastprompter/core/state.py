@@ -83,6 +83,15 @@ _JSON_SETTINGS = (
     # Splitter geometries are lists in the shipped profile (and the live DB
     # stores them as JSON arrays), so they must round-trip as JSON, not str().
     "splitter_sizes", "splitter_sizes_left", "splitter_sizes_right",
+    # T-1409: silo_id -> {canonical media path: first-seen epoch}. The Added
+    # column's primary authority; without JSON round-trip every record reloads
+    # as one str() blob and the column falls back to filesystem timestamps.
+    "silo_media_first_seen",
+    # T-1409: remembered Pack-with-options defaults, keyed by silo_id. The
+    # per-file checkbox state is deliberately NOT stored here.
+    "silo_bundle_defaults",
+    # T-1411: per-silo persistent bundle history and fast hash cache.
+    "silo_bundle_history",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -347,6 +356,15 @@ _STRUCTURED_CODECS = {
     # a stale parallel four-rule codec used to disagree with fresh installs.
     "interval_notifs": (list, copy.deepcopy(
         DEFAULT_PROFILE.get("interval_notifs", [])), True),
+    # T-1409 Pack Silo: silo_id -> {canonical media path: first-seen epoch}.
+    # Record only -- nothing here owns or deletes media, so a wrong row costs a
+    # worse sort, never data.
+    "silo_media_first_seen": (dict, {}, True),
+    # T-1409: the Shift+Click dialog's remembered choices (sort, destination,
+    # portability, the two opt-ins). Never the per-file checkboxes.
+    "silo_bundle_defaults": (dict, {}, True),
+    # T-1411: per-silo managed bundle history and hash cache.
+    "silo_bundle_history": (dict, {}, True),
 }
 
 

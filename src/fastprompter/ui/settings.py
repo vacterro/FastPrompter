@@ -243,6 +243,13 @@ class HotkeySettingsDialog(QDialog):
         if hasattr(self, "cb_fkey_action"):
             self.main_win.data["fkey_action"] = self.cb_fkey_action.currentData()
         self.main_win.setup_global_shortcuts()
+        # T-1410: a rebind has to reach the hovers too. Without this the new
+        # key works while every tooltip still advertises the one the user just
+        # gave up. The tooltip is output, so it is re-derived from the new
+        # bindings here rather than trusted.
+        apply_shortcuts = getattr(self.main_win, "apply_shortcut_tooltips", None)
+        if callable(apply_shortcuts):
+            apply_shortcuts()
         self.main_win.mark_dirty()
         self.main_win.save_data_to_db(force=True)
         self.accept()

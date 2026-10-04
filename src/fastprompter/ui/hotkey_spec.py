@@ -70,6 +70,12 @@ IN_APP_HOTKEYS = [
     # listed here so the Shortcut settings shows the FULL set, none hidden.
     HotkeySpec("hk_audio_mute", "Ctrl+M", "Master Mute"),
     HotkeySpec("hk_quote", "Ctrl+Shift+Q", "Toggle Quote Conversion"),
+    # T-1410: Quick Pack was a header glyph with no key at all, so a silo
+    # could only be packed with a mouse. Deliberately window-owned
+    # (`action=None`): `setup_global_shortcuts` binds the single QShortcut,
+    # which fires wherever focus is — toolbar, sidebar or editor — instead of
+    # also dispatching from the editor and toggling twice for one keypress.
+    HotkeySpec("hk_pack_silo", "Ctrl+Shift+P", "Pack Silo"),
     HotkeySpec("hk_line_nums", "Alt+Z", "Toggle Line Numbers"),
     HotkeySpec("hk_settings", "Alt+`", "Toggle Mini Settings"),
     HotkeySpec("hk_timers", "Ctrl+Shift+T", "Open Timers"),

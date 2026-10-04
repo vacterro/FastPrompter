@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -549,6 +550,19 @@ def build_settings_tabs(self):
             or (hasattr(self, "text_area") and hasattr(self.text_area, "viewport") and self.text_area.viewport().update())
         ),
     )
+    # Same key as the header editor's "follow last edit": the Ctrl+E header's
+    # date + time are rewritten to the silo's last edit on every save.
+    self.cb_header_follow = create_footer_cb(
+        "🕒 Header follows last edit",
+        "On: the date and time in Ctrl+E headers of the open silo move to\n"
+        "its last edit, at the same moment the edit is saved.\n"
+        "Off: the stamp stays where Ctrl+E put it.",
+        self.data.get("ctrl_e_follow_edit", "False") == "True",
+        lambda checked: (
+            self.data.update({"ctrl_e_follow_edit": "True" if checked else "False"})
+            or self.mark_dirty()
+        ),
+    )
     self.cb_date_rect = create_footer_cb(
         "📅 Show Date Widget",
         "Show a floating date and time rectangle in the top-right\n"
@@ -878,6 +892,26 @@ def build_settings_tabs(self):
     files_row.addWidget(self.btn_image_viewer)
     files_row.addStretch(1)
 
+    retention_row = QHBoxLayout()
+    retention_row.setContentsMargins(0, 0, 0, 0)
+    retention_row.setSpacing(6)
+    retention_lbl = QLabel(tr("Silo bundle retention (versions)", getattr(self, "_current_lang", "EN")))
+    self.spin_bundle_retention = QSpinBox()
+    self.spin_bundle_retention.setRange(1, 50)
+    try:
+        self.spin_bundle_retention.setValue(int(self.data.get("silo_bundle_keep_versions", 5)))
+    except (TypeError, ValueError):
+        self.spin_bundle_retention.setValue(5)
+    self.spin_bundle_retention.valueChanged.connect(
+        lambda v: (self.data.update({"silo_bundle_keep_versions": str(v)}), self.mark_dirty())
+    )
+    self.spin_bundle_retention.setToolTip(tr(
+        "How many recent bundle archives to keep per silo in its exports folder (1–50). Older archives are pruned after packing.",
+        getattr(self, "_current_lang", "EN")))
+    retention_row.addWidget(retention_lbl)
+    retention_row.addWidget(self.spin_bundle_retention)
+    retention_row.addStretch(1)
+
     dev_row = QHBoxLayout()
     dev_row.setContentsMargins(0, 0, 0, 0)
     dev_row.setSpacing(4)
@@ -1035,6 +1069,40 @@ def build_settings_tabs(self):
     hdr_row.addWidget(btn_hdr_edit)
 
 
+    def _pair_captions(items):
+        """Join each "Caption:" label with the control right after it.
+
+        Cards put every item on its own line; a bare caption there would sit
+        alone above its spin box / combo. Only short, non-wrapping labels
+        ending in ":" count as captions - help text and status labels keep
+        their own line.
+        """
+        out = []
+        i = 0
+        while i < len(items):
+            item = items[i]
+            nxt = items[i + 1] if i + 1 < len(items) else None
+            caption = (getattr(item, "_en_text", None)
+                       or (item.text() if isinstance(item, QLabel) else ""))
+            if (isinstance(item, QLabel) and not item.wordWrap()
+                    and str(caption).rstrip().endswith(":")
+                    and nxt is not None and not isinstance(nxt, QLabel)):
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(4)
+                row.addWidget(item)
+                if isinstance(nxt, QLayout):
+                    row.addLayout(nxt)
+                else:
+                    row.addWidget(nxt)
+                row.addStretch(1)
+                out.append(row)
+                i += 2
+                continue
+            out.append(item)
+            i += 1
+        return out
+
     def _settings_group(title, items, min_width=0):
         """A compact titled box of related controls.
 
@@ -1064,7 +1132,8 @@ def build_settings_tabs(self):
         )
         col.addWidget(header)
 
-        inner = flow_widget(items, h_spacing=8, v_spacing=3)
+        inner = flow_widget(_pair_captions(items), h_spacing=8, v_spacing=3,
+                            one_per_line=True)
         if min_width:
             inner.setMinimumWidth(min_width)
         col.addWidget(inner)
@@ -1485,7 +1554,8 @@ def build_settings_tabs(self):
     # --- TAB 1: EDITOR ---
     self.settings_tabs.addTab(_tab([
         _settings_group("Dividers & headers", [
-            div_row, ctrlw_btn_row, hdr_row, self.cb_hr_visual, self.cb_conceal,
+            div_row, ctrlw_btn_row, hdr_row, self.cb_header_follow,
+            self.cb_hr_visual, self.cb_conceal,
         ]),
         _settings_group("Typing", [
             self.cb_focus, self.cb_tray_activate, self.cb_wrap, self.cb_ctrl_c,
@@ -1544,7 +1614,7 @@ def build_settings_tabs(self):
             self.cb_cs_style, self.btn_sound_settings,
         ]),
         _settings_group("Files & backup", [
-            self.cb_portable_backup, files_row, sync_row, dev_row,
+            self.cb_portable_backup, files_row, retention_row, sync_row, dev_row,
         ]),
         _settings_group("Sync-Project", [
             self.cb_sync_live, self.cb_sync_recursive,

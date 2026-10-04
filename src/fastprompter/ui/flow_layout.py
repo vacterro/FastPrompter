@@ -30,11 +30,14 @@ class _AtomicLayoutWidget(QWidget):
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, h_spacing=8, v_spacing=2,
-                 stretch_items=False, columns=False):
+                 stretch_items=False, columns=False, one_per_line=False):
         super().__init__(parent)
         self._items = []
         self._stretch = stretch_items
         self._columns = columns
+        # Settings cards: every control on its own line, so a card reads as
+        # a tidy column instead of a wrapped paragraph of checkboxes.
+        self._one_per_line = one_per_line
         self._h_space = h_spacing
         self._v_space = v_spacing
         self.setContentsMargins(margin, margin, margin, margin)
@@ -107,7 +110,7 @@ class FlowLayout(QLayout):
             line_start = i
             while i < len(items):
                 w, h = self._fit(items[i], full)
-                if line_h > 0 and x + w > right:
+                if line_h > 0 and (self._one_per_line or x + w > right):
                     break
                 x += w + self._h_space
                 line_h = max(line_h, h)
@@ -139,6 +142,9 @@ class FlowLayout(QLayout):
                 item = items[j]
                 w, h = self._fit(item, full)
                 w += spare
+                if self._one_per_line and isinstance(item.widget(),
+                                                     _AtomicLayoutWidget):
+                    w = max(w, full)
                 # A widened container has to re-flow its own contents, or it
                 # keeps the tall narrow shape it had at hint width and the
                 # extra room buys nothing. Measured on the Editor tab: 351px
@@ -331,7 +337,7 @@ class FlowWidget(QWidget):
     QLayout.totalHeightForWidth — which may not exist in PyQt6.
     """
     def __init__(self, items, margin=0, h_spacing=8, v_spacing=2,
-                 stretch_items=False):
+                 stretch_items=False, one_per_line=False):
         super().__init__()
         policy = QSizePolicy(QSizePolicy.Policy.Preferred,
                              QSizePolicy.Policy.Maximum)
@@ -339,7 +345,8 @@ class FlowWidget(QWidget):
         self.setSizePolicy(policy)
         self._flow = FlowLayout(self, margin=margin,
                                  h_spacing=h_spacing, v_spacing=v_spacing,
-                                 stretch_items=stretch_items)
+                                 stretch_items=stretch_items,
+                                 one_per_line=one_per_line)
         for item in items:
             if isinstance(item, QLayout):
                 sub = _AtomicLayoutWidget()
@@ -360,7 +367,9 @@ class FlowWidget(QWidget):
         return self._flow.heightForWidth(width)
 
 
-def flow_widget(items, margin=0, h_spacing=8, v_spacing=2, stretch_items=False):
+def flow_widget(items, margin=0, h_spacing=8, v_spacing=2, stretch_items=False,
+                one_per_line=False):
     """Wrap widgets/layouts in a FlowWidget using a FlowLayout."""
     return FlowWidget(items, margin=margin, h_spacing=h_spacing,
-                      v_spacing=v_spacing, stretch_items=stretch_items)
+                      v_spacing=v_spacing, stretch_items=stretch_items,
+                      one_per_line=one_per_line)

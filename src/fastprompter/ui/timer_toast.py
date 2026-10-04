@@ -67,18 +67,29 @@ def _get_toast_palette(main_win):
 class TimerToast(QWidget):
     """One popup per fired timer. Stacks upward if several land at once.
     Styled with classic Vintage Win95 3D bevels & active theme colors.
+
+    T-1410: also the app's generic notification popup, so it carries an
+    explicit semantic mode. ``toast_kind="timer"`` is the historical
+    behaviour — a default header of "Timer Notification" and a status row
+    that falls back to "Time's up". ``toast_kind="generic"`` renders NO
+    timer sentence at all: a missing status hides the row instead of
+    inventing one, and the Dismiss hover says what Dismiss actually does.
+    The binding/defaults came from the timer widget, so every app-owned
+    notification that reused it inherited "Time's up" for free.
     """
 
     _open: list[TimerToast] = []
 
     def __init__(self, main_win, timer, on_snooze=None, on_dismiss=None,
                  header=None, status=None, duration_ms=None,
-                 accent_color=None, symbol=None):
+                 accent_color=None, symbol=None, actions=None,
+                 toast_kind="timer"):
         super().__init__(None)
         self.main_win = main_win
         self.timer_obj = timer
         self.on_snooze = on_snooze
         self.on_dismiss = on_dismiss
+        self.toast_kind = "generic" if str(toast_kind).lower() == "generic" else "timer"
         lang = getattr(main_win, "_current_lang", "EN")
 
         self.setWindowFlags(
@@ -183,7 +194,9 @@ class TimerToast(QWidget):
         h_lay.setContentsMargins(6, 2, 4, 2)
         h_lay.setSpacing(4)
 
-        header_text = header or tr("Timer Notification", lang)
+        header_text = (header or (tr("Timer Notification", lang)
+                                  if self.toast_kind == "timer"
+                                  else tr("Notification", lang)))
         hdr_title = QLabel(header_text)
         hdr_title.setObjectName("HeaderTitle")
         h_lay.addWidget(hdr_title, 1)
@@ -234,10 +247,16 @@ class TimerToast(QWidget):
             desc.setMaximumWidth(320)
             mb_lay.addWidget(desc)
 
-        when = QLabel(status or tr("Time's up", lang))
-        when.setObjectName("InfoLbl")
-        when.setStyleSheet(f"color: {accent if accent_color else p['accent']};")
-        mb_lay.addWidget(when)
+        # T-1410: the "Time's up" fallback belongs to a timer and to nothing
+        # else. A generic toast with no status renders no row at all rather
+        # than a blank one or a borrowed sentence.
+        status_text = (status or tr("Time's up", lang)
+                       if self.toast_kind == "timer" else status)
+        if status_text:
+            when = QLabel(status_text)
+            when.setObjectName("InfoLbl")
+            when.setStyleSheet(f"color: {accent if accent_color else p['accent']};")
+            mb_lay.addWidget(when)
 
         row = QHBoxLayout()
         row.setSpacing(4)
@@ -251,12 +270,24 @@ class TimerToast(QWidget):
                 b.setToolTip(tr("Snooze", lang))
                 b.clicked.connect(lambda _c, m=mins: self._snooze(m))
                 row.addWidget(b)
+        # T-1409: optional owner-supplied actions ("Open folder", "Copy
+        # again"). Absent for every existing caller, so those toasts are
+        # unchanged. A non-callable entry is dropped rather than shown as a
+        # button that would silently do nothing.
+        for label, callback in (actions or ()):
+            if not callable(callback):
+                continue
+            ab = QPushButton(str(label))
+            ab.setProperty("class", "toast-btn")
+            ab.clicked.connect(lambda _c, fn=callback: self._run_action(fn))
+            row.addWidget(ab)
         row.addStretch(1)
         btn_ok = QPushButton(tr("Dismiss", lang))
         btn_ok.setProperty("class", "toast-btn")
         btn_ok.setToolTip(tr(
-            "Acknowledge the passed event — the red passed-event alert clears.",
-            lang))
+            "Acknowledge the passed event — the red passed-event alert clears."
+            if self.toast_kind == "timer"
+            else "Dismiss this notification.", lang))
         btn_ok.clicked.connect(self._dismiss)
         row.addWidget(btn_ok)
         mb_lay.addLayout(row)
@@ -286,6 +317,20 @@ class TimerToast(QWidget):
 
         TimerToast._open.append(self)
         self._ensure_unblocked()
+
+    def _run_action(self, fn):
+        """T-1409: run an owner action, then close this toast.
+
+        The toast is closed first so an action that opens a file manager or
+        repopulates the clipboard cannot leave the toast sitting on top of it,
+        and a failing action never takes the app down with it.
+        """
+        self.close()
+        try:
+            fn()
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("toast action failed")
 
     def _ensure_unblocked(self):
         """Ensure toast is clickable and not disabled by modal dialogs."""
@@ -426,7 +471,8 @@ class TimerToast(QWidget):
 
 def show_toast(main_win, timer, on_snooze=None, on_dismiss=None,
                header=None, status=None, duration_ms=None,
-               accent_color=None, symbol=None, *, appearance_audio=False):
+               accent_color=None, symbol=None, *, appearance_audio=False,
+               actions=None, toast_kind="timer"):
     """Show a toast; only a caller without a domain sound owner may opt in."""
     try:
         toast = TimerToast(main_win, timer, on_snooze=on_snooze,
@@ -434,7 +480,8 @@ def show_toast(main_win, timer, on_snooze=None, on_dismiss=None,
                            header=header, status=status,
                            duration_ms=duration_ms,
                            accent_color=accent_color,
-                           symbol=symbol)
+                           symbol=symbol, actions=actions,
+                           toast_kind=toast_kind)
         toast.show()
         # T-1256: visual presentation is silent by default. Domain-owned
         # notification policy (including explicit silence) outranks a generic
@@ -456,7 +503,7 @@ def show_toast(main_win, timer, on_snooze=None, on_dismiss=None,
 
 def show_simple_toast(main_win, title, message, *, header=None, status=None,
                       duration_ms=None, accent_color=None, symbol=None,
-                      appearance_audio=False):
+                      appearance_audio=False, actions=None):
     """Show a generic in-app toast with no timer object (T-1228).
 
     This is the SILENT visual half of an app-owned notification. It
@@ -475,5 +522,9 @@ def show_simple_toast(main_win, title, message, *, header=None, status=None,
     return show_toast(main_win, obj, header=header, status=status,
                       duration_ms=duration_ms,
                       accent_color=accent_color, symbol=symbol,
-                      appearance_audio=appearance_audio)
+                      appearance_audio=appearance_audio, actions=actions,
+                      # T-1410: a SimpleNamespace owner is not a timer. This
+                      # is the ONE place a generic toast is declared, so no
+                      # caller can inherit timer vocabulary by omission.
+                      toast_kind="generic")
 

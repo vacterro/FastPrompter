@@ -53,6 +53,12 @@ INLINE_HOVER_GRACE_MS = 200
 IMAGE_COPY_INSET = 3   # px between the Copy square and the pill's right edge
 IMAGE_COPY_GAP = 2     # px of clear space between the filename and the lane
 
+# T-1409: the Pack control's glyph. U+25A4 sits in the same Geometric Shapes
+# block as the fold arrow's U+25B8 / U+25BE this painter already renders, so it
+# inherits the font coverage those two prove instead of betting on an emoji
+# codepoint that would paint in colour. One constant, one swap.
+SILO_BUNDLE_GLYPH = "\u25a4"
+
 
 def _mid_top(rect, size):
     """Top edge that vertically centres a ``size`` box inside ``rect``."""
@@ -1207,6 +1213,131 @@ class VaultTextEdit(QTextEdit):
                 return block
             block = block.next()
         return None
+
+    # ------------------------------------------------------------------
+    # T-1409: the Pack control. It belongs to the SILO, not to a heading,
+    # so exactly one block in the document may own it -- the first
+    # top-level Markdown heading. One rect serves paint, press, release
+    # and hit testing; four rectangles would drift.
+    # ------------------------------------------------------------------
+
+    def _primary_header_block(self):
+        """The first top-level Markdown heading, or None.
+
+        Priority for the Ctrl+E stamped header falls out of "first": the
+        stamp is written into the user's own title line, which is the first
+        heading by construction. Cached per (document, revision) so a paint
+        pass over thousands of blocks never rescans the document; a hit test
+        or a click is a single attribute read.
+        """
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            return None
+        key = (id(doc), doc.revision())
+        cached = getattr(self, "_primary_header_cache", None)
+        if cached is not None and cached[0] == key:
+            return doc.findBlockByNumber(cached[1]) if cached[1] >= 0 else None
+        number = -1
+        in_code = False
+        block = doc.firstBlock()
+        while block.isValid():
+            stripped = block.text().strip()
+            # Same bare-fence rule as _rebuild_opener_cache: only a plain ```
+            # opens or closes, so ```python can only open. Without this a
+            # "# comment" inside a code block would claim the Pack control.
+            if stripped.startswith("```") and stripped.rstrip("`") == "":
+                in_code = not in_code
+            elif not in_code and self._header_level(block.text()) == 1:
+                number = block.blockNumber()
+                break
+            block = block.next()
+        self._primary_header_cache = (key, number)
+        return doc.findBlockByNumber(number) if number >= 0 else None
+
+    def _silo_bundle_available(self):
+        """T-1410: may the Pack control exist at all right now?
+
+        One capability query — no side effects, no network, no filesystem
+        scan — answering exactly what a click would be told. Paint, hit
+        testing, the cursor and the tooltip all read it, so the glyph cannot
+        appear where the action would be refused, and — the defect this
+        ticket fixes — its visibility never depends on whether the silo
+        folder happens to exist on disk yet.
+
+        Fail-OPEN: a window that cannot answer is a partial one (a test
+        double), and quietly hiding a control the user can still use would be
+        a worse lie than showing one.
+        """
+        query = getattr(self.main_win, "can_pack_active_silo", None)
+        if not callable(query):
+            return True
+        try:
+            return bool(query())
+        except Exception:
+            return True
+
+    def _silo_bundle_rect(self, block):
+        """Rect of the Pack control on a block, or None if it is not the owner.
+
+        The capability gate lives HERE so all six surfaces that ask for this
+        rect — paint, hit-test, cursor, press, release and the context menu —
+        agree by construction rather than by six copies of a condition.
+        """
+        if not self._silo_bundle_available():
+            return None
+        primary = self._primary_header_block()
+        if primary is None or not primary.isValid():
+            return None
+        if block is None or not block.isValid():
+            return None
+        if block.blockNumber() != primary.blockNumber():
+            return None
+        anchor = self._fold_rect(block)
+        if anchor is None:
+            anchor = self._ts_glyph_rect(block)
+        if anchor is not None:
+            return QRect(anchor.right() + 6, anchor.top(),
+                         anchor.width(), anchor.height())
+        cur = QTextCursor(block)
+        cur.movePosition(QTextCursor.MoveOperation.EndOfBlock)
+        r = self.cursorRect(cur)
+        size = max(14, r.height() - 2)
+        return QRect(r.right() + 6, r.top() + (r.height() - size) // 2, size, size)
+
+    def _silo_bundle_block_at(self, pos):
+        """The block owning the Pack control under ``pos``, else None.
+
+        No visible-region walk is needed: only one block in the whole
+        document can own the control, so the candidate is known.
+        """
+        if self.document().blockCount() > 2000:
+            return None
+        block = self._primary_header_block()
+        if block is None or not block.isVisible():
+            return None
+        rect = self._silo_bundle_rect(block)
+        if rect is not None and rect.contains(pos):
+            return block
+        return None
+
+    def _silo_bundle_dispatch_mode(self, mode: str):
+        """Hand the click to the window by resolved modifier mode (T-1411)."""
+        if mode == "copy_last":
+            action = getattr(self.main_win, "_silo_bundle_copy_last", None)
+        elif mode == "open_last_folder":
+            action = getattr(self.main_win, "_silo_bundle_open_last_folder", None)
+        elif mode == "force_repack":
+            action = getattr(self.main_win, "silo_bundle_force_repack", None)
+        elif mode == "with_options":
+            action = getattr(self.main_win, "silo_bundle_with_options", None)
+        else:
+            action = getattr(self.main_win, "silo_bundle_quick_pack", None)
+        if callable(action):
+            action()
+
+    def _silo_bundle_dispatch(self, with_options: bool):
+        """Legacy helper for callers passing boolean."""
+        self._silo_bundle_dispatch_mode("with_options" if with_options else "quick_pack")
 
     def _invalidate_opener_cache(self):
         """Drop the fence-opener cache on any text change — lazy rebuild on next access."""
@@ -2563,6 +2694,9 @@ class VaultTextEdit(QTextEdit):
                         and self._fence_is_opener(block)
                         and self._code_copy_rect(block).contains(pos)):
                     return True
+                pack_rect = self._silo_bundle_rect(block)
+                if pack_rect is not None and pack_rect.contains(pos):
+                    return True
             block = block.next()
         return False
 
@@ -2930,6 +3064,29 @@ class VaultTextEdit(QTextEdit):
                     self.viewport().update()
                     event.accept()
                     return
+                pack_block = self._silo_bundle_block_at(event.pos())
+                if pack_block is not None:
+                    self._silo_bundle_pressed_block = pack_block.blockNumber()
+                    # Modifiers are read HERE, at press (T-1411 § 2). Reading at
+                    # release would let modifiers pressed during drag pick wrong action.
+                    mods = event.modifiers()
+                    has_ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+                    has_shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+                    has_alt = bool(mods & Qt.KeyboardModifier.AltModifier)
+                    if has_ctrl and has_shift:
+                        self._silo_bundle_pressed_mode = "copy_last"
+                    elif has_alt:
+                        self._silo_bundle_pressed_mode = "open_last_folder"
+                    elif has_ctrl:
+                        self._silo_bundle_pressed_mode = "force_repack"
+                    elif has_shift:
+                        self._silo_bundle_pressed_mode = "with_options"
+                    else:
+                        self._silo_bundle_pressed_mode = "quick_pack"
+                    self._silo_bundle_pressed_shift = (self._silo_bundle_pressed_mode == "with_options")
+                    self.viewport().update()
+                    event.accept()
+                    return
                 cb_block = self._checkbox_at_pos(event.pos())
                 if cb_block:
                     self._toggle_single_line(cb_block)
@@ -3001,6 +3158,8 @@ class VaultTextEdit(QTextEdit):
             self._image_copy_pressed = None
             self._link_copy_pressed = None
             self._ts_pressed_block = None
+            self._silo_bundle_pressed_block = None
+            self._silo_bundle_pressed_mode = None
             logger.exception("mouse press handling failed at %s", event.pos())
         _line_drag_mods = (Qt.KeyboardModifier.ControlModifier
                            | Qt.KeyboardModifier.ShiftModifier)
@@ -3234,6 +3393,19 @@ class VaultTextEdit(QTextEdit):
             block = self._ts_glyph_block_at(event.pos())
             if block is not None and block.blockNumber() == pressed:
                 self.main_win.refresh_timestamp_in_block(block)
+            event.accept()
+            return
+        pressed_pack = getattr(self, "_silo_bundle_pressed_block", None)
+        if pressed_pack is not None and event.button() == Qt.MouseButton.LeftButton:
+            self._silo_bundle_pressed_block = None
+            mode = getattr(self, "_silo_bundle_pressed_mode", "quick_pack")
+            self._silo_bundle_pressed_mode = None
+            self.viewport().update()
+            # The release must land on the SAME control: a drag that started
+            # here and ended elsewhere is a selection, not a pack.
+            block = self._silo_bundle_block_at(event.pos())
+            if block is not None and block.blockNumber() == pressed_pack:
+                self._silo_bundle_dispatch_mode(mode)
             event.accept()
             return
         super().mouseReleaseEvent(event)
@@ -3615,6 +3787,58 @@ class VaultTextEdit(QTextEdit):
                 return
         super().mouseMoveEvent(event)
 
+    def helpEvent(self, event):
+        """T-1409: the Pack control's translated tooltip.
+
+        The other inline header controls ship without one, so this handler
+        exists only for Pack and returns immediately for everything else.
+
+        T-1410: the last line is the Pack command's CURRENT key, read from
+        the same binding the QShortcut is built from. A control that has a
+        shortcut and does not show it is the defect this fixes, so the glyph
+        is no exception.
+        """
+        try:
+            if self._silo_bundle_block_at(event.pos()) is None:
+                return super().helpEvent(event)
+        except Exception:
+            return super().helpEvent(event)
+        from PyQt6.QtWidgets import QToolTip
+        lang = getattr(self.main_win, '_current_lang', 'EN')
+        from fastprompter.ui.shortcut_display import resolve, tooltip_with_shortcut
+        tip = (
+            tr("Pack Silo", lang)
+            + "\n" + tr("Click: Smart Quick Pack (reuses identical bundle)", lang)
+            + "\n" + tr("Shift+Click: Pack With Options", lang)
+            + "\n" + tr("Ctrl+Click: Force Repack", lang)
+            + "\n" + tr("Ctrl+Shift+Click: Copy Last Bundle", lang)
+            + "\n" + tr("Alt+Click: Open Last Bundle Folder", lang)
+            + "\n" + tr("Right-click: more bundle actions", lang)
+        )
+        QToolTip.showText(
+            event.globalPos(),
+            tooltip_with_shortcut(tip, resolve(self.main_win, "hk_pack_silo"),
+                                  lang),
+            self)
+        event.accept()
+        return None
+
+    def _silo_bundle_dispatch_fallback(self, _checked=False):
+        self._silo_bundle_dispatch(False)
+
+    def _silo_bundle_dispatch_with_options(self, _checked=False):
+        self._silo_bundle_dispatch(True)
+
+    def _add_silo_bundle_menu(self, menu, lang):
+        """T-1409: the Pack right-click menu, plus the no-header fallback.
+
+        The two leading actions are ALSO appended to the generic context menu,
+        so a silo with no formatted title can still be packed through the same
+        backend.
+        """
+        from fastprompter.ui.silo_bundle_actions import build_bundle_menu
+        return build_bundle_menu(self, menu, lang)
+
     def contextMenuEvent(self, event):
         if self._dragged:
             self._dragged = False
@@ -3628,6 +3852,20 @@ class VaultTextEdit(QTextEdit):
             return
         menu = self.createStandardContextMenu()
         menu.addSeparator()
+
+        # T-1409: right-clicking the Pack control offers the bundle actions
+        # first, exactly as an image offers its own actions. A silo with NO
+        # formatted title still gets the two leading actions further down, so
+        # a missing header never makes bundling impossible.
+        pack_hit = False
+        try:
+            pack_hit = self._silo_bundle_block_at(event.pos()) is not None
+        except Exception:
+            pack_hit = False
+        if pack_hit:
+            lang_pack = getattr(self.main_win, '_current_lang', 'EN')
+            self._add_silo_bundle_menu(menu, lang_pack)
+            menu.addSeparator()
 
         # An image under the pointer: view it / grab it without opening
         # anything. Placed first - it is what the right-click was aimed at.
@@ -3667,6 +3905,10 @@ class VaultTextEdit(QTextEdit):
         # reason they right-clicked - and it is disabled when nothing is
         # selected rather than hidden, so its existence is discoverable
         self.main_win.build_send_selection_menu(menu)
+        menu.addSeparator()
+        menu.addAction(tr("Pack Silo", lang), self._silo_bundle_dispatch_fallback)
+        menu.addAction(tr("Pack Silo With Options…", lang),
+                       self._silo_bundle_dispatch_with_options)
         menu.addSeparator()
         menu.addAction(tr("Expand All Folds", lang), self.unfold_all)
         # rare toolbar actions live here too (hidden from narrow headers)
@@ -4811,6 +5053,18 @@ class VaultTextEdit(QTextEdit):
                     markup = self.image_paste_markup(
                         os.path.basename(name), QUrl.fromLocalFile(name).toString())
                     self._paste_image_inline(markup)
+                    # T-1409: record when this media first entered the silo.
+                    # This is the Added column's primary authority, and the
+                    # one rung of its chain that survives a file being touched,
+                    # copied or restored. It RECORDS a time and nothing else:
+                    # it never owns, renames or deletes the media.
+                    try:
+                        note = getattr(self.main_win,
+                                       "_silo_media_note_first_seen", None)
+                        if callable(note):
+                            note(self.main_win._active_silo_id(), [name])
+                    except Exception:
+                        pass
                     # Refresh file container if open.
                     # Guard with ignore_focus_loss: the file container
                     # is a Qt.Tool window when undocked, and touching
@@ -5958,6 +6212,37 @@ class VaultTextEdit(QTextEdit):
                                 painter.setFont(gf)
                                 tg = g.adjusted(2, 2, 2, 2) if pressed else g
                                 painter.drawText(tg, Qt.AlignmentFlag.AlignCenter, "\u27f3")
+                                painter.setFont(self.font())
+
+                        # T-1409: Pack, the THIRD inline header control, drawn
+                        # after the fold box with the identical bevel so it
+                        # belongs to the row instead of looking bolted on.
+                        # Only the primary header ever has one.
+                        if not is_large:
+                            pack_rect = self._silo_bundle_rect(block)
+                            if pack_rect is not None:
+                                pb = QRectF(pack_rect)
+                                pressed_b = (getattr(
+                                    self, "_silo_bundle_pressed_block", -1) == bnum)
+                                painter.setRenderHint(
+                                    QPainter.RenderHint.Antialiasing, False)
+                                painter.fillRect(pb, QColor("#1e1e1e"))
+                                light_b = QColor("#3a3a3a")
+                                dark_b = QColor("#0a0a0a")
+                                painter.setPen(dark_b if pressed_b else light_b)
+                                painter.drawLine(pb.topLeft(), pb.topRight())
+                                painter.drawLine(pb.topLeft(), pb.bottomLeft())
+                                painter.setPen(light_b if pressed_b else dark_b)
+                                painter.drawLine(pb.bottomLeft(), pb.bottomRight())
+                                painter.drawLine(pb.topRight(), pb.bottomRight())
+                                painter.setPen(QColor("#a0a0a0"))
+                                bfont = self.font()
+                                bfont.setPointSizeF(
+                                    max(8.0, bfont.pointSizeF() * 1.1))
+                                painter.setFont(bfont)
+                                tbox = pb.adjusted(2, 2, 2, 2) if pressed_b else pb
+                                painter.drawText(tbox, Qt.AlignmentFlag.AlignCenter,
+                                                 SILO_BUNDLE_GLYPH)
                                 painter.setFont(self.font())
 
                         # --- horizontal rule visual line (skip for large docs)

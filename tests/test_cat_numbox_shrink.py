@@ -33,6 +33,7 @@ def _make_window():
 
     w = FastPrompter()
     w.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+    w.data["limit_gauges"] = "False"
     w.data["numbox_tabs"] = "True"
     w.data["numbox_per_row"] = "10"
     w.data["numbox_btn_size"] = "22"

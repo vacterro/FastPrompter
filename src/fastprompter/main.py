@@ -23,6 +23,7 @@ from PyQt6.QtCore import (
     QTimer,
     QUrl,
     pyqtSignal,
+    pyqtSlot,
 )
 from PyQt6.QtGui import (
     QColor,
@@ -620,6 +621,141 @@ class _TypoScanWorker(QObject):
         except Exception:
             spans = []
         self.scanned.emit(request_id, spans)
+
+
+def _bundle_worker_has_nothing(plan):
+    """Does this plan carry a single thing worth putting in an archive?
+
+    T-1410. A blank `.md` is a member, but it is not CONTENT: an empty silo
+    with no media and no attachments has nothing to pack, and saying so is
+    the truth. Membership alone cannot answer it, so the Markdown body is
+    asked as well.
+    """
+    if plan.items:
+        return False
+    return not ((plan.text_body or "").strip())
+
+
+class _BundleWorker(QObject):
+    """T-1409: plans and writes ONE silo bundle on its own thread.
+
+    Everything it needs arrives as arguments inside the frozen capture taken
+    on the GUI thread at click time. It never reads a widget, never
+    re-resolves the active silo and never consults the live document, which
+    is exactly what makes an in-flight bundle immune to a silo switch, a
+    project switch or an edit. Progress leaves through a signal, because the
+    only safe way for a worker to reach a QWidget is to not touch it.
+    """
+
+    dispatch = pyqtSignal(object)   # frozen capture
+    progress = pyqtSignal(int, int, str)   # done, total, member
+    finished = pyqtSignal(object)   # ("ok"|"cancel"|"error", payload)
+
+    def _run(self, cap):
+        from fastprompter.core import silo_bundle as sb
+        cancel = cap["cancel"]
+
+        def report(done, total, member):
+            self.progress.emit(int(done), int(total), str(member))
+
+        try:
+            plan = sb.plan_bundle(**cap["plan_kwargs"])
+            # T-1410: emptiness is a PAYLOAD verdict, not an admission one.
+            # Only here is the real silo listing known, so this is the first
+            # honest place to say a bundle would carry nothing at all.
+            if _bundle_worker_has_nothing(plan):
+                self.finished.emit(("empty", None))
+                return
+
+            force_repack = bool(cap.get("force_repack", False))
+            history_candidates = cap.get("history_candidates") or []
+            source_cache = cap.get("source_cache") or {}
+
+            # Preflight smart reuse check (when not forcing a repack)
+            if not force_repack and history_candidates:
+                report(0, 1, "Checking bundle…")
+                hashes, updated_cache = sb.resolve_plan_hashes(
+                    plan, source_cache, cancel=cancel)
+                fp = sb.compute_content_fingerprint(plan, hashes)
+                # Search retained candidates newest-first (T-1411 § 56)
+                for cand in history_candidates:
+                    if cand.get("content_fingerprint") == fp:
+                        cand_path = cand.get("path")
+                        if sb.verify_reuse_candidate(
+                                cand_path, fp, cand.get("archive_size")):
+                            # Reuse hit!
+                            self.finished.emit(("reuse", {
+                                "zip_path": cand_path,
+                                "fingerprint": fp,
+                                "display_title": plan.display_title,
+                                "target_dir": plan.target_dir,
+                                "items": tuple(i for i in plan.items if i.available),
+                                "missing": tuple(i for i in plan.items if not i.available),
+                                "source_cache": updated_cache,
+                            }))
+                            return
+
+            result = sb.write_bundle(plan, progress=report, cancel=cancel)
+        except Exception as exc:
+            # The progress dialog is closed by the GUI-side finished handler
+            # alone, so anything escaping here would hang it forever.
+            self.finished.emit(("error", str(exc) or exc.__class__.__name__))
+            return
+
+        if result.cancelled:
+            self.finished.emit(("cancel", None))
+        elif result.error:
+            self.finished.emit(("error", result.error))
+        else:
+            self.finished.emit(("ok", result))
+
+
+# One process-wide lock, but a PER-WINDOW registry keyed by op identity: the
+# lock guards a list that is rebuilt per instance, so two windows (the app and
+# a test harness) can never share an operation.
+_BUNDLE_OP_LOCK = threading.Lock()
+
+
+class _BundleOp:
+    """One bundle operation: its frozen capture and its progress surface.
+
+    Deliberately a plain object, not a QObject: it is bookkeeping for a
+    background write, and everything Qt needs from it is already exposed by
+    the worker and the bridge.
+    """
+
+    __slots__ = ("capture", "dialog", "bridge", "worker", "thread")
+
+    def __init__(self, capture, dialog):
+        self.capture = capture
+        self.dialog = dialog
+        self.bridge = None
+        self.worker = None
+        self.thread = None
+
+
+class _BundleProgressBridge(QObject):
+    """GUI-thread owner of one bundle's progress dialog and cancel token.
+
+    Created on the GUI thread, so Qt delivers the worker's progress signals
+    here as queued calls. Cancel is a plain thread-safe Event set from that
+    slot — never a cross-thread widget query the worker could observe.
+    """
+
+    def __init__(self, dialog, cancel):
+        super().__init__(dialog)
+        self._dialog = dialog
+        self._cancel = cancel
+
+    @pyqtSlot(int, int, str)
+    def on_tick(self, done, total, member):
+        d = self._dialog
+        if d.wasCanceled():
+            self._cancel.set()
+            return
+        if d.maximum() != total:
+            d.setRange(0, max(total, 1))
+        d.setValue(done)
 
 
 class _WatcherArmWorker(QObject):
@@ -1568,6 +1704,7 @@ class FastPrompter(
         self.init_tray()
         self.setup_global_shortcuts()
         self._apply_tooltips()
+        self.apply_shortcut_tooltips()
         # Delay global hotkey binding until after UI initialization to prevent race conditions causing silent crashes (Debater Constraint)
         QTimer.singleShot(100, weak_qt_callback(
             self, lambda window: window.register_all_hotkeys()))
@@ -2101,7 +2238,8 @@ class FastPrompter(
         self._update_limit_status()
 
     def _show_in_app_toast(self, title, message, *, header=None, status=None,
-                           duration_ms=None, accent_color=None, symbol=None):
+                           duration_ms=None, accent_color=None, symbol=None,
+                           actions=None):
         """The app's own silent visual notification (T-1228).
 
         The ONLY visual presentation for app-owned alerts. It never calls the
@@ -2113,7 +2251,8 @@ class FastPrompter(
             from fastprompter.ui.timer_toast import show_simple_toast
             return show_simple_toast(self, title, message, header=header,
                                      status=status, duration_ms=duration_ms,
-                                     accent_color=accent_color, symbol=symbol)
+                                     accent_color=accent_color, symbol=symbol,
+                                     actions=actions)
         except Exception:
             from fastprompter.core.logging import logger
             logger.debug("in-app toast failed")
@@ -5000,6 +5139,833 @@ class FastPrompter(
             return None
         return os.path.join(self._files_root(), comp,
                             self._silo_folder_name(slot_idx, is_archive))
+
+    # ==================================================================
+    # T-1409 — Pack Silo backend.
+    #
+    # ONE backend behind all three surfaces (the header control, the Pack
+    # right-click menu, the fallback context action), so those surfaces
+    # cannot drift apart. Every value a bundle needs is captured on the GUI
+    # thread at click time and frozen into `plan_kwargs`; the worker uses
+    # that snapshot and nothing else.
+    # ==================================================================
+
+    def _bundle_app_version(self):
+        """The app version recorded in manifest.json, or "" when unknown.
+
+        Read from the VERSION file the release pipeline already keeps in
+        parity with pyproject.toml. A packaged build that does not ship it
+        records an empty version rather than inventing one.
+        """
+        cached = getattr(self, "_bundle_version_cache", None)
+        if cached is not None:
+            return cached
+        ver = ""
+        try:
+            import fastprompter
+            root = os.path.dirname(os.path.abspath(fastprompter.__file__))
+            for _ in range(4):
+                root = os.path.dirname(root)
+                cand = os.path.join(root, "VERSION")
+                if os.path.isfile(cand):
+                    with open(cand, encoding="utf-8") as fh:
+                        ver = fh.read(64).strip()
+                    break
+        except Exception:
+            ver = ""
+        self._bundle_version_cache = ver
+        return ver
+
+    @staticmethod
+    def _silo_bundle_title(text, fallback="silo"):
+        """The silo's display title: its primary ``# `` heading when it has
+        one, else the first non-empty line, else the fallback label, else "silo" (T-1411 § 5).
+
+        Never derived from the slot number or the category, so the archive
+        name says what the user actually sees. A ``# `` line inside a fenced
+        block is not a heading and never wins.
+        """
+        in_fence = False
+        first_line = ""
+        for line in (text or "").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = not in_fence
+                continue
+            if not stripped:
+                continue
+            if not first_line:
+                first_line = stripped
+            if not in_fence and stripped.startswith("# "):
+                return stripped[2:].strip()[:100]
+        cand = first_line or fallback or "silo"
+        if cand.startswith("#"):
+            cand = cand.lstrip("#").strip()
+        return (cand or "silo")[:100]
+
+    def _silo_media_meta(self, silo_id):
+        """{canonical path: first-seen epoch} for one silo, or {}.
+
+        The Added column's primary authority. Keyed by the stable silo
+        identity, so reorder, project switch and restart are already
+        handled; a malformed entry is skipped rather than poisoning a pack.
+        """
+        store = self.data.get("silo_media_first_seen")
+        if not silo_id or not isinstance(store, dict):
+            return {}
+        row = store.get(str(silo_id))
+        if not isinstance(row, dict):
+            return {}
+        out = {}
+        for path, epoch in row.items():
+            try:
+                out[str(path)] = float(epoch)
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def _silo_media_note_first_seen(self, silo_id, paths):
+        """Record first-seen times for freshly saved media. Additive only.
+
+        Records a time; it never owns, moves or deletes media. An unknown
+        silo identity or an empty list is a no-op.
+        """
+        paths = [str(p) for p in (paths or ()) if p]
+        if not silo_id or not paths:
+            return
+        store = self.data.get("silo_media_first_seen")
+        if not isinstance(store, dict):
+            store = self.data["silo_media_first_seen"] = {}
+        row = store.get(str(silo_id))
+        if not isinstance(row, dict):
+            row = store[str(silo_id)] = {}
+        now = time.time()
+        changed = False
+        for path in paths:
+            try:
+                key = os.path.normcase(os.path.realpath(path))
+            except (OSError, ValueError):
+                key = os.path.normcase(path)
+            if key not in row:
+                row[key] = now
+                changed = True
+        if changed:
+            try:
+                self.save_data_to_db()
+            except Exception:
+                pass
+
+    def _silo_bundle_defaults(self, silo_id):
+        """Remembered Pack-with-options defaults for one silo, or {}."""
+        store = self.data.get("silo_bundle_defaults")
+        if not silo_id or not isinstance(store, dict):
+            return {}
+        row = store.get(str(silo_id))
+        return dict(row) if isinstance(row, dict) else {}
+
+    def _silo_bundle_remember_defaults(self, silo_id, values):
+        """Persist the Shift-dialog defaults for one silo.
+
+        The per-file checkbox state is deliberately NOT remembered: the next
+        pack starts from a fresh, honest view of what the silo holds, rather
+        than silently re-applying a selection made minutes ago.
+        """
+        if not silo_id or not isinstance(values, dict):
+            return
+        store = self.data.get("silo_bundle_defaults")
+        if not isinstance(store, dict):
+            store = self.data["silo_bundle_defaults"] = {}
+        store[str(silo_id)] = {k: v for k, v in values.items()
+                               if k != "selected"}
+        try:
+            self.save_data_to_db()
+        except Exception:
+            pass
+
+    def apply_shortcut_tooltips(self):
+        """The ONE place a hoverable control's shortcut reaches its tooltip.
+
+        T-1410. Every row below names a control that has a real command and
+        the key that command currently owns. Re-run it after a rebind, a
+        profile switch or a language switch and every hover is correct again
+        without a restart — which is the whole point: a tooltip that has to
+        be refreshed by hand is a tooltip that is already wrong somewhere.
+
+        A row whose command has NO key is simply absent, so a function is
+        never given a shortcut just to satisfy the rule.
+        """
+        from fastprompter.ui.shortcut_display import (
+            SHORTCUT_TOOLTIP_ROWS,
+            resolve,
+            tooltip_with_shortcut,
+        )
+        lang = getattr(self, "_current_lang", "EN")
+
+        for attr, description, key_name in SHORTCUT_TOOLTIP_ROWS:
+            btn = getattr(self, attr, None)
+            if btn is None or sip.isdeleted(btn):
+                continue
+            btn.setToolTip(tooltip_with_shortcut(
+                tr(description, lang), resolve(self, key_name), lang))
+
+    def _silo_document_bound(self, slot, is_archive):
+        """Does the live editor document belong to THIS silo?
+
+        T-1410. The pack admission gate used to be `os.path.isdir(silo_dir)`
+        — a question about the FILESYSTEM, asked of a silo whose folder is
+        deliberately lazy. A silo with text and no folder yet was refused,
+        which is the bug the operator reported. Ownership is the T-1227
+        document contract instead: a GUI-thread-cheap identity check that
+        needs no listing and no stat.
+        """
+        try:
+            return bool(self._document_owner_matches(int(slot), bool(is_archive)))
+        except Exception:
+            return False
+
+    def _active_silo_bundle_context(self):
+        """One cheap, explicit answer to "is a silo packable right now?".
+
+        Returns ``(reason, context)``. ``reason`` is ``None`` when the active
+        silo may be packed, and otherwise one of the honest reasons below.
+        ``context`` carries the resolved category, slot, space, silo identity,
+        canonical folder PATH and live text — the whole admission decision,
+        computed once, with no filesystem access beyond resolving the folder
+        name. Physical folder existence is NOT part of the definition: a lazy
+        silo is a valid pack target and ``write_bundle`` creates ``exports/``
+        on demand.
+        """
+        try:
+            slot = int(self.active_temp_slot)
+        except (TypeError, ValueError):
+            return "NO_ACTIVE_SILO", None
+        is_archive = bool(getattr(self, "active_is_archive", False))
+
+        if getattr(self, "editing_snippet", None):
+            return "SNIPPET_MODE", None
+        if not self.get_current_category():
+            return "NO_ACTIVE_SILO", None
+        # Ownership, not folder existence: an editor showing a document that
+        # is not this silo's would pack the WRONG text under this silo's name.
+        if not self._silo_document_bound(slot, is_archive):
+            return "INVALID_DOCUMENT_BINDING", None
+
+        try:
+            text = self._editor_text_snapshot()
+        except Exception:
+            text = None
+        silo_dir = self._silo_folder_dir(slot, is_archive)
+        if not silo_dir:
+            # The Files root itself cannot be resolved or reached. Distinct
+            # from a lazy folder: this one can never be created for you.
+            return "STORAGE_UNAVAILABLE", None
+
+        context = {
+            "slot": slot,
+            "is_archive": is_archive,
+            "category": str(self.get_current_category() or ""),
+            "silo_id": self._active_silo_id() or "",
+            "silo_dir": silo_dir,
+            "text": text if isinstance(text, str) else "",
+        }
+        return None, context
+
+    def can_pack_active_silo(self):
+        """UI capability query: may the Pack control exist and be hovered?
+
+        Side-effect free, no network, no filesystem listing and no stat —
+        exactly the admission decision the click path makes, so paint, hit
+        testing and tooltip eligibility can never disagree with the action.
+        """
+        try:
+            reason, _context = self._active_silo_bundle_context()
+        except Exception:
+            return False
+        return reason is None
+
+    # Why a pack was refused. Internal names never reach the user; each maps
+    # to its own translated title and body in _silo_bundle_report_unavailable.
+    _SILO_BUNDLE_REASONS = (
+        "SNIPPET_MODE", "NO_ACTIVE_SILO", "STORAGE_UNAVAILABLE",
+        "INVALID_DOCUMENT_BINDING",
+    )
+
+    def _silo_bundle_effective_options(self, silo_id, explicit_options=None, mode="quick"):
+        """Resolve effective bundle options following T-1411 § 31 order:
+        canonical defaults -> remembered per-silo defaults (if remember=True) -> explicit options.
+        """
+        profile_keep = 5
+        try:
+            profile_keep = int(self.data.get("silo_bundle_keep_versions", 5))
+        except (TypeError, ValueError):
+            profile_keep = 5
+
+        effective = {
+            "include_text": True,
+            "include_attachments": False,
+            "hide_local_paths": True,
+            "target_dir": None,
+            "keep_versions": max(1, min(50, profile_keep)),
+        }
+
+        remembered = self._silo_bundle_defaults(silo_id) if silo_id else {}
+        if remembered.get("remember"):
+            if "include_text" in remembered:
+                effective["include_text"] = bool(remembered["include_text"])
+            if "include_attachments" in remembered:
+                effective["include_attachments"] = bool(remembered["include_attachments"])
+            if "hide_local_paths" in remembered:
+                effective["hide_local_paths"] = bool(remembered["hide_local_paths"])
+            if remembered.get("destination"):
+                effective["target_dir"] = remembered["destination"]
+            if "keep_versions" in remembered:
+                try:
+                    kv = int(remembered["keep_versions"])
+                    effective["keep_versions"] = max(1, min(50, kv))
+                except (TypeError, ValueError):
+                    pass
+
+        if explicit_options:
+            for k, v in explicit_options.items():
+                if k == "media_only" and v:
+                    effective["include_text"] = False
+                    effective["media_only"] = True
+                elif k == "include_text":
+                    effective["include_text"] = bool(v)
+                elif k == "include_attachments":
+                    effective["include_attachments"] = bool(v)
+                elif k == "hide_local_paths":
+                    effective["hide_local_paths"] = bool(v)
+                elif k == "target_dir" and v:
+                    effective["target_dir"] = str(v)
+                elif k == "keep_versions" and v is not None:
+                    try:
+                        effective["keep_versions"] = max(1, min(50, int(v)))
+                    except (TypeError, ValueError):
+                        pass
+                elif k in ("excluded", "force_repack"):
+                    effective[k] = v
+
+        return effective
+
+    def _silo_bundle_history(self, silo_id, clean_missing=True):
+        """Persistent bundle history for one silo: {"records": [...], "source_cache": {...}} (T-1411 § 7)."""
+        store = self.data.get("silo_bundle_history")
+        if not silo_id or not isinstance(store, dict):
+            return {"records": [], "source_cache": {}}
+        raw = store.get(str(silo_id))
+        if isinstance(raw, list):
+            entry = {"records": raw, "source_cache": {}}
+        elif isinstance(raw, dict):
+            entry = {"records": list(raw.get("records") or []),
+                     "source_cache": dict(raw.get("source_cache") or {})}
+        else:
+            return {"records": [], "source_cache": {}}
+
+        if clean_missing:
+            valid_recs = [r for r in entry["records"]
+                          if isinstance(r, dict) and r.get("path") and os.path.isfile(str(r["path"]))]
+            if len(valid_recs) != len(entry["records"]):
+                entry["records"] = valid_recs
+                store[str(silo_id)] = entry
+                try:
+                    self.save_data_to_db()
+                except Exception:
+                    pass
+        return entry
+
+    def _silo_bundle_history_candidates(self, silo_id, target_dir):
+        """Reusable candidate bundle records for this silo and target_dir (newest first)."""
+        hist = self._silo_bundle_history(silo_id, clean_missing=True)
+        records = hist.get("records", [])
+        if not target_dir:
+            return records
+        try:
+            target_norm = os.path.normcase(os.path.realpath(target_dir))
+        except (OSError, ValueError):
+            target_norm = os.path.normcase(target_dir)
+
+        cands = []
+        for r in records:
+            r_target = r.get("target_dir") or (os.path.dirname(r.get("path")) if r.get("path") else None)
+            if not r_target:
+                continue
+            try:
+                r_norm = os.path.normcase(os.path.realpath(r_target))
+            except (OSError, ValueError):
+                r_norm = os.path.normcase(r_target)
+            if r_norm == target_norm:
+                cands.append(r)
+        return cands
+
+    def _silo_bundle_last_existing(self, silo_id):
+        """Newest existing managed archive record for THIS silo (T-1411 § 8)."""
+        hist = self._silo_bundle_history(silo_id, clean_missing=True)
+        for r in hist.get("records", []):
+            path = r.get("path")
+            if path and os.path.isfile(str(path)):
+                return r
+        return None
+
+    def _silo_bundle_record_success(self, silo_id, zip_path, display_title, fingerprint,
+                                   target_dir, options_sig, archive_size, archive_mtime_ns,
+                                   signatures=None, silo_dir=None, keep_versions=5):
+        """Record successful bundle in history and apply retention (T-1411 §§ 7, 26)."""
+        if not silo_id or not zip_path:
+            return
+        store = self.data.get("silo_bundle_history")
+        if not isinstance(store, dict):
+            store = self.data["silo_bundle_history"] = {}
+        hist = self._silo_bundle_history(silo_id, clean_missing=False)
+        records = list(hist.get("records", []))
+        source_cache = dict(hist.get("source_cache", {}))
+        if signatures:
+            source_cache.update(signatures)
+
+        new_rec = {
+            "path": zip_path,
+            "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "display_title": display_title,
+            "content_fingerprint": fingerprint,
+            "target_dir": target_dir,
+            "options_signature": {
+                "include_text": options_sig.get("include_text"),
+                "include_attachments": options_sig.get("include_attachments"),
+                "hide_local_paths": options_sig.get("hide_local_paths"),
+                "media_only": options_sig.get("media_only"),
+            },
+            "archive_size": archive_size,
+            "archive_mtime_ns": archive_mtime_ns,
+        }
+        records.insert(0, new_rec)
+
+        from fastprompter.core import silo_bundle as sb
+        exports_dir = os.path.join(silo_dir, "exports") if silo_dir else target_dir
+        pruned_records, _pruned_paths = sb.prune_silo_history(
+            records, canonical_exports_dir=exports_dir,
+            keep_versions=keep_versions, prune_custom=False)
+
+        store[str(silo_id)] = {
+            "records": pruned_records,
+            "source_cache": source_cache,
+        }
+        try:
+            self.save_data_to_db()
+        except Exception:
+            pass
+
+    def _silo_bundle_apply_retention(self, silo_id, silo_dir, keep_versions=5):
+        """Apply retention on existing history (e.g. after reuse hit with changed retention)."""
+        if not silo_id:
+            return
+        store = self.data.get("silo_bundle_history")
+        if not isinstance(store, dict):
+            return
+        hist = self._silo_bundle_history(silo_id, clean_missing=True)
+        records = list(hist.get("records", []))
+        if not records:
+            return
+        from fastprompter.core import silo_bundle as sb
+        exports_dir = os.path.join(silo_dir, "exports") if silo_dir else ""
+        pruned_records, _pruned_paths = sb.prune_silo_history(
+            records, canonical_exports_dir=exports_dir,
+            keep_versions=keep_versions, prune_custom=False)
+        hist["records"] = pruned_records
+        store[str(silo_id)] = hist
+        try:
+            self.save_data_to_db()
+        except Exception:
+            pass
+
+    def _silo_bundle_capture(self, options=None):
+        """Freeze everything one bundle needs, on the GUI thread, at click time."""
+        opts = dict(options or {})
+        reason, context = self._active_silo_bundle_context()
+        if reason is not None:
+            self._silo_bundle_refusal = reason
+            return None
+        self._silo_bundle_refusal = None
+        category = context["category"]
+        silo_dir = context["silo_dir"]
+        text = context["text"]
+        silo_id = context["silo_id"]
+
+        eff_opts = self._silo_bundle_effective_options(silo_id, opts)
+        target_dir = eff_opts.get("target_dir") or os.path.join(silo_dir, "exports")
+
+        fallback_label = ""
+        try:
+            slot = context.get("slot")
+            if slot is not None:
+                fallback_label = self.silo_queue_label(slot)
+        except Exception:
+            pass
+        title = self._silo_bundle_title(text, fallback=fallback_label)
+
+        hist = self._silo_bundle_history(silo_id, clean_missing=True)
+        cands = self._silo_bundle_history_candidates(silo_id, target_dir)
+
+        dimensions = {}
+        try:
+            from PyQt6.QtGui import QImageReader
+
+            from fastprompter.core import silo_bundle as sb
+            refs = sb.find_local_refs(text, silo_dir)
+            candidate_paths = [r.path for r in refs if r.path and sb.classify_media(r.path) == "image"]
+            if eff_opts.get("include_silo_media", True) and silo_dir:
+                for f in sb.list_silo_files(silo_dir, include_attachments=eff_opts.get("include_attachments", False)):
+                    if sb.classify_media(f) == "image":
+                        candidate_paths.append(f)
+            for p in candidate_paths:
+                if not p:
+                    continue
+                c = sb._canonical(p)
+                if c not in dimensions and os.path.isfile(p):
+                    reader = QImageReader(p)
+                    sz = reader.size()
+                    if sz.isValid() and sz.width() > 0 and sz.height() > 0:
+                        dimensions[c] = {"width": int(sz.width()), "height": int(sz.height())}
+        except Exception:
+            pass
+
+        plan_kwargs = dict(
+            text=text,
+            title=title,
+            target_dir=target_dir,
+            silo_dir=silo_dir,
+            category=str(category or ""),
+            app_version=self._bundle_app_version(),
+            silo_media_meta=self._silo_media_meta(silo_id),
+            include_text=eff_opts.get("include_text", True),
+            include_attachments=eff_opts.get("include_attachments", False),
+            hide_local_paths=eff_opts.get("hide_local_paths", True),
+            media_only=bool(eff_opts.get("media_only", False)),
+            dimensions=dimensions,
+        )
+        if "excluded" in eff_opts:
+            plan_kwargs["excluded"] = eff_opts["excluded"]
+
+        return {
+            "silo_id": silo_id,
+            "title": title,
+            "silo_dir": silo_dir,
+            "target_dir": target_dir,
+            "effective_options": eff_opts,
+            "force_repack": bool(opts.get("force_repack", False)),
+            "history_candidates": cands,
+            "source_cache": hist.get("source_cache", {}),
+            "cancel": None,
+            "plan_kwargs": plan_kwargs,
+        }
+
+    # --- entry points -------------------------------------------------
+    def silo_bundle_quick_pack(self):
+        """Left click on the Pack control: smart quick pack with defaults."""
+        return self._silo_bundle_request({"guard_inflight": True})
+
+    def silo_bundle_force_repack(self):
+        """Ctrl+Click: force a fresh archive bypassing smart reuse."""
+        return self._silo_bundle_request({"force_repack": True, "guard_inflight": True})
+
+    def silo_bundle_media_only(self):
+        """Right-click shortcut: the same bundle without the Markdown."""
+        return self._silo_bundle_request({"media_only": True, "guard_inflight": True})
+
+    def silo_bundle_with_options(self):
+        """Shift+click: the options dialog, then the same backend."""
+        cap = self._silo_bundle_capture()
+        if cap is None:
+            self._silo_bundle_report_unavailable()
+            return
+        try:
+            from fastprompter.ui.silo_bundle_dialog import show_bundle_dialog
+        except Exception:
+            return self._silo_bundle_request()
+        options = show_bundle_dialog(self, cap)
+        if options:
+            self._silo_bundle_request(capture=cap, options=options)
+
+    def _silo_bundle_open_exports(self):
+        """Open the silo's exports folder, created on demand."""
+        try:
+            slot = int(self.active_temp_slot)
+            is_archive = bool(getattr(self, "active_is_archive", False))
+        except Exception:
+            return
+        silo_dir = self._silo_folder_dir(slot, is_archive)
+        if not silo_dir:
+            return
+        folder = os.path.join(silo_dir, "exports")
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as exc:
+            from fastprompter.core.logging import logger
+            logger.error("Failed to create silo exports folder: %s", exc)
+            return
+        self._reveal_path(folder)
+
+    def _silo_bundle_open_last_folder(self):
+        """Alt+Click: open folder containing newest existing bundle for active silo (T-1411 § 20)."""
+        silo_id = self._active_silo_id()
+        last_rec = self._silo_bundle_last_existing(silo_id)
+        if last_rec and last_rec.get("path"):
+            folder = os.path.dirname(last_rec["path"])
+            if os.path.isdir(folder):
+                self._reveal_path(folder)
+                return
+        self._silo_bundle_open_exports()
+
+    def _silo_bundle_copy_last(self):
+        """Ctrl+Shift+Click: copy newest existing bundle for THIS silo (T-1411 § 19)."""
+        lang = getattr(self, "_current_lang", "EN")
+        silo_id = self._active_silo_id()
+        last_rec = self._silo_bundle_last_existing(silo_id)
+        if not last_rec or not last_rec.get("path"):
+            self._show_in_app_toast(
+                tr("No previous bundle", lang),
+                tr("No previous bundle exists for this silo.", lang),
+                header=tr("Pack Silo", lang),
+                duration_ms=5000,
+            )
+            return
+        path = last_rec["path"]
+        self._last_bundle_path = path
+        from fastprompter.ui.image_viewer import copy_files_to_clipboard
+        copied = copy_files_to_clipboard([str(path)])
+        status = tr("Copied to clipboard", lang) if copied else tr("Clipboard unavailable", lang)
+        self._show_in_app_toast(
+            tr("Last bundle copied", lang),
+            os.path.basename(path),
+            header=tr("Pack Silo", lang),
+            status=status,
+            duration_ms=6000,
+            actions=[(tr("Open folder", lang), lambda: self._reveal_path(
+                os.path.dirname(path)))],
+        )
+
+    # --- the operation ------------------------------------------------
+    def _silo_bundle_request(self, options=None, capture=None):
+        """Start one bundle. GUI thread: capture, show progress, dispatch.
+
+        ``capture`` lets the options dialog hand back the SAME frozen capture
+        it previewed: a Shift+click is the click time, so an edit made while
+        the dialog was open must not silently change what gets packed.
+        """
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QProgressDialog
+
+        lang = getattr(self, "_current_lang", "EN")
+        if capture is not None:
+            cap = capture
+            if options:
+                plan_opts = {k: v for k, v in options.items()
+                             if k not in ("keep_versions", "force_repack")}
+                cap["plan_kwargs"].update(plan_opts)
+                if options.get("target_dir"):
+                    cap["target_dir"] = options["target_dir"]
+                if "effective_options" in cap:
+                    cap["effective_options"].update(options)
+                if "force_repack" in options:
+                    cap["force_repack"] = bool(options["force_repack"])
+        else:
+            cap = self._silo_bundle_capture(options)
+        if cap is None:
+            self._silo_bundle_report_unavailable()
+            return None
+
+        if cap.get("guard_inflight"):
+            with _BUNDLE_OP_LOCK:
+                registry = getattr(self, "_bundle_ops", None) or {}
+                target_silo = cap.get("silo_id")
+                for running in registry.values():
+                    if running.capture.get("silo_id") == target_silo:
+                        self._show_in_app_toast(
+                            tr("Pack Silo", lang),
+                            tr("Packing already in progress", lang),
+                            header=tr("Pack Silo", lang),
+                            duration_ms=4000)
+                        return None
+
+        cancel = threading.Event()
+        cap["cancel"] = cancel
+
+        # minimumDuration keeps a small pack from flashing a dialog at all.
+        dialog = QProgressDialog(
+            tr("Packing silo…", lang), tr("Cancel", lang), 0, 0, self)
+        dialog.setWindowTitle(tr("Pack Silo", lang))
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(300)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.canceled.connect(cancel.set)
+
+        op = _BundleOp(cap, dialog)
+        op.bridge = _BundleProgressBridge(dialog, cancel)
+        op.worker = _BundleWorker()
+        op.thread = QThread()
+        op.worker.moveToThread(op.thread)
+        op.worker.dispatch.connect(op.worker._run)
+        op.worker.progress.connect(op.bridge.on_tick)
+        op.worker.finished.connect(op.worker.deleteLater)
+        op.worker.finished.connect(op.thread.quit)
+        op.thread.finished.connect(op.thread.deleteLater)
+        op.worker.finished.connect(
+            lambda payload: self._bundle_on_finished(op, payload))
+        with _BUNDLE_OP_LOCK:
+            self._bundle_ops = getattr(self, "_bundle_ops", None) or {}
+            self._bundle_ops[id(op)] = op
+        op.thread.start()
+        op.worker.dispatch.emit(cap)
+        return op
+
+    def _bundle_on_finished(self, op, payload):
+        """GUI thread: close progress, report honestly, set the clipboard."""
+        kind, result = payload if isinstance(payload, tuple) else ("error", "")
+        with _BUNDLE_OP_LOCK:
+            registry = getattr(self, "_bundle_ops", None) or {}
+            registry.pop(id(op), None)
+            self._bundle_ops = registry
+        try:
+            op.dialog.close()
+        except RuntimeError:
+            pass
+        lang = getattr(self, "_current_lang", "EN")
+        label = op.capture["title"]
+
+        if kind == "cancel":
+            return
+        if kind == "empty":
+            self._show_in_app_toast(
+                tr("Nothing to pack", lang),
+                tr("This bundle has no selected text, media or attachments.",
+                   lang),
+                header=tr("Pack Silo", lang), duration_ms=7000)
+            return
+        if kind == "error":
+            self._show_in_app_toast(
+                tr("Silo not packed", lang),
+                tr("Nothing was written and the clipboard was left alone.",
+                   lang),
+                header=tr("Pack Silo", lang),
+                status=tr("Could not publish the archive: ", lang)
+                + str(result)[:160],
+                duration_ms=9000)
+            return
+
+        if kind == "reuse":
+            zip_path = result.get("zip_path")
+            self._last_bundle_path = zip_path
+            silo_id = op.capture.get("silo_id")
+            keep_versions = op.capture.get("effective_options", {}).get("keep_versions", 5)
+            self._silo_bundle_apply_retention(silo_id, op.capture.get("silo_dir"), keep_versions)
+
+            from fastprompter.ui.image_viewer import copy_files_to_clipboard
+            copied = copy_files_to_clipboard([zip_path])
+            status = (tr("Existing archive copied to clipboard", lang) if copied
+                      else tr("Clipboard unavailable", lang))
+            self._show_in_app_toast(
+                tr("Bundle unchanged", lang),
+                f"{label}\n{os.path.basename(zip_path)}",
+                header=tr("Pack Silo", lang),
+                status=status,
+                duration_ms=7000,
+                actions=[(tr("Open folder", lang), lambda: self._reveal_path(
+                    os.path.dirname(zip_path))),
+                         (tr("Copy again", lang),
+                          lambda: self._silo_bundle_copy_last())])
+            return
+
+        zip_path = getattr(result, "zip_path", None)
+        if not zip_path:
+            self._show_in_app_toast(
+                tr("Silo not packed", lang),
+                tr("Nothing was written and the clipboard was left alone.",
+                   lang),
+                header=tr("Pack Silo", lang))
+            return
+
+        self._last_bundle_path = zip_path
+        silo_id = op.capture.get("silo_id")
+        eff_opts = op.capture.get("effective_options", {})
+        keep_versions = eff_opts.get("keep_versions", 5)
+        self._silo_bundle_record_success(
+            silo_id=silo_id,
+            zip_path=zip_path,
+            display_title=op.capture.get("title", ""),
+            fingerprint=getattr(result, "fingerprint", ""),
+            target_dir=op.capture.get("target_dir", ""),
+            options_sig=eff_opts,
+            archive_size=getattr(result, "archive_size", 0),
+            archive_mtime_ns=getattr(result, "archive_mtime_ns", 0),
+            signatures=getattr(result, "signatures", {}),
+            silo_dir=op.capture.get("silo_dir"),
+            keep_versions=keep_versions,
+        )
+
+        from fastprompter.ui.image_viewer import copy_files_to_clipboard
+        copied = copy_files_to_clipboard([zip_path])
+
+        missing = len(getattr(result, "missing", ()) or ())
+        packed = len(getattr(result, "items", ()) or ())
+        if missing:
+            status = tr("Partial bundle", lang) + ": " + tr(
+                "%n source file(s) were missing", lang).replace(
+                    "%n", str(missing))
+            accent = "#e0a03c"
+        else:
+            status = tr("%n item(s) packed", lang).replace("%n", str(packed))
+            accent = None
+        status += " · " + (tr("Copied to clipboard", lang) if copied
+                           else tr("Clipboard unavailable", lang))
+
+        self._show_in_app_toast(
+            tr("Silo packed", lang), f"{label}\n{os.path.basename(zip_path)}",
+            header=tr("Pack Silo", lang), status=status, accent_color=accent,
+            duration_ms=9000,
+            actions=[(tr("Open folder", lang), lambda: self._reveal_path(
+                os.path.dirname(zip_path))),
+                     (tr("Copy again", lang),
+                      lambda: self._silo_bundle_copy_last())])
+
+    def _silo_bundle_report_unavailable(self, reason=None):
+        """Say WHY a pack could not start, in the user's terms.
+
+        T-1410: this used to be one sentence for every refusal, which is why
+        a perfectly valid silo with a not-yet-created folder was told to
+        "open a silo first". Each reason now has its own title and body, and
+        the internal names stay internal.
+        """
+        lang = getattr(self, "_current_lang", "EN")
+        reason = (reason or getattr(self, "_silo_bundle_refusal", None)
+                  or "NO_ACTIVE_SILO")
+        if reason == "SNIPPET_MODE":
+            title = tr("Nothing to pack", lang)
+            body = tr("A pack bundles a silo, and this is a snippet. Return to "
+                      "a silo, or use the snippet's own export action.", lang)
+        elif reason == "STORAGE_UNAVAILABLE":
+            title = tr("Silo storage is unavailable", lang)
+            body = tr("The Files location for this silo cannot be reached. "
+                      "Check it in Settings, then try again.", lang)
+        elif reason == "INVALID_DOCUMENT_BINDING":
+            title = tr("Nothing to pack", lang)
+            body = tr("The open document is not the active silo, so packing it "
+                      "would file it under the wrong name. Reopen the silo and "
+                      "try again.", lang)
+        else:                                   # NO_ACTIVE_SILO
+            title = tr("Nothing to pack", lang)
+            body = tr("Return to a silo first — a pack bundles one silo's "
+                      "text, media and files.", lang)
+        self._show_in_app_toast(
+            title, body, header=tr("Pack Silo", lang), duration_ms=7000)
+
+    def _reveal_path(self, path):
+        """Open a folder in the file manager, tolerating its absence."""
+        try:
+            if path and os.path.isdir(path):
+                os.startfile(path)
+        except OSError as exc:
+            from fastprompter.core.logging import logger
+            logger.error("Failed to open folder: %s", exc)
 
     def _restore_trashed_folders(self, cat):
         """Undo helper: for every silo folder the restored map expects, if it's
@@ -8993,7 +9959,7 @@ class FastPrompter(
 
         self.btn_add_line = QPushButton(tr("Line", getattr(self, "_current_lang", "EN")))
         self.btn_add_line.setToolTip(tr(
-            "Insert Line (Ctrl+W)\nInsert a spaced --- divider and start a fresh bullet.",
+            "Insert Line ({})\nInsert a spaced --- divider and start a fresh bullet.",
             getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_add_line, 24)
         self.btn_add_line.clicked.connect(self.insert_add_line)
@@ -9054,14 +10020,14 @@ class FastPrompter(
         self.btn_under.clicked.connect(lambda: self.apply_format("underline"))
 
         self.btn_strike = QPushButton(tr("S", getattr(self, "_current_lang", "EN")))
-        self.btn_strike.setToolTip(tr("Strikethrough (Ctrl+T)\nCross out selected text.", getattr(self, "_current_lang", "EN")))
+        self.btn_strike.setToolTip(tr("Strikethrough ({})\nCross out selected text.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_strike, 24, 24)
         f = QFont(self.btn_strike.font()); f.setStrikeOut(True); self.btn_strike.setFont(f)
         self.btn_strike.clicked.connect(lambda: self.apply_format("strike"))
 
         self.btn_header = QPushButton(tr("H", getattr(self, "_current_lang", "EN")))
         self.btn_header.setToolTip(tr(
-            "Header (Ctrl+E)\nTitle the line: # + bold + underline + timestamp,\n"
+            "Header ({})\nTitle the line: # + bold + underline + timestamp,\n"
             "then land 2 lines below on a fresh bullet.", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_header, 24, 24)
         f = QFont(self.btn_header.font()); f.setBold(True); f.setUnderline(True); self.btn_header.setFont(f)
@@ -9069,7 +10035,7 @@ class FastPrompter(
 
         self.btn_quote = QPushButton("❞")
         self.btn_quote.setToolTip(tr(
-            "Quote (Ctrl+Shift+Q)\nWrap the selected lines as a '> ' quote block.\n"
+            "Quote ({})\nWrap the selected lines as a '> ' quote block.\n"
             "A quote of 2+ lines collapses to one line like a footnote.",
             getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_quote, 24, 24)
@@ -9128,7 +10094,7 @@ class FastPrompter(
         self.btn_copy.customContextMenuRequested.connect(self.copy_context_and_close)
 
         self.btn_clear = QPushButton(tr("Clear", getattr(self, "_current_lang", "EN")))
-        self.btn_clear.setToolTip(tr("Clear (Ctrl+Shift+C)", getattr(self, "_current_lang", "EN")))
+        self.btn_clear.setToolTip(tr("Clear ({})", getattr(self, "_current_lang", "EN")))
         self.apply_button_size(self.btn_clear, 26)
         self.btn_clear.clicked.connect(self.clear_text)
 
@@ -9471,7 +10437,7 @@ class FastPrompter(
         self.btn_restore.setToolTip(tr("Restore the database from a backup", getattr(self, "_current_lang", "EN")))
         self.btn_exit = make_action_checkbox(
             "Exit", self.quit_app, fixed_w=32, sound=False)
-        self.btn_exit.setToolTip(tr("Exit FastPrompter (Ctrl+Alt+Shift+Q)\nSave all data and quit application.", getattr(self, "_current_lang", "EN")))
+        self.btn_exit.setToolTip(tr("Exit FastPrompter ({})\nSave all data and quit application.", getattr(self, "_current_lang", "EN")))
 
         try:
             current_scale_pct = int(float(self.data.get("ui_scale", "0.5")) * 100)
@@ -11057,6 +12023,11 @@ class FastPrompter(
         # Re-apply hotkey tooltips (cheat sheet on Keys button)
         if hasattr(self, '_apply_tooltips'):
             self._apply_tooltips()
+        # T-1410: and re-derive the per-button shortcut hovers. A language
+        # switch has to translate the WORDS while the key stays live, so
+        # this runs after the text pass and owns the chord for the rows it
+        # lists -- which is why those rows are not re-formatted by hand below.
+        self.apply_shortcut_tooltips()
 
         # T-404: Live FULL-UI retranslation for header buttons
         btn_configs = [
@@ -19747,6 +20718,10 @@ class FastPrompter(
         add_shortcut("hk_quit", "Ctrl+Alt+Shift+Q", self.quit_app)
         add_shortcut("hk_header", "Ctrl+E", self.apply_header_timestamp)
         add_shortcut("hk_quote", "Ctrl+Shift+Q", self.toggle_quote_conversion)
+        # T-1410: Pack Silo had a header glyph and no key at all. One owner
+        # here — the spec entry carries `action=None` so the editor does not
+        # dispatch this chord too.
+        add_shortcut("hk_pack_silo", "Ctrl+Shift+P", self.silo_bundle_quick_pack)
         add_shortcut("hk_line_nums", "Alt+Z",
                      lambda: self.set_line_numbers(
                          self.data.get("show_line_numbers", "False") != "True"))
