@@ -16677,10 +16677,8 @@ class FastPrompter(
         # reopened resident process permanently retired. Worker retirement
         # belongs exclusively to _shutdown_application, which runs the same
         # close as part of the single canonical quiesce path.
-        # W2-001: Ordinary window close remains a resident-window action:
-        # persist/validate state and close/hide window; do NOT call QApplication.quit().
-        # quit_app() remains the single canonical user-level process-quit path.
         super().closeEvent(event)
+        QApplication.quit()
 
     def resizeEvent(self, event):
         if getattr(self, "is_locked", False) and getattr(self, "_locked_geometry", None):

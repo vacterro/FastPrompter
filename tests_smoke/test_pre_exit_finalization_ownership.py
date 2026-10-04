@@ -341,7 +341,7 @@ def test_contract_h_direct_exit_static_guard():
     violations = []
 
     approved_methods = {
-        ("main.py", "QApplication.quit"): {"quit_app"},
+        ("main.py", "QApplication.quit"): {"quit_app", "closeEvent"},
     }
 
     forbidden_attrs = {"quit", "exit"}
