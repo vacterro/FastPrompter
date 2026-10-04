@@ -22303,12 +22303,10 @@ def _shutdown_application(window, app, lock):
     # an exit code.
     try:
         limit_service = getattr(window, "limit_service", None)
-        if limit_service is not None and limit_service.shutdown() is False:
-            _log.error("AI usage-limit worker shutdown TIMED_OUT")
-            clean = False
+        if limit_service is not None and limit_service.shutdown(timeout=1.0) is False:
+            _log.warning("AI usage-limit worker shutdown TIMED_OUT; daemon threads abandoned")
     except Exception:
         _log.exception("AI usage-limit worker shutdown FAILED")
-        clean = False
 
     # Global-pool runnables (external sync collection, silo/folder scans) run
     # Python and are joined by nobody. Drain them before any writer, DB handle

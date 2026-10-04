@@ -88,13 +88,11 @@ if __name__ == "__main__":
             sys.exit(bridge_main())
         _ensure_venv_python()
         # Import inside the guard so a broken bundle/env also produces
-        # a visible error dialog + crash.log instead of dying silently.
         from fastprompter.main import main_entry
-
         main_entry()
+    except SystemExit as e:
+        sys.exit(e.code)
     except BaseException as e:
-        if isinstance(e, SystemExit) and e.code == 0:
-            sys.exit(0)
         error_msg = traceback.format_exc()
         crash_log = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "crash.log")
         with open(crash_log, "w", encoding="utf-8") as f:
