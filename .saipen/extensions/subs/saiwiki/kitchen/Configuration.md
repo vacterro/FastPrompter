@@ -36,6 +36,14 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `pie_menu_hotkey` | string | `Shift+Alt+X` | Pie menu hotkey |
 | `lock_window_hotkey` | string | `Alt+E` | Window lock toggle |
 | `always_on_top_hotkey` | string | `Alt+S` | Always-on-top toggle |
+| **Silo Bundles (Pack Silo)** | | | |
+| `hk_pack_silo` | hotkey | `Ctrl+Shift+P` | Pack the active silo into one portable ZIP |
+| `hk_pack_selection` | hotkey | `Ctrl+Shift+C` | Fast Pack Selection — selection + referenced media |
+| `silo_bundle_keep_versions` | int | 5 | "Keep last versions in exports": how many bundles the exports folder retains |
+| `show_pack_coverage` | bool | False | Show which requirements are already inside a published bundle |
+| `pack_coverage_fade` | bool | True | Fade packed requirements instead of flagging them permanently |
+| `silo_bundle_defaults` | JSON dict | `{}` | Per-silo remembered answers of the Pack With Options dialog |
+| `silo_bundle_history` | JSON dict | `{}` | Per-silo bundle records (path, title, kind) used by reuse, retention and Copy Last Bundle |
 | **Behavior** | | | |
 | `tray_click_activates` | bool | True | Tray double-click always brings window to focus; False = toggle hide/show (T-1082) |
 | `close_on_focus_loss` | bool | True | Auto-hide on focus loss |

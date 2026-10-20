@@ -137,3 +137,15 @@ Timer silos whose countdown has elapsed (passed) are highlighted with a configur
 ### 16. Periodic Backup (`core/state.py`)
 
 Off-critical-path `.bak` refresh on a daemon thread (PERF-001). Coalesced per profile: at most one job in flight, a request arriving mid-job marks pending and the finishing job drains it. Each job opens its own short-lived source connection — the caller's live connection is never shared across threads. Publication goes through the existing atomic temp-swap + validate-before-swap path, so the previous good `.bak` survives any failure.
+
+### 17. Pack Silo Pipeline (`core/silo_bundle.py` + `core/silo_index.py` + `core/silo_coverage.py`)
+
+One pipeline, five stages, each with a contract rather than a hope:
+
+1. **Plan.** `plan_bundle` / `plan_selection_bundle` resolve the text's local references into `BundleItem`s and assign archive member names; `portable_markdown` rewrites the copy so it links to members instead of `C:\...` paths.
+2. **Hash.** Per-member SHA256 over stable file stats; a source that moves mid-pack aborts instead of shipping a half-consistent archive.
+3. **Fingerprint & reuse.** The bundle identity hashes the *logical* payload only (no timestamps, no output paths), which is what allows a content-identical re-pack to be served from the existing archive. Ctrl+Click bypasses the check; publication is otherwise the only path that produces a new file.
+4. **Publish.** Built in a unique temp sibling, streamed media first, then Markdown, structured index, README and manifest written from the facts of publication, then an atomic rename into a path that did not exist. There is no window in which a reader sees a partial bundle, and no code path that overwrites an existing file.
+5. **Record.** Success records history (path, title, kind), applies retention (`silo_bundle_keep_versions`, exports folder only, ownership verified, the archive just handed over protected) and mints a coverage event so the overlay can answer "which requirements are already packed?".
+
+The structured index is a derived projection — `INDEX_SCHEMA_VERSION = 4` — of the very Markdown and members that were hashed, so it is validated (`validate_index_structure`) before it is written rather than after it is read.

@@ -54,11 +54,18 @@ for key, value in live.items():
     print(f"  {key:<16} {value}")
 print(f"  {'VERSION':<16} {version}")
 
+# Names that exist only INSIDE a published artefact, never in the repo: the
+# bundle writes them into the ZIP at publication time, so resolving them
+# against the source tree is the wrong question.
+RUNTIME_ARTEFACTS = {"silo.index.json", "manifest.json", "local_data_v15_undo.json"}
+
 print("\n== A. every file reference resolves (all pages) ==")
 missing = []
 for page in PAGES:
     for ref in set(re.findall(r"`([A-Za-z0-9_./\-]+\.(?:py|md|json|wav|png))`", read(page))):
         if ref.startswith(("data/", "local_data", "_shared/", "kitchen/", "docs/")):
+            continue
+        if Path(ref).name in RUNTIME_ARTEFACTS:
             continue
         if not any((base / ref).exists() for base in (ROOT, SRC, SRC / "core", SRC / "ui")) \
                 and not list(ROOT.rglob(Path(ref).name)):
@@ -83,7 +90,9 @@ check("_Sidebar lists only existing pages",
 print("\n== D. no live claim about the REMOVED watcher subsystem ==")
 # QFileSystemWatcher / sync_live_watch are Qt's file watcher and stay legitimate;
 # only the removed Watcher Engine (queue + auto-send) must never read as live.
-removed = re.compile(r"Alt\+C|Queue Master|Watcher Engine|open_queue_master|prompt drainage|Watcher Queue")
+# ``Alt\+C\b`` -- NOT a bare ``Alt\+C``: that also matched the live
+# ``Alt+Click`` gesture (T-1428), which is a false positive, not a watcher claim.
+removed = re.compile(r"Alt\+C\b|Queue Master|Watcher Engine|open_queue_master|prompt drainage|Watcher Queue")
 retired = re.compile(r"retir|removed|unbound|no-op|no longer|deleted|replaced", re.I)
 live_watcher = []
 for page in PAGES:
@@ -149,10 +158,40 @@ coverage = {
     "clipboard generation (T-1269)": r"clipboard",
     "voice countdown (T-1238-C3.7)": r"voice",
     "portable backup generations (W2-002/003)": r"generation",
+    "Pack Silo bundle engine (T-1409..T-1417)": r"pack silo",
+    "bundle reuse + retention": r"keep_versions|retention",
+    "pack coverage overlay (T-1415)": r"pack coverage",
 }
 for label, pattern in coverage.items():
     hits = [p.name for p in PAGES if re.search(pattern, read(p), re.I)]
     check(f"{label} named in the wiki", len(hits) >= 1, f"{len(hits)}/15 -> {', '.join(h[:1] for h in hits[:3])}")
+
+print("\n== I2. Pack Silo surface: chords, gestures, settings, no stale claim ==")
+for label, pattern in {
+    "Ctrl+Shift+P packing chord": r"Ctrl\+Shift\+P",
+    "Fast Pack Selection chord (Ctrl+Shift+C)": r"Fast Pack Selection",
+    "Force Repack gesture": r"Force Repack",
+    "Copy Last Bundle gesture": r"Copy Last Bundle",
+    "Open Last Bundle Folder gesture": r"Open Last Bundle Folder",
+    "Media-Only Quick Pack action": r"Media-Only Quick Pack",
+    "structured index name `silo.index.json`": r"silo\.index\.json",
+    "manifest contract": r"manifest",
+}.items():
+    hits = [p.name for p in PAGES if re.search(pattern, read(p))]
+    check(f"{label} named", len(hits) >= 1, f"{len(hits)}/15")
+config = read(KITCHEN / "Configuration.md")
+for key in ("silo_bundle_keep_versions", "show_pack_coverage", "pack_coverage_fade",
+            "hk_pack_silo", "hk_pack_selection"):
+    check(f"Configuration documents `{key}`", key in config)
+for key, typ, src in (("silo_bundle_keep_versions", "5", "default_profile.py"),
+                      ("show_pack_coverage", "False", "default_profile.py"),
+                      ("pack_coverage_fade", "True", "default_profile.py")):
+    text = (ROOT / "src/fastprompter/core" / src).read_text(encoding="utf-8")
+    check(f"`{key}` default {typ} matches {src}",
+          re.search(rf'"{key}":\s*\'{typ}\'', text) is not None)
+stale = [p.name for p in PAGES
+         if re.search(r"Ctrl\+Shift\+C\s*[—–-]\s*clear", read(p), re.I)]
+check("no page still claims Ctrl+Shift+C clears a silo", not stale, stale)
 
 print("\n== J. mirror divergence (payload size) ==")
 diverged = [p.name for p in PAGES

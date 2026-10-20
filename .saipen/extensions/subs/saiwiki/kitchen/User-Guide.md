@@ -285,6 +285,8 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 
 A temporary countdown timer with configurable increment, color mode, and sound rules. Created from the Timer Dialog (Ctrl+Shift+T) under the **Temp** tab.
 
+**Features:** set increment in minutes, choose temperature-based or fixed color, enable/disable delete-after-fire. In **Random Pool** sound mode, multiple sounds can be assigned with time windows (e.g., different sounds for morning vs night).
+
 ### 31. Sound Hub, Ambience & Voice
 
 The **Sound Hub** is the managed library view over one audio authority with six
@@ -361,4 +363,143 @@ chance:
   and records them beside the paste attempt. Those records hold counters and
   process names — **never the clipboard's text**.
 
-**Features:** set increment in minutes, choose temperature-based or fixed color, enable/disable delete-after-fire. In **Random Pool** sound mode, multiple sounds can be assigned with time windows (e.g., different sounds for morning vs night).
+### 35. Reading Mode — Rendered Documents (T-1484)
+
+The view selector — and the Vision button, which cycles — has three modes:
+**Source View** (plain editor), **Live Preview** (editor with live markdown
+highlighting, the default) and **Reading**, a read-only rendered surface for the
+silo on screen.
+
+- **Syntax.** *Auto* recognises BBCode only when the document shows real
+  structure (two recognised tags, or one recognised block tag); everything else
+  renders as Markdown. Pin **Markdown** or **BBCode** in the syntax selector
+  when Auto guesses wrong — a paragraph with `[1]` in it stays Markdown.
+- **What renders.** Headings, nested bold/italic/strike, ordered and unordered
+  lists, block quotes, fenced code, real tables with header and body cells,
+  links, and the BBCode block set (`[table]`/`[tr]`/`[td]`/`[th]`, `[list]`,
+  `[quote]`, `[code]`, `[center]`, `[hr]`, `[h1]-[h4]`) with inline
+  `[b]/[i]/[u]/[s]/[url]/[img]/[color]/[size]`. A mixed document renders
+  BBCode blocks and still honours inline Markdown emphasis inside them.
+- **Safety.** The rendered HTML is rebuilt through an allowlist: scripts,
+  event handlers, iframes and `javascript:` / `data:` / `vbscript:` links are
+  refused, and an unknown tag is shown as literal text instead of being
+  silently deleted. Reading mode never edits the silo: the text, its line
+  endings and the undo stack are untouched.
+- **Images.** Local files and `file:` images render as scaled pictures, and an
+  animated GIF animates. Remote images are **off by default**: the `IMG`
+  toolbar toggle becomes `IMG+`, and only then is an HTTPS image fetched.
+- **Remote policy.** HTTPS only, no credentials in the URL, no
+  loopback/private/link-local hosts, 2048-character limit, at most three
+  redirects (revalidated after the last hop), an 8 MB cap enforced **while the
+  bytes arrive**, an 8-second transfer timeout, three requests in flight with
+  the rest queued, and a 24-image / 48 MB decoded-payload cache.
+- **When an image does not appear**, the placeholder names the cause — external
+  images off, URL refused by policy, transfer failed, payload too large,
+  payload not decodable, local file missing — and keeps the URL clickable. The
+  log line carries the URL **without** its query or fragment, so a signed link
+  never leaks into a log.
+- **Leaving and returning.** Leaving Reading stops every animation and cancels
+  in-flight requests; coming back re-renders and replays what was already
+  decoded instead of downloading it again, and restores your scroll position
+  when the text has not changed.
+
+### 36. Smart Code Runner (T-1456)
+
+- **Detection.** A fenced code block, a shebang, the whole document, the
+  selection, or the code under the caret.
+- **Approval.** The ⚡ *Run Code* toolbar control appears when code is detected,
+  and running always goes through a review dialog that names the detected
+  language — nothing executes until you approve it there.
+- **Interpreters.** PowerShell 5.1, PowerShell 7+, CMD/Batch, Python, Node.js,
+  AutoHotkey v1 and v2, cscript (VBScript/JScript) and Bash. Execution is
+  argument-vector based (never `shell=True`), and the working directory follows
+  the adapter (project root, script directory or temp).
+- **Encoding.** A script is staged to a temp file in its adapter's own
+  encoding and its output is decoded the same way — PowerShell `utf-16-le`,
+  CMD `cp437`, the rest UTF-8 — so non-ASCII output is not mangled into
+  replacement characters.
+
+### 37. Table Editing, Both Surfaces (T-1462, T-1466, T-1467)
+
+- **Table silo.** The interactive grid: rectangle selection, clipboard TSV
+  copy/paste (a multiline cell survives the trip), column/row resize, insert
+  row/column, and grid-level undo/redo.
+- **Text silo.** *Edit Table* opens the **same** grid over the table at the
+  caret — never the first table in the document. Apply replaces exactly that
+  table's lines in one undo step, and the dialog refuses if the document
+  changed while it was open (your uncommitted grid stays put). The silo stays a
+  text silo; markdown remains the source of truth.
+- **Default layout.** `table_default_layout` saves columns, visible rows,
+  column widths, row heights, the manual-sizing flags and word wrap; every new
+  table is seeded from it, with a 7-column × 10-row fallback when the stored
+  template is malformed.
+
+### 38. Chest Interactions (T-1477, T-1478, T-1479)
+
+- **Sparse slots are real.** Empty slots are disabled placeholders, so a file
+  dropped into slot 12 stays in slot 12 across a refresh or restart.
+- **Mouse.** A single click selects; holding and moving drags the selection; a
+  drop on an empty slot moves it there and a drop on an occupied slot swaps the
+  two; a group keeps its order when it lands.
+- **Shift and Ctrl+Shift.** Shift+press starts a rectangular range selection
+  and Shift+drag grows it **without moving anything**; Ctrl+Shift adds the
+  swept cells to the selection you already had.
+- **Feedback.** The drag highlight names the pending operation (move/swap, or
+  an invalid no-op target) instead of a generic hover.
+
+### 39. Remember Scroll & View State (T-1459)
+
+`silo_remember_scroll` (default on) restores each silo's scroll position when
+you return to it, keyed by the silo's category/slot/arch identity and stored in
+`silo_view_state_all`; turn it off to always open a silo at the top. It replaces
+the older "Silos at Start" switch.
+
+### 40. Pack Silo — Portable Bundles (T-1409…T-1417)
+
+- **One chord per gesture.** **Ctrl+Shift+P** packs the active silo;
+  **Ctrl+Shift+C** packs the selection plus every media file it references
+  (Fast Pack Selection — disabled, not hidden, in the editor's context menu
+  when nothing is selected).
+- **The header Pack control is the same feature with a mouse.** Its hover
+  cheat sheet lists the whole vocabulary: `Pack Silo (Ctrl+Shift+P)`,
+  `Fast Pack Selection: Ctrl+Shift+C`, `Export Silo to file: Ctrl+Shift+S`,
+  then Click: Smart Quick Pack (reuses identical bundle), Shift+Click: Pack
+  With Options, Ctrl+Click: Force Repack, Ctrl+Shift+Click: Copy Last Bundle,
+  Alt+Click: Open Last Bundle Folder, Right-click: more bundle actions
+  (T-1409/T-1428).
+- **What lands on disk.** One ZIP: the portable Markdown, the referenced media
+  re-linked to archive-relative members, `silo.index.json` (a deterministic
+  requirement/media index at `INDEX_SCHEMA_VERSION = 4`), a README written for
+  a reader that has only the archive, and `manifest.json` — member hashes,
+  `bundle_kind: silo_bundle`, scope, included/missing counts, capabilities and
+  build provenance.
+- **Options dialog (Shift+Click).** Include silo text (`.md`); Select All /
+  Select None / Invert; sort by Newest first, Oldest first, Document order or
+  Name; destination Silo folder / Desktop / Documents / Choose folder…; *Make
+  exported Markdown portable* (Hide local path or Keep original links);
+  Include non-media Silo Files; **Keep last versions in exports** (default 5);
+  Remember these choices for Quick Pack.
+- **Smart reuse.** Bundle identity is a SHA256 over the logical payload only —
+  created-at, output paths and archive timestamps are excluded — so packing the
+  same content again reuses the existing archive (the toast says "Existing
+  archive copied to clipboard"). Ctrl+Click forces a fresh one.
+- **Retention never eats the archive you just received.** Pruning touches only
+  bundles inside the canonical exports folder, verifies FastPrompter ownership
+  of every candidate before deleting it, keeps the newest
+  `silo_bundle_keep_versions` (default 5), and always protects the archive of
+  the operation in flight.
+- **Publication is atomic.** The ZIP is built in a unique temp sibling and
+  published into a destination that does not exist yet: an existing file is
+  never clobbered.
+- **Privacy.** Generated share text has absolute workstation paths
+  deterministically redacted, while remote URLs and relative paths are left
+  exactly as written.
+- **Coverage overlay (T-1415).** Settings → *Show pack coverage*
+  (`show_pack_coverage`, default off) marks which requirements of the active
+  silo are already inside a published bundle; `pack_coverage_fade` (default on)
+  fades them instead of flagging them forever. Clearing the coverage history
+  deletes no ZIP and edits no text.
+- **It did not replace the old exports.** Ctrl+Shift+S still writes the active
+  silo to a plain `.md`, and the Files drawer still exports per silo.
+- **In very large documents** the header control stops being hit-tested above
+  2000 blocks, so use Ctrl+Shift+P there instead of aiming at the glyph.
