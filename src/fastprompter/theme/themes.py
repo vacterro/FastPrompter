@@ -126,6 +126,79 @@ QTableView, QTableWidget, QTreeView, QTreeWidget, QListView, QListWidget {{
 QTableCornerButton::section {{ background-color: {bg}; border: none; }}
 """
 
+
+def control_surfaces_qss(raw_colors):
+    """Sub-controls the theme sheets never mentioned (T-1461).
+
+    Every sheet styles the *frame* of a checkbox, combo, spin box, etc., but
+    none styled the parts the style engine draws itself: the radio indicator,
+    the combo/spin arrow buttons, the menu tick column. On the native Windows
+    style those parts were painted with the OS's own near-white chrome; under
+    the pinned Fusion they would take Fusion's grey instead of the theme. One
+    rule set per theme keeps every surface on the theme's own palette.
+
+    Deliberately forces ``border-radius: 0`` on every surface it touches:
+    UI.md's Golden Default is square-cornered (zero rounded corners is a hard
+    invariant), and Qt's own radio indicator default is a circle, so leaving
+    the radius unstated would ship a round dot under the theme.
+    """
+    bg = raw_colors.get("bg_main", "#1a1a1a")
+    field = raw_colors.get("bg_text", "#2c2c2c")
+    btn = raw_colors.get("btn_bg", "#3a3a3a")
+    pressed = raw_colors.get("btn_pressed", "#4a4a4a")
+    fg = raw_colors.get("text_main", "#c0c0c0")
+    edge = raw_colors.get("border_dark", "#0a0a0a")
+    light = raw_colors.get("border_light", "#4d4d4d")
+    accent = raw_colors.get("accent", "#bfa65e")
+    return f"""
+QRadioButton::indicator {{
+    width: 11px; height: 11px;
+    background: {field}; border: 1px solid {edge};
+    border-radius: 0px;
+}}
+QRadioButton::indicator:checked {{ background: {accent}; border: 1px solid {edge}; }}
+QRadioButton::indicator:disabled {{ background: {bg}; border: 1px solid {light}; }}
+QComboBox::drop-down {{
+    background: {btn}; border: none; border-left: 1px solid {edge}; width: 16px;
+}}
+QComboBox::down-arrow {{
+    width: 0; height: 0;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 5px solid {fg};
+}}
+QComboBox::down-arrow:on {{ border-top-color: {accent}; }}
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QDateTimeEdit::up-button, QTimeEdit::up-button, QDateEdit::up-button {{
+    background: {btn}; border: none; border-left: 1px solid {edge};
+    border-bottom: 1px solid {edge}; width: 15px;
+}}
+QSpinBox::down-button, QDoubleSpinBox::down-button,
+QDateTimeEdit::down-button, QTimeEdit::down-button, QDateEdit::down-button {{
+    background: {btn}; border: none; border-left: 1px solid {edge}; width: 15px;
+}}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
+    background: {pressed};
+}}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow,
+QDateTimeEdit::up-arrow, QTimeEdit::up-arrow, QDateEdit::up-arrow {{
+    width: 0; height: 0;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-bottom: 5px solid {fg};
+}}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow,
+QDateTimeEdit::down-arrow, QTimeEdit::down-arrow, QDateEdit::down-arrow {{
+    width: 0; height: 0;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 5px solid {fg};
+}}
+QMenu::indicator {{ width: 12px; height: 12px; }}
+QMenu::indicator:checked {{ background: {accent}; border: 1px solid {edge}; }}
+QGroupBox::indicator {{ width: 11px; height: 11px; }}
+QGroupBox::indicator:checked {{ background: {accent}; border: 1px solid {edge}; }}
+"""
+
+
 CUSTOM_COLOR_DEFAULTS = {
     "bg_main": "#1a1a1a",
     "bg_text": "#2c2c2c",

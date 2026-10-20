@@ -1,16 +1,19 @@
 """One canonical sound-reference resolver (T-1238-C0.12).
 
-FastPrompter plays audio from exactly two trusted roots:
+FastPrompter plays audio from exactly three trusted roots:
 
 ``builtin:<rel>``
     the packaged ``<resource>/sound/`` directory that ships with the app;
 ``user:<rel>``
     the managed user library ``<data>/sound_library/`` that preset packs,
-    GoldSrc imports and "Add sound..." copy into.
+    GoldSrc imports and "Add sound..." copy into;
+``addon:<rel>``
+    the user's own drop-in folder ``<data>/addon/sounds/`` (T-1457-C).  Files
+    here are never copied, moved or deleted by the app -- the user owns them.
 
 A bare ``<rel>`` is the legacy form: it resolves inside the packaged root
-first (every shipped mapping keeps working) and then inside the managed
-root, so a mapping written before namespaces existed still plays.
+first (every shipped mapping keeps working) and then inside the managed root,
+so a mapping written before namespaces existed still plays.
 
 An arbitrary absolute path is NEVER playable from persisted profile data:
 persisted settings must not be able to turn FastPrompter into a general
@@ -26,7 +29,16 @@ from fastprompter.utils.paths import get_data_dir, get_resource_path
 
 BUILTIN_PREFIX = "builtin:"
 USER_PREFIX = "user:"
+ADDON_PREFIX = "addon:"
 SOUND_LIBRARY_DIR_NAME = "sound_library"
+
+#: Addon sound directory name under the user data root.  This is the ONE
+#: place a user may drop their own WAV files: it lives beside the database
+#: (``<user-data>/addon/sounds``), so a portable install keeps its addon
+#: sounds on the same stick as everything else, and it is resolved through
+#: the same containment and namespace rules as the managed library.
+ADDON_DIR_NAME = "addon"
+ADDON_SOUNDS_DIR_NAME = "sounds"
 
 #: Private shipped namespace.  ``_vault/`` holds bulk raw material (GoldSrc
 #: vox/fvox fragments, the cs_style pack, alternate packs): fully playable,
@@ -37,6 +49,9 @@ VAULT_DIR_NAME = "_vault"
 
 #: Extensions the resolver will hand to a transport.
 ALLOWED_SUFFIXES = (".wav",)
+
+#: Header window read to recognise a playable WAV before it is offered.
+_WAV_HEADER_WINDOW = 64
 
 
 def packaged_root() -> str:
@@ -56,6 +71,47 @@ def ensure_managed_root() -> str:
     except OSError:
         pass
     return root
+
+
+def addon_root() -> str:
+    """The user's own drop-in sound folder: ``<user-data>/addon/sounds``.
+
+    Resolved from the application's real user-data root, never from the
+    repository or a developer-specific absolute path: a portable install puts
+    it next to the database it belongs to.
+    """
+    return os.path.join(get_data_dir(), ADDON_DIR_NAME, ADDON_SOUNDS_DIR_NAME)
+
+
+#: Written once into a fresh addon folder.  English by design: it is read
+#: before any UI language exists (and by a user who just opened the folder in
+#: Explorer), so it must not depend on a locale pack being loaded.
+ADDON_INFO_NAME = "info.txt"
+ADDON_INFO_TEXT = """\
+FastPrompter addon sounds
+=========================
+
+Drop your own .wav files into THIS folder (subfolders are allowed).
+
+Every .wav found here is offered in the sound pickers of Sound Settings, the
+Sound Hub and Problip, alongside the sounds that ship with the app. It is
+stored as an "addon:" reference, so a mapping keeps pointing at your file and
+never at a copy inside the app.
+
+Rules
+-----
+* Only .wav files are used. Other formats are ignored.
+* A folder whose name starts with "_" is skipped (private, like the shipped
+  _vault).
+* A file whose name starts with "_" is skipped as well.
+* Files that are not readable PCM WAV are ignored when they are played; they
+  never crash the app.
+* Nothing here is ever copied into, or deleted from, the sounds that ship
+  with FastPrompter.
+* Nothing here is executed. A .wav is data: no scripts, no plugins.
+
+This file is created once and never overwritten, so you may edit it freely.
+"""
 
 
 def normalize_rel(rel: str) -> str | None:
@@ -101,16 +157,24 @@ def make_builtin_ref(rel: str) -> str:
     return f"{BUILTIN_PREFIX}{safe}" if safe else ""
 
 
+def make_addon_ref(rel: str) -> str:
+    safe = normalize_rel(rel)
+    return f"{ADDON_PREFIX}{safe}" if safe else ""
+
+
 def split_ref(ref: str) -> tuple[str, str]:
     """Return ``(namespace, rel)`` for a stored reference.
 
-    Namespace is ``"builtin"``, ``"user"`` or ``""`` (legacy, try both).
+    Namespace is ``"builtin"``, ``"user"``, ``"addon"`` or ``""`` (legacy,
+    try all roots in order).
     """
     if not isinstance(ref, str):
         return "", ""
     text = ref.strip()
     if text.startswith(BUILTIN_PREFIX):
         return "builtin", text[len(BUILTIN_PREFIX):]
+    if text.startswith(ADDON_PREFIX):
+        return "addon", text[len(ADDON_PREFIX):]
     if text.startswith(USER_PREFIX):
         return "user", text[len(USER_PREFIX):]
     return "", text
@@ -121,6 +185,7 @@ def resolve_sound_ref(
     *,
     builtin_root: str | None = None,
     user_root: str | None = None,
+    addon_root_path: str | None = None,
 ) -> str | None:
     """Resolve one stored sound reference to an existing file, or None."""
     namespace, rel = split_ref(ref)
@@ -128,16 +193,19 @@ def resolve_sound_ref(
         return None
     builtin = builtin_root if builtin_root is not None else packaged_root()
     user = user_root if user_root is not None else managed_root()
+    addon = addon_root_path if addon_root_path is not None else addon_root()
     roots: list[str]
     vault = os.path.join(builtin, VAULT_DIR_NAME) if builtin else ""
     if namespace == "builtin":
         roots = [builtin, vault]
+    elif namespace == "addon":
+        roots = [addon]
     elif namespace == "user":
         roots = [user]
     else:
         # legacy plain ref: packaged wins, then the private vault, then the
-        # managed user library.
-        roots = [builtin, vault, user]
+        # managed user library, then the user's addon folder.
+        roots = [builtin, vault, user, addon]
     for root in roots:
         full = contained_path(root, rel)
         if full and os.path.isfile(full):
@@ -147,6 +215,87 @@ def resolve_sound_ref(
 
 def is_managed_ref(ref: str) -> bool:
     return split_ref(ref)[0] == "user"
+
+
+def is_addon_ref(ref: str) -> bool:
+    return split_ref(ref)[0] == "addon"
+
+
+def _is_private_name(name: str) -> bool:
+    """A ``_``-prefixed file or folder is private and never offered."""
+    return name.startswith("_")
+
+
+def _looks_like_playable_wav(path: str) -> bool:
+    """True when ``path`` carries a readable PCM RIFF/WAVE header.
+
+    Discovery must never hand a malformed file to the transport: a truncated
+    or renamed file would otherwise sit in every picker and fail at play
+    time. This reads only the header window (no payload), so a large library
+    costs one small read per candidate, and an unreadable file simply is not
+    offered.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(_WAV_HEADER_WINDOW)
+    except OSError:
+        return False
+    if len(head) < 12 or head[:4] != b"RIFF" or head[8:12] != b"WAVE":
+        return False
+    return True
+
+
+def list_addon_sounds(addon_root_path: str | None = None) -> list[str]:
+    """Every playable addon file, as ``addon:`` refs, sorted.
+
+    Private ``_``-prefixed folders and files are skipped, exactly like the
+    packaged vault, so a user's scratch area never floods the picker. The
+    result is derived fresh from the directory every call and sorted, which
+    makes the identity of each entry deterministic and means a rescan can
+    never accumulate duplicates.
+    """
+    root = addon_root_path if addon_root_path is not None else addon_root()
+    found: list[str] = []
+    if not os.path.isdir(root):
+        return found
+    for dirpath, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not _is_private_name(d)]
+        for name in files:
+            if _is_private_name(name) or not name.lower().endswith(
+                    ALLOWED_SUFFIXES):
+                continue
+            full = os.path.join(dirpath, name)
+            if not _looks_like_playable_wav(full):
+                continue
+            ref = make_addon_ref(os.path.relpath(full, root))
+            if ref:
+                found.append(ref)
+    return sorted(set(found))
+
+
+def ensure_addon_root() -> str:
+    """Create ``<user-data>/addon/sounds`` and its ``info.txt`` on first run.
+
+    Idempotent by construction: the directory is created with
+    ``exist_ok=True`` and ``info.txt`` is written only when it is absent, so
+    a user's own notes are never overwritten and existing files are never
+    touched. Every failure is swallowed -- a read-only or vanished user-data
+    directory must not stop the app from starting, it only means no addon
+    sounds are found.
+    """
+    root = addon_root()
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError:
+        return root
+    info = os.path.join(root, ADDON_INFO_NAME)
+    try:
+        if not os.path.exists(info):
+            with open(info, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(ADDON_INFO_TEXT)
+    except OSError:
+        pass
+    return root
 
 
 def list_managed_sounds(user_root: str | None = None) -> list[str]:

@@ -67,6 +67,7 @@ from fastprompter.core.usage_limits.providers._claude_desktop import (
 from fastprompter.core.usage_limits.providers._claude_transcripts import (
     active_quota_blocks,
     last_transcript_activity,
+    transcript_inventory,
 )
 
 STALE_AFTER_SEC = 15 * 60
@@ -433,12 +434,23 @@ class ClaudeProvider(UsageProvider):
         # Claude Code" — unavailable instead of spent. Refusals are also the
         # only source of a window with no percentage at all, so they must never
         # depend on another source's leftovers.
+        #
+        # ONE inventory for the whole probe: the blocks read and the "did
+        # Claude Code run" wording share this selection, so the tree is walked
+        # once per sweep instead of twice back to back.
         blocks = {}
-        if not self._structured_source and time.monotonic() < deadline:
+        inventory: dict = {}
+        if not self._structured_source:
             try:
-                blocks = active_quota_blocks(account.source_path, now=now)
+                inventory = transcript_inventory(account.source_path, now=now)
             except Exception:
-                blocks = {}
+                inventory = {}
+            if inventory and time.monotonic() < deadline:
+                try:
+                    blocks = active_quota_blocks(account.source_path,
+                                                 now=now, inventory=inventory)
+                except Exception:
+                    blocks = {}
 
         cli = (self._cli_reading(deadline, now, self._config_dir_for(account))
                if need_cli else {})
@@ -448,7 +460,8 @@ class ClaudeProvider(UsageProvider):
             code, summary = bridge.get(
                 "error", ("missing_rate_limits",
                           "Claude has not supplied rate limits yet"))
-            if not self._structured_source and _claude_ran_recently(account, now):
+            if not self._structured_source and _claude_ran_recently(
+                    account, now, inventory):
                 summary = (f"{summary} — Claude Code ran recently but reported "
                            "no quota data")
             return _unavailable(account, code, summary)
@@ -653,10 +666,12 @@ def _campaign_offers(payload, account: AccountRef | None = None,
 
 
 def _claude_ran_recently(account: AccountRef, now: float,
+                         inventory: dict | None = None,
                          window_s: float = 6 * 3600) -> bool:
     """Did Claude Code write a transcript lately? (better error wording)"""
     try:
-        seen = last_transcript_activity(account.source_path, now=now)
+        seen = last_transcript_activity(account.source_path, now=now,
+                                        inventory=inventory)
     except Exception:
         return False
     return seen is not None and (now - seen) <= window_s
@@ -708,13 +723,21 @@ def source_status(directory: str | os.PathLike | None = None, *,
         pass
     if directory:
         try:
-            out["blocked_windows"] = active_quota_blocks(directory, now=now)
+            # One inventory answers both questions the settings UI asks.
+            inventory = transcript_inventory(directory, now=now)
         except Exception:
-            pass
-        try:
-            out["claude_code_seen_at"] = last_transcript_activity(directory, now=now)
-        except Exception:
-            pass
+            inventory = {}
+        if inventory:
+            try:
+                out["blocked_windows"] = active_quota_blocks(
+                    directory, now=now, inventory=inventory)
+            except Exception:
+                pass
+            try:
+                out["claude_code_seen_at"] = last_transcript_activity(
+                    directory, now=now, inventory=inventory)
+            except Exception:
+                pass
     return out
 
 

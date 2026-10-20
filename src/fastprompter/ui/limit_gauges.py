@@ -157,7 +157,7 @@ class LimitGauges(QWidget):
         self.setMinimumHeight(12)
         self.setFixedWidth(self.PAD * 2 + 14)   # room for status text always
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(tr('AI usage: click to open settings'))
+        self.set_hover_description(tr('AI usage: click to open settings'))
         self._last_prefer_labels = None
         self._initial_auto_scheduled = False
         self._result_ready.connect(self._on_data)
@@ -167,6 +167,18 @@ class LimitGauges(QWidget):
             weak_qt_callback(self, lambda w: w._result_ready.emit()))
 
     # -- visibility --------------------------------------------------------
+    def set_hover_description(self, text: str) -> None:
+        """Keep the description for assistive technology.
+
+        The hover card owns the VISUAL: the tooltip event is consumed in
+        ``event()``, so QToolTip never paints a second popup beside the
+        card.  The text stays on the widget, so ``toolTip()`` and the
+        accessible description still carry it.
+        """
+        text = text or ""
+        self.setToolTip(text)
+        self.setAccessibleDescription(text)
+
     @property
     def _visible(self):
         if not hasattr(self.main_win, "data"):
@@ -243,21 +255,46 @@ class LimitGauges(QWidget):
         return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
 
     def _show_hover_card(self):
-        # The panel contains a live reset countdown.  Keeping the HTML
-        # produced by the last probe made an old "0m" survive every later
-        # hover, even after resolved_windows() knew the reset had passed.
-        # Rebuild locally first; schedule_auto is asynchronous and
-        # internally rate-limited, so hover never performs a synchronous
-        # provider request (spec 21).
-        self._service.schedule_auto(self._refresh_interval() // 1000)
-        ignore_filters = self._shift_held()
-        html_text = self._build_tooltip(ignore_filters=ignore_filters)
-        self.setToolTip("")          # the native tooltip must never compete
+        # One bounded hover-open transaction.  Each stage is named so a
+        # failure reports exactly where it broke; a failed session is marked
+        # and not retried again until the pointer leaves and returns.
+        card = None
+        stage = "hover_card"
         try:
-            self.hover_card().show_card(html_text)
-        except Exception:
-            # A hover panel is never worth taking the top bar down for.
-            self.setToolTip(html_text)
+            card = self.hover_card()
+            if card.isVisible():
+                card.cancel_hide()
+                self._hover_open_failed = False
+                return
+            if getattr(self, "_hover_open_failed", False):
+                return
+            if getattr(self, "_hover_opening", False):
+                return
+            self._hover_opening = True
+            stage = "schedule_auto"
+            self._service.schedule_auto(self._refresh_interval() // 1000)
+            stage = "shift_held"
+            ignore_filters = self._shift_held()
+            stage = "build_tooltip"
+            html_text = self._build_tooltip(ignore_filters=ignore_filters)
+            stage = "show_card"
+            card.show_card(html_text)
+            self._hover_open_failed = False
+        except Exception as exc:    # nonfatal, but diagnosable (no native fallback)
+            self._hover_open_failed = True
+            self._last_hover_error = f"{stage}: {exc}"
+            try:
+                if hasattr(self.main_win, "_log"):
+                    self.main_win._log(f"limit hover open failed at {stage}: {exc}")
+            except Exception:
+                pass
+            if card is not None:
+                try:
+                    card.hide_now()
+                except Exception:
+                    pass
+        finally:
+            self._hover_opening = False
 
     def hide_hover_card(self, immediate: bool = False):
         card = getattr(self, "_hover_card", None)
@@ -293,6 +330,15 @@ class LimitGauges(QWidget):
                 return True
         elif event.type() == QEvent.Type.Leave:
             # Grace interval: travelling towards the card must not close it.
+            # A width change during a data refresh can deliver a spurious
+            # Leave; if the pointer is still over either surface, keep it.
+            if getattr(self, "_width_changing", False):
+                return super().event(event)
+            card = getattr(self, "_hover_card", None)
+            if card is not None and not sip_deleted(card) \
+                    and card._pointer_inside():
+                card.cancel_hide()
+                return super().event(event)
             self.hide_hover_card()
         elif event.type() in (QEvent.Type.Hide, QEvent.Type.Close):
             self.hide_hover_card(immediate=True)
@@ -463,11 +509,14 @@ class LimitGauges(QWidget):
 
     # -- data --------------------------------------------------------------
     def _on_data(self):
-        self.setToolTip("")
         # Width first: refresh_hover_card() anchors the card to this
         # widget's geometry, so it must read the geometry this snapshot
         # produces, not the previous one's.
-        self._update_width()
+        self._width_changing = True
+        try:
+            self._update_width()
+        finally:
+            self._width_changing = False
         self.refresh_hover_card()
         self.update()
 

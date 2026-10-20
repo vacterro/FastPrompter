@@ -53,6 +53,7 @@ TOPBAR_ITEMS = (
     _item("btn_arc_snip", "Archive current", "Projects", 38),
     _item("btn_toggle_archive", "Archive", "Projects", 38),
     _item("btn_project_folder", "Project folder", "Projects", 52),
+    _item("btn_code_run", "Run code", "Projects", 54),
     _item("btn_project_run", "Run project", "Projects", 52),
     _item("btn_files", "Files", "Projects", 50),
     _item("btn_vision", "View mode", "Editor", 40),

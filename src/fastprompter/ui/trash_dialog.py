@@ -180,6 +180,7 @@ class TrashDialog(QDialog):
                 # CORE-005: the physical folder move-back outcome determines
                 # what logical state reconciliation is truthful.
                 physical_rolled_back = True
+                logical_rolled_back = True
                 if allocated and pre_trashed:
                     cat = mw.get_current_category() if hasattr(
                         mw, "get_current_category") else ""
@@ -200,8 +201,19 @@ class TrashDialog(QDialog):
                     if pre_snapshot is not None and hasattr(mw, "_apply_data_state"):
                         try:
                             mw._apply_data_state(pre_snapshot)
-                        except Exception:
-                            pass
+                        except Exception as state_err:
+                            # The user is about to be told the transaction was
+                            # cleanly reversed. Saying "everything was rolled
+                            # back" while the logical restore failed presents
+                            # partially-restored runtime state as a clean
+                            # reversal, so the rollback outcome is reported
+                            # truthfully and the un-restored part is named.
+                            from fastprompter.core.logging import logger
+                            logger.warning(
+                                "Restore rollback: could not reapply the "
+                                "pre-restore state for %s: %s",
+                                md_basename, state_err, exc_info=True)
+                            logical_rolled_back = False
                         stack = getattr(mw, "data_undo_stack", None)
                         if isinstance(stack, list):
                             del stack[len(pre_undo):]
@@ -218,10 +230,19 @@ class TrashDialog(QDialog):
                         ttf.pop(md_basename, None)
                     data["trash_consumed"] = pre_consumed
                     mw.mark_dirty()
-                    QMessageBox.warning(
-                        self, self.tr("Restore incomplete"),
-                        self.tr("Everything was rolled back and the trash "
-                                "copy was kept so you can try again."))
+                    if logical_rolled_back:
+                        QMessageBox.warning(
+                            self, self.tr("Restore incomplete"),
+                            self.tr("Everything was rolled back and the trash "
+                                    "copy was kept so you can try again."))
+                    else:
+                        QMessageBox.warning(
+                            self, self.tr("Restore incomplete"),
+                            self.tr("The folder was rolled back, but the "
+                                    "editing state could not be fully "
+                                    "restored, so parts of the document may "
+                                    "be newer than you left them. The trash "
+                                    "copy was kept so you can try again."))
                 else:
                     # Physical move-back FAILED: the folder remains at its
                     # newly allocated live destination. Do NOT restore the
@@ -234,8 +255,19 @@ class TrashDialog(QDialog):
                     if pre_snapshot is not None and hasattr(mw, "_apply_data_state"):
                         try:
                             mw._apply_data_state(pre_snapshot)
-                        except Exception:
-                            pass
+                        except Exception as state_err:
+                            # This branch tells the user the folder was left
+                            # recoverable, which is true of the disk but not
+                            # of the runtime when the pre-restore state could
+                            # not be reapplied. The recoverability bookkeeping
+                            # below still runs, so the missing piece is the
+                            # record that the logical half never landed.
+                            from fastprompter.core.logging import logger
+                            logger.warning(
+                                "Restore rollback: could not reapply the "
+                                "pre-restore state for %s while the folder "
+                                "stayed at its live location: %s",
+                                md_basename, state_err, exc_info=True)
                     # Locate the folder's actual current location.
                     live_dest = None
                     if allocated:

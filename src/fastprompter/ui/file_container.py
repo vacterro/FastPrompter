@@ -29,6 +29,7 @@ from PyQt6.QtCore import (
     QMimeData,
     QObject,
     QPoint,
+    QRect,
     QSize,
     Qt,
     QThread,
@@ -36,7 +37,7 @@ from PyQt6.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt6.QtGui import QDrag, QIcon, QPixmap
+from PyQt6.QtGui import QColor, QDrag, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -59,17 +60,24 @@ from fastprompter.ui.qt_lifetime import weak_qt_callback
 from fastprompter.ui.silo_chest import (
     BADGE_ROLE,
     CHEST_SLOT_CHOICES,
+    DRAG_FEEDBACK_EMPTY,
+    DRAG_FEEDBACK_INVALID,
+    DRAG_FEEDBACK_SWAP,
     ICON,
     SLOT,
     ChestItemCard,
     ChestSlotDelegate,
+    append_slot,
     build_item_card,
     chest_palette,
     chest_slots,
     folder_badge,
     is_placeholder,
     make_placeholder,
+    migrate_slot_map,
+    place_group,
     slot_total,
+    swap_slots,
 )
 from fastprompter.utils.path_safety import (
     capture_resolved_root,
@@ -104,6 +112,16 @@ _EXPORT_THREADS = set()
 _EXPORT_CANCEL = set()           # active export cancel Events, cleared on exit
 _EXPORT_LOCK = threading.Lock()  # CORE-008: protects _EXPORT_THREADS + _EXPORT_CANCEL
 _EXPORT_SHUTDOWN_TIMEOUT_S = 5.0
+
+# T-1432 W2-004: process-wide NORMALIZED destination ownership. A key is the
+# realpath of the target (case-folded), so ``out.zip``, ``sub/../out.zip`` and
+# two different spellings of the same volume collide on one claim. Values are
+# the OWNING cancel Event — the token that proves who may release the claim.
+_EXPORT_TARGETS = {}             # normalized target key -> owner cancel Event
+_EXPORT_TARGET_THREADS = {}      # normalized target key -> live worker thread
+# T-1432 W2-003: a large member is copied in bounded chunks so cancellation is
+# observed BETWEEN chunks, not only between files.
+_EXPORT_CHUNK_BYTES = 1024 * 1024
 
 
 class _ContainerOpWorker(QObject):
@@ -283,8 +301,16 @@ def export_worker_shutdown_global():
             wait_thread_seconds(thread, max(0.0, deadline - time.monotonic()),
                                 "File Container export")
     with _EXPORT_LOCK:
-        _EXPORT_THREADS.difference_update(
-            t for t in _EXPORT_THREADS if not t.is_alive())
+        # CORE-008: the generator must be MATERIALIZED first. difference_update
+        # consumes it lazily, so feeding it a generator that iterates this very
+        # set raised "Set changed size during iteration" and aborted the
+        # shutdown before the claims below were released.
+        stopped = [t for t in _EXPORT_THREADS if not t.is_alive()]
+        _EXPORT_THREADS.difference_update(stopped)
+        # W2-004: a claim is released only once its worker has physically
+        # stopped. A worker that survived the timeout keeps its claim, so no
+        # second export can be admitted behind a still-running writer.
+        _release_stopped_export_claims_locked()
         remaining = len(_EXPORT_THREADS)
     if remaining:
         logger.error(
@@ -292,6 +318,183 @@ def export_worker_shutdown_global():
             remaining)
         return False
     return True
+
+
+def _export_target_key(target):
+    """The one canonical spelling of an export destination (W2-004).
+
+    ``realpath`` resolves ``sub/../out.zip``, drive-case differences and
+    symlinked parents to the same physical file, so two spellings of ONE
+    target share a single claim.
+    """
+    return os.path.normcase(os.path.realpath(os.path.abspath(target)))
+
+
+def _export_target_reserve(target, owner):
+    """Claim ``target`` for ``owner``; None when somebody else holds it."""
+    key = _export_target_key(target)
+    with _EXPORT_LOCK:
+        if key in _EXPORT_TARGETS:
+            return None
+        _EXPORT_TARGETS[key] = owner
+    return key
+
+
+def _export_target_bind(key, thread):
+    """Attach the worker thread that owns ``key`` (called before start)."""
+    with _EXPORT_LOCK:
+        if key in _EXPORT_TARGETS:
+            _EXPORT_TARGET_THREADS[key] = thread
+
+
+def _export_target_release(key, owner):
+    """Release ``key`` ONLY for its exact owning token (W2-004)."""
+    if key is None:
+        return False
+    with _EXPORT_LOCK:
+        if _EXPORT_TARGETS.get(key) is not owner:
+            return False
+        _EXPORT_TARGETS.pop(key, None)
+        _EXPORT_TARGET_THREADS.pop(key, None)
+    return True
+
+
+def _release_stopped_export_claims_locked():
+    """Drop the claims whose bound worker has stopped. Caller holds the lock."""
+    for key, thread in list(_EXPORT_TARGET_THREADS.items()):
+        if thread is not None and not thread.is_alive():
+            _EXPORT_TARGETS.pop(key, None)
+            _EXPORT_TARGET_THREADS.pop(key, None)
+
+
+def _discard_export_temp(tmp_path):
+    """Remove a temp sibling archive; never raise from a cleanup path."""
+    try:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+    except OSError as e:
+        logger.error("File Container export temp cleanup failed for %s: %s",
+                     tmp_path, e)
+
+
+def _stream_into_zip(zipf, fpath, arcname, cancel_ev):
+    """Copy ONE member into the archive, observing cancellation per chunk.
+
+    W2-003: ``zipf.write`` reads the whole file in one call, so cancellation
+    could only be observed between files — a 2 GiB member made the Cancel
+    button inert. Here the member is streamed in ``_EXPORT_CHUNK_BYTES``
+    slices and the token is re-read before every slice.
+    """
+    if cancel_ev.is_set():
+        return False
+    try:
+        info = zipfile.ZipInfo.from_file(fpath, arcname)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        with open(fpath, "rb") as src, zipf.open(info, "w") as member:
+            while True:
+                if cancel_ev.is_set():
+                    return False
+                chunk = src.read(_EXPORT_CHUNK_BYTES)
+                if not chunk:
+                    break
+                member.write(chunk)
+    except OSError as e:
+        logger.error("File Container export could not add %s: %s", fpath, e)
+        return False
+    return True
+
+
+def _zip_export_build(names, export_root, tmp_path, cancel_ev, progress_cb=None):
+    """Build the archive at ``tmp_path``; True = complete.
+
+    Cancellation is observed before the traversal, at every directory
+    boundary, before every member and between chunks (W2-003). A cancelled or
+    failed build drops its temp and never publishes. CORE-007/CORE-010: every
+    descendant is validated against the IMMUTABLE captured ``export_root``.
+    """
+    ok = True
+    total = len(names)
+    try:
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for index, entry in enumerate(names):
+                if cancel_ev.is_set():
+                    ok = False
+                    break
+                source = os.path.abspath(entry)
+                # CORE-007: a top-level entry that is a symlink/junction
+                # escaping the captured root is refused wholesale.
+                if os.path.islink(source) or _is_alias(source):
+                    if not _path_is_under(export_root, source):
+                        continue
+                if os.path.isdir(source):
+                    for root, dirs, files in os.walk(source):
+                        if cancel_ev.is_set():
+                            ok = False
+                            break
+                        # Prune directory aliases during traversal so an
+                        # escaped subtree is never descended into.
+                        for d in list(dirs):
+                            dp = os.path.join(root, d)
+                            if os.path.islink(dp) or _is_alias(dp):
+                                dirs.remove(d)
+                        for file in files:
+                            if cancel_ev.is_set():
+                                ok = False
+                                break
+                            fpath = os.path.join(root, file)
+                            if not _path_is_under(export_root, fpath):
+                                continue
+                            arcname = os.path.relpath(fpath, export_root)
+                            if not _stream_into_zip(zipf, fpath, arcname, cancel_ev):
+                                ok = False
+                                break
+                        if not ok:
+                            break
+                else:
+                    if not _path_is_under(export_root, source):
+                        continue
+                    arcname = os.path.relpath(source, export_root)
+                    if not _stream_into_zip(zipf, source, arcname, cancel_ev):
+                        ok = False
+                        break
+                if not ok:
+                    break
+                if progress_cb is not None:
+                    progress_cb(index + 1, total)
+    except OSError as e:
+        logger.error("File Container ZIP export failed: %s", e)
+        ok = False
+    if not ok:
+        _discard_export_temp(tmp_path)
+    return ok
+
+
+def _export_publish(names, export_root, tmp_path, target, cancel_ev,
+                    progress_cb=None):
+    """Build into ``tmp_path`` and publish atomically.
+
+    Returns ``published`` / ``cancelled`` / ``failed``. A cancelled or failed
+    export NEVER replaces the previous good archive at ``target``: the temp
+    sibling is dropped and the destination is not opened at all.
+    """
+    if cancel_ev.is_set():
+        _discard_export_temp(tmp_path)
+        return "cancelled"
+    if not _zip_export_build(names, export_root, tmp_path, cancel_ev, progress_cb):
+        _discard_export_temp(tmp_path)
+        return "cancelled" if cancel_ev.is_set() else "failed"
+    if cancel_ev.is_set():
+        # Cancelled after the last member: still never publish a cancelled
+        # build over the previous archive.
+        _discard_export_temp(tmp_path)
+        return "cancelled"
+    try:
+        os.replace(tmp_path, target)
+    except OSError as e:
+        logger.error("File container export publish failed: %s", e)
+        _discard_export_temp(tmp_path)
+        return "failed"
+    return "published"
 
 
 _RETIRED_CONTAINER_WORKERS = []# ascii + lowercase cyrillic (U+0430-044F, U+0451) survive in slugs
@@ -871,6 +1074,36 @@ def _write_text_atomic(path, content, root=None, root_identity=None):
         raise
 
 
+class _SweepOverlay(QWidget):
+    """The Shift+drag selection rectangle over the grid.
+
+    A child of the viewport, transparent to the mouse, painted from the
+    active theme's chest palette tokens so a rectangular sweep reads as one
+    gesture rather than N hover events."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.hide()
+        self._pal = None
+
+    def set_palette_tokens(self, pal):
+        self._pal = pal
+
+    def paintEvent(self, _event):  # noqa: N802 (Qt naming)
+        if not self._pal:
+            return
+        p = QPainter(self)
+        wash = QColor(self._pal["select_wash"])
+        wash.setAlpha(50)
+        p.fillRect(self.rect(), wash)
+        pen = QPen(self._pal["select_frame"], 1)
+        p.setPen(pen)
+        p.drawRect(self.rect().adjusted(0, 0, -1, -1))
+        p.end()
+
+
 class _FileList(QListWidget):
     """Icon grid whose items drag out as real file URLs."""
 
@@ -889,14 +1122,186 @@ class _FileList(QListWidget):
         self.setMouseTracking(True)
         self._default_delegate = self.itemDelegate()
         self._chest_delegate = ChestSlotDelegate(self)
+        self._drag_hover_item = None
+        self._drag_hover_kind = None
+        # Shift+drag sweep state: a selection gesture that OWNS the mouse
+        # until release and never enters QDrag
+        self._sweeping = False
+        self._sweep_moved = False
+        self._sweep_anchor = None
+        self._sweep_pos = None
+        self._sweep_additive = False
+        self._sweep_snapshot = []
+        self._sweep_timer = QTimer(self)
+        self._sweep_timer.setInterval(60)
+        self._sweep_timer.timeout.connect(self._sweep_autoscroll_tick)
+        self._sweep_overlay = _SweepOverlay(self.viewport())
+
+    # ---- Shift+drag rectangular selection ----------------------------------
+
+    def _sweep_begin(self, pos, additive):
+        self._sweeping = True
+        self._sweep_moved = False
+        self._sweep_anchor = pos
+        self._sweep_pos = pos
+        self._sweep_additive = additive
+        self._sweep_snapshot = self._sweep_selected()
+        self._sweep_overlay.set_palette_tokens(
+            chest_palette(getattr(self._panel, "main_win", None)))
+        self._sweep_show_rect()
+
+    def _sweep_rect(self):
+        a, b = self._sweep_anchor, self._sweep_pos
+        return QRect(a, b).normalized()
+
+    def _sweep_show_rect(self):
+        self._sweep_overlay.setGeometry(self._sweep_rect())
+        if not self._sweep_overlay.isVisible():
+            self._sweep_overlay.show()
+        self._sweep_overlay.raise_()
+
+    def _sweep_selected(self):
+        """Paths kept through an additive sweep (Ctrl+Shift)."""
+        from PyQt6.QtCore import Qt
+        return [it.data(Qt.ItemDataRole.UserRole)
+                for it in self.selectedItems()
+                if it.data(Qt.ItemDataRole.UserRole)]
+
+    def _sweep_update_selection(self):
+        """Rectangular sweep: every real item the rectangle touches selects.
+
+        Placeholders never enter a selection (they carry NoItemFlags and no
+        path), so empty slots can only ever be a destination, never a
+        sweep member. Shift+press range-selects, and the sweep ADDS the
+        rectangle it passes over to that range: the rows the gesture started
+        with always survive it."""
+        from PyQt6.QtCore import Qt
+        rect = self._sweep_rect()
+        picked_ids = set()
+        for row in range(self.count()):
+            item = self.item(row)
+            if is_placeholder(item):
+                continue
+            if rect.intersects(self.visualItemRect(item)):
+                picked_ids.add(id(item))
+        keep_ids = set()
+        # Shift+press already range-selected; the sweep grows that range
+        # instead of replacing it, so the pre-gesture rows always survive
+        wanted = {p for p in self._sweep_snapshot if p}
+        if wanted:
+            for row in range(self.count()):
+                item = self.item(row)
+                if item.data(Qt.ItemDataRole.UserRole) in wanted:
+                    keep_ids.add(id(item))
+        for row in range(self.count()):
+            item = self.item(row)
+            if is_placeholder(item):
+                continue
+            item.setSelected(id(item) in picked_ids or id(item) in keep_ids)
+
+    def _sweep_autoscroll(self, pos):
+        """Sweeping outside the viewport scrolls it; the selection follows."""
+        vp = self.viewport()
+        bounds = vp.rect()
+        dx = dy = 0
+        if pos.x() < bounds.left() + SLOT:
+            dx = -(SLOT // 2)
+        elif pos.x() > bounds.right() - SLOT:
+            dx = SLOT // 2
+        if pos.y() < bounds.top() + SLOT:
+            dy = -(SLOT // 2)
+        elif pos.y() > bounds.bottom() - SLOT:
+            dy = SLOT // 2
+        if dy:
+            bar = self.verticalScrollBar()
+            bar.setValue(bar.value() + dy)
+        if dx:
+            bar = self.horizontalScrollBar()
+            bar.setValue(bar.value() + dx)
+        return bool(dx or dy)
+
+    def _sweep_autoscroll_tick(self):
+        if not self._sweeping:
+            self._sweep_timer.stop()
+            return
+        if self._sweep_autoscroll(self._sweep_pos):
+            self._sweep_update_selection()
+
+    def _sweep_end(self, cancelled=False):
+        if cancelled:
+            from PyQt6.QtCore import Qt
+            for row in range(self.count()):
+                self.item(row).setSelected(False)
+            for path in self._sweep_snapshot:
+                for row in range(self.count()):
+                    item = self.item(row)
+                    if item.data(Qt.ItemDataRole.UserRole) == path:
+                        item.setSelected(True)
+        self._sweeping = False
+        self._sweep_moved = False
+        self._sweep_anchor = None
+        self._sweep_pos = None
+        self._sweep_timer.stop()
+        if self._sweep_overlay.isVisible():
+            self._sweep_overlay.hide()
+
+    def mousePressEvent(self, event):
+        from PyQt6.QtCore import Qt
+        if (event.button() == Qt.MouseButton.LeftButton
+                and self._panel._view_mode() == "Chest"
+                and event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            # Shift+Press STARTS a selection; the press itself still goes to
+            # QListWidget so a stationary Shift+Click keeps range semantics
+            self._sweep_begin(event.position().toPoint(),
+                              additive=bool(
+                                  event.modifiers()
+                                  & Qt.KeyboardModifier.ControlModifier))
+        super().mousePressEvent(event)
+        if self._sweeping:
+            # the base Shift+Click has now EXTENDED the selection to its
+            # range, so the sweep snapshot is taken AFTER it: those rows are
+            # exactly the ones the sweep must preserve
+            self._sweep_snapshot = self._sweep_selected()
 
     def mouseMoveEvent(self, event):
+        if self._sweeping and event.buttons() & Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint()
+            self._sweep_pos = pos
+            if (not self._sweep_moved
+                    and (pos - self._sweep_anchor).manhattanLength()
+                    > QApplication.startDragDistance()):
+                self._sweep_moved = True
+            if self._sweep_moved:
+                # gesture ownership: the base view's mouseMove (which would
+                # start a QDrag past the drag threshold) is not entered at all
+                self._sweep_show_rect()
+                self._sweep_update_selection()
+                if self._sweep_autoscroll(pos):
+                    if not self._sweep_timer.isActive():
+                        self._sweep_timer.start()
+                elif self._sweep_timer.isActive():
+                    self._sweep_timer.stop()
+                self._panel.hide_item_card()
+                event.accept()
+                return
         super().mouseMoveEvent(event)
         if event.buttons() != Qt.MouseButton.NoButton:
             self._panel.hide_item_card()
             return
         pos = event.position().toPoint()
         self._panel._hover_item(self.itemAt(pos), event.globalPosition().toPoint())
+
+    def mouseReleaseEvent(self, event):
+        if (self._sweeping
+                and event.button() == Qt.MouseButton.LeftButton):
+            # a selection sweep finishes the selection and moves NOTHING --
+            # in particular no QDrag may follow a release that only swept
+            self._sweep_moved = False
+            self._sweep_end()
+            super().mouseReleaseEvent(event)
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def viewportEvent(self, event):
         t = event.type()
@@ -908,10 +1313,16 @@ class _FileList(QListWidget):
         return super().viewportEvent(event)
 
     def keyPressEvent(self, event):
+        from PyQt6.QtCore import Qt
         p = self._panel
         key, mods = event.key(), event.modifiers()
         ctrl = mods & Qt.KeyboardModifier.ControlModifier
         shift = mods & Qt.KeyboardModifier.ShiftModifier
+        if key == Qt.Key.Key_Escape and self._sweeping:
+            # Escape cancels a sweep cleanly and restores what was selected
+            self._sweep_end(cancelled=True)
+            event.accept()
+            return
         if key == Qt.Key.Key_Delete:
             p._delete(p.selected_paths())
         elif key == Qt.Key.Key_F2:
@@ -940,26 +1351,20 @@ class _FileList(QListWidget):
             self._panel._sync_chest_placeholders()
 
     def startDrag(self, actions):
-        self._panel.hide_item_card()
-        quick_move = (self._panel._view_mode() == "Chest"
-                      and bool(QApplication.keyboardModifiers()
-                               & Qt.KeyboardModifier.ShiftModifier))
-        current = self.currentItem()
-        current_path = (current.data(Qt.ItemDataRole.UserRole)
-                        if current is not None else None)
-        if quick_move:
-            if not current_path or is_placeholder(current):
-                return
-            paths = [current_path]
-        else:
-            paths = self._panel.selected_paths()
-        if not paths:
+        if self._sweeping:
+            # a selection sweep never starts a QDrag, not on the threshold
+            # move and not on the release that ends it
             return
-        if quick_move:
-            first_empty = self.item(self._panel._chest_real_count())
-            if first_empty is None or not is_placeholder(first_empty):
-                return
-            self._panel.chest_internal_drop(paths, first_empty)
+        self._panel.hide_item_card()
+        # A Shift+drag in the chest RANGE-SELECTS; it never quick-moves the
+        # pressed item. QListWidget's ExtendedSelection already turns the
+        # Shift+press into a range, and the drag below then carries every
+        # selected row as one group -- which is the whole point of holding
+        # Shift before a move. The old branch returned before QDrag after
+        # relocating a single item, so the modifier could only ever mean
+        # "move exactly this one slot", never "take these with me".
+        paths = self._panel.selected_paths()
+        if not paths:
             return
         mime = QMimeData()
         mime.setUrls([QUrl.fromLocalFile(p) for p in paths])
@@ -1001,18 +1406,39 @@ class _FileList(QListWidget):
             if item is not old:
                 self._drag_hover_item = item
                 self.viewport().update()
+            self._drag_hover_kind = self._chest_hover_kind(
+                item, event.mimeData())
+            self.viewport().update()
         else:
             event.ignore()
 
     def dragLeaveEvent(self, event):
         if getattr(self, "_drag_hover_item", None) is not None:
             self._drag_hover_item = None
+            self._drag_hover_kind = None
             self.viewport().update()
         super().dragLeaveEvent(event)
+
+    def _chest_hover_kind(self, item, mime):
+        """The pending operation the highlight must show.
+
+        A folder slot is NOT a stack any more under a normal drag: it is an
+        occupied inventory slot like any other, so the feedback names the
+        swap/place. Only dropping onto the selection being dragged (or onto
+        empty space beyond the grid's end) is not an inventory operation."""
+        if item is None or is_placeholder(item):
+            return DRAG_FEEDBACK_EMPTY
+        dragged = {os.path.normcase(os.path.abspath(u.toLocalFile()))
+                   for u in mime.urls() if u.isLocalFile()}
+        if os.path.normcase(os.path.abspath(
+                item.data(Qt.ItemDataRole.UserRole) or "")) in dragged:
+            return DRAG_FEEDBACK_INVALID
+        return DRAG_FEEDBACK_SWAP
 
     def dropEvent(self, event):
         if getattr(self, "_drag_hover_item", None) is not None:
             self._drag_hover_item = None
+            self._drag_hover_kind = None
             self.viewport().update()
         if self._chest_internal_drag(event):
             event.setDropAction(Qt.DropAction.MoveAction)
@@ -1209,6 +1635,10 @@ class FileContainerPanel(QWidget):
         if chest:
             lw.setViewMode(QListWidget.ViewMode.IconMode)
             lw.setMovement(QListWidget.Movement.Static)
+            # setMovement(Static) clears dragEnabled, so the value __init__ set
+            # is gone by now and QAbstractItemView never reaches startDrag.
+            # Re-assert it after every movement change, not before it.
+            lw.setDragEnabled(True)
             lw.setAcceptDrops(True)  # internal chest drag lands on the list
             lw.setUniformItemSizes(True)
             lw.setSpacing(0)
@@ -1238,10 +1668,16 @@ class FileContainerPanel(QWidget):
             lw.setUniformItemSizes(False)
             lw.setViewMode(QListWidget.ViewMode.ListMode)
             lw.setMovement(QListWidget.Movement.Static)
+            lw.setDragEnabled(True)   # Static clears it; see the Chest branch
             lw.setIconSize(QSize(16, 16))
             lw.setGridSize(QSize())
             lw.setWordWrap(False)
         self._sync_chest_placeholders()
+        # re-entering the chest re-applies the saved sparse placement: the
+        # other views lay rows out in listing order, so the slots must be
+        # rebuilt from POSITIONS rather than trusted from the row numbers
+        if chest:
+            self._chest_apply_slot_map(self._chest_target_slots())
         self._update_count_label()
 
     # ---- lifecycle -------------------------------------------------------
@@ -1590,15 +2026,6 @@ class FileContainerPanel(QWidget):
                         self.cache.popitem(last=False)
             self._thumb_lru = LRUCache(200)
 
-        # persisted slot order: dragged-to positions survive the watcher's
-        # filesystem refresh; names the folder no longer has drop out, and
-        # new files follow after the positioned ones (stable listdir order)
-        saved = self._chest_saved_order()
-        if saved:
-            rank = {name: i for i, name in enumerate(saved)}
-            items = sorted(
-                items, key=lambda e: rank.get(os.path.basename(e[0]), len(rank)))
-
         current_items = {}
         for i in range(self.file_list.count()):
             item = self.file_list.item(i)
@@ -1667,6 +2094,15 @@ class FileContainerPanel(QWidget):
         # T-816: publish the persisted indexes for the thumbnail subsystem.
         self._item_by_path = current_items
         self._thumb_mtimes = thumb_mtimes
+
+        # persisted Sparse slot placement, not a compact name order: a
+        # dragged-to slot survives the watcher's refresh and the restart
+        # alike, a vanished name frees its slot, and a newly discovered file
+        # appends above the highest placement without overwriting one. It
+        # runs AFTER the add/drop/prune diff, which blindly rewrites rows in
+        # listing order -- applying it before the diff would compact the grid.
+        if self._view_mode() == "Chest":
+            self._chest_apply_slot_map(self._chest_target_slots())
 
         self._file_count = count
         if self._view_mode() == "Chest":
@@ -2378,76 +2814,44 @@ class FileContainerPanel(QWidget):
 
         tmp = f"{target}.fpbak-{uuid.uuid4().hex[:8]}"
 
+        # T-1432 W2-004: claim the destination BEFORE a worker exists. Two
+        # exports to the same normalized target can never interleave on one
+        # ZIP; a different destination stays fully concurrent. The claim is
+        # released only by this export's own cancel token once its worker has
+        # stopped writing.
+        claim = _export_target_reserve(target, cancel)
+        if claim is None:
+            logger.warning(
+                "File Container export refused: %s is already being exported",
+                target)
+            self.lbl_count.setText(tr("Export failed", self.lang))
+            with _EXPORT_LOCK:
+                _EXPORT_CANCEL.discard(cancel)
+            progress.close()
+            return
+
+        def report(done, total):
+            QMetaObject.invokeMethod(
+                progress, "setValue",
+                Qt.ConnectionType.QueuedConnection, Q_ARG(int, done))
+
         def do_zip():
             try:
-                with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zipf:
-                    for i, src in enumerate(names):
-                        if cancel.is_set():
-                            break
-                        src = os.path.abspath(src)
-                        # CORE-007: a top-level entry that is a symlink/junction
-                        # escaping the captured root must be refused wholesale.
-                        if os.path.islink(src) or _is_alias(src):
-                            if not _path_is_under(export_root, src):
-                                continue
-                        if os.path.isdir(src):
-                            for root, dirs, files in os.walk(src):
-                                # Prune directory aliases (symlink/junction)
-                                # during traversal so an escaped subtree is
-                                # never descended into (CORE-007).
-                                for d in list(dirs):
-                                    dp = os.path.join(root, d)
-                                    if os.path.islink(dp) or _is_alias(dp):
-                                        dirs.remove(d)
-                                for file in files:
-                                    fpath = os.path.join(root, file)
-                                    # Resolve physically and refuse descendants
-                                    # that escape the captured root through an
-                                    # alias; archive names stay logical.
-                                    if not _path_is_under(export_root, fpath):
-                                        continue
-                                    arcname = os.path.relpath(fpath, export_root)
-                                    zipf.write(fpath, arcname)
-                        else:
-                            if not _path_is_under(export_root, src):
-                                continue
-                            arcname = os.path.relpath(src, export_root)
-                            zipf.write(src, arcname)
-                        QMetaObject.invokeMethod(
-                            progress, "setValue",
-                            Qt.ConnectionType.QueuedConnection, Q_ARG(int, i + 1))
-                if cancel.is_set():
-                    # Cancelled mid-build: drop the partial temp, leave the
-                    # target untouched.
-                    try:
-                        if os.path.exists(tmp):
-                            os.remove(tmp)
-                    except OSError:
-                        pass
-                else:
-                    # Success: publish atomically (unique sibling -> target).
-                    # os.replace is atomic on the same volume and cannot leave
-                    # a half archive at the target.
-                    try:
-                        os.replace(tmp, target)
-                    except OSError as e:
-                        logger.error("File container export publish failed: %s", e)
-                        try:
-                            if os.path.exists(tmp):
-                                os.remove(tmp)
-                        except OSError:
-                            pass
+                outcome = _export_publish(
+                    names, export_root, tmp, target, cancel, report)
+                if outcome != "published":
+                    logger.info(
+                        "File Container export %s: %s", outcome, target)
             except Exception as e:
                 logger.error("ZIP export failed: %s", e)
-                try:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
-                except OSError:
-                    pass
+                _discard_export_temp(tmp)
             finally:
+                # Released by the exact owning token, after this worker has
+                # finished writing (published or not).
                 with _EXPORT_LOCK:
                     _EXPORT_THREADS.discard(threading.current_thread())
                     _EXPORT_CANCEL.discard(cancel)
+                _export_target_release(claim, cancel)
                 QMetaObject.invokeMethod(
                     progress, "cancel", Qt.ConnectionType.QueuedConnection)
 
@@ -2455,6 +2859,10 @@ class FileContainerPanel(QWidget):
         with _EXPORT_LOCK:
             _EXPORT_THREADS.add(thread)
         thread.start()
+        # Bound AFTER start: a bound-but-not-yet-started thread is reported
+        # dead by is_alive(), and a shutdown in that window would release a
+        # claim whose worker is about to run.
+        _export_target_bind(claim, thread)
 
     def _prompt_text(self, title, label, default_text=""):
         from PyQt6.QtCore import Qt
@@ -2650,6 +3058,15 @@ class FileContainerPanel(QWidget):
             menu.addAction(tr("Copy Path\tCtrl+Shift+C", self.lang), lambda: self._copy_path(path))
             menu.addAction(tr("Rename…\tF2", self.lang), lambda: self._rename(path))
             menu.addAction(tr("Export to…", self.lang), self._export_all)
+            if os.path.isdir(path):
+                # the ONE explicit filesystem move: a normal drag on a folder
+                # slot only rearranges inventory, it never writes to disk
+                others = [p for p in self.selected_paths()
+                          if os.path.abspath(p) != os.path.abspath(path)]
+                if others:
+                    menu.addAction(
+                        tr("Move Into Folder…", self.lang),
+                        lambda: self._chest_move_selected_into(path))
             menu.addSeparator()
             menu.addAction(tr("Delete…\tDel", self.lang), lambda: self._delete(self.selected_paths() or [path]))
         else:
@@ -2707,25 +3124,56 @@ class FileContainerPanel(QWidget):
 
     def _chest_real_count(self):
         lw = self.file_list
-        i = lw.count()
-        while i > 0 and is_placeholder(lw.item(i - 1)):
-            i -= 1
-        return i
+        return sum(1 for r in range(lw.count())
+                   if not is_placeholder(lw.item(r)))
 
     def _chest_folder_key(self):
         return os.path.normcase(os.path.abspath(self.folder or ""))
 
-    def _chest_saved_order(self):
+    def _chest_saved_slots(self):
+        """Saved {name: slot} for this folder, legacy list migrated in.
+
+        Positions are bounded and integer-only: a value that fails the bound
+        is not a position and is dropped rather than materialised at an
+        impossible slot (the file is then re-placed by the append rule)."""
         data = getattr(self.main_win, "data", None)
         if not isinstance(data, dict) or not self.folder:
-            return []
-        entry = (data.get(self._CHEST_ORDER_KEY) or {}).get(
+            return {}
+        raw = (data.get(self._CHEST_ORDER_KEY) or {}).get(
             self._chest_folder_key())
-        if not isinstance(entry, list):
-            return []
-        return [n for n in entry if isinstance(n, str)]
+        return migrate_slot_map(raw)
+
+    def _chest_target_slots(self):
+        """{name: slot} for the CURRENT listing.
+
+        A saved name keeps its saved placement; a name new to the folder
+        appends above the highest placement (deterministic in listing
+        order), so a discovery never overwrites a saved placement and never
+        compacts the grid toward slot 0."""
+        saved = self._chest_saved_slots()
+        top = append_slot(saved)
+        assigned = {}
+        taken = set()
+        for r in range(self.file_list.count()):
+            it = self.file_list.item(r)
+            if not it or is_placeholder(it):
+                continue
+            p = it.data(Qt.ItemDataRole.UserRole)
+            if not p:
+                continue
+            name = os.path.basename(p)
+            if name in assigned:
+                continue
+            slot = saved.get(name)
+            if slot is None or slot in taken:
+                slot = top
+                top += 1
+            taken.add(slot)
+            assigned[name] = slot
+        return assigned
 
     def _chest_save_order(self):
+        """Persist the sparse slot map: {name: row} for every real item."""
         data = getattr(self.main_win, "data", None)
         if not isinstance(data, dict) or not self.folder:
             return
@@ -2735,78 +3183,137 @@ class FileContainerPanel(QWidget):
             data[self._CHEST_ORDER_KEY] = mapping
         # ponytail: keys for deleted silo folders linger in the profile until
         # the profile is pruned; tiny strings, bounded by silo count.
-        names = []
-        for r in range(self._chest_real_count()):
+        slots = {}
+        for r in range(self.file_list.count()):
             it = self.file_list.item(r)
-            if it:
+            if it and not is_placeholder(it):
                 p = it.data(Qt.ItemDataRole.UserRole)
                 if p:
-                    names.append(os.path.basename(p))
-        mapping[self._chest_folder_key()] = names
+                    slots[os.path.basename(p)] = r
+        mapping[self._chest_folder_key()] = slots
         if hasattr(self.main_win, "mark_dirty"):
             self.main_win.mark_dirty()
 
-    def chest_internal_drop(self, src_paths, target_item):
-        """A drop inside this chest's own grid.
+    def _chest_apply_slot_map(self, name_slots):
+        """Rebuild the grid from {name: slot}: gaps become placeholder slots.
 
-        File onto a folder slot = stack (move the file inside, the folder
-        badge is the stack count). Drop onto an occupied slot = swap with a
-        single dragged file, insert-before with a multi selection. Drop onto
-        an empty slot (or past the end) = move there. Any position change is
-        persisted as the folder's slot order.
+        A real item sits at EXACTLY its saved slot, and every lower empty
+        slot is drawn. Duplicate/corrupt slots repair deterministically
+        (first item keeps the slot, later ones take the next free one) so no
+        item is ever discarded and no two items share a slot position.
+        """
+        lw = self.file_list
+        entries = []
+        for r in range(lw.count()):
+            it = lw.item(r)
+            if it and not is_placeholder(it):
+                p = it.data(Qt.ItemDataRole.UserRole)
+                if p:
+                    entries.append((it, os.path.basename(p)))
+        placed = [(name_slots.get(name, len(name_slots) + i), name, it)
+                  for i, (it, name) in enumerate(entries)]
+        placed.sort(key=lambda e: (e[0], e[1]))
+        rows = []
+        prev = -1
+        for slot, _name, it in placed:
+            slot = max(0, min(slot, 4096))
+            while slot <= prev:
+                slot = prev + 1
+            rows.append((slot, it))
+            prev = slot
+        current = [(r, lw.item(r)) for r in range(lw.count())
+                   if not is_placeholder(lw.item(r))]
+        target = [(r, it) for r, it in rows]
+        if (len(current) == len(target)
+                and all(now[0] == want[0] and now[1] is want[1]
+                        for now, want in zip(current, target))):
+            # already laid out exactly: a refresh must not churn the grid
+            real_top = rows[-1][0] if rows else -1
+            real_rows = {r for r, _ in rows}
+            gaps_ok = all(is_placeholder(lw.item(r)) == (r not in real_rows)
+                          for r in range(real_top + 1))
+            if gaps_ok:
+                return
+        for r in range(lw.count() - 1, -1, -1):
+            lw.takeItem(r)
+        row = 0
+        for slot, it in rows:
+            while row < slot:
+                lw.insertItem(row, make_placeholder())
+                row += 1
+            lw.insertItem(row, it)
+            row += 1
+        # the grid is rebuilt from scratch, so the empty slots below the
+        # capacity must be re-padded here -- a refresh only pads the tail
+        if self._view_mode() == "Chest":
+            self._sync_chest_placeholders()
+
+    def chest_internal_drop(self, src_paths, target_item):
+        """A drop inside this chest's own grid -- a pure inventory operation.
+
+        A single dragged item onto a single occupied slot swaps them. A
+        group (or any drop onto an empty slot) lands at the exact target
+        slot: the target row of a placeholder IS the destination, so slot 20
+        receives the item at slot 20 -- never compacted to the end of the
+        real items. A folder slot is an occupied inventory slot like any
+        other; moving files INTO a folder is the explicit context-menu
+        action, never an accidental side effect of a drag. Any position
+        change is persisted as the folder's sparse slot map.
         """
         if not self.session_alive():
             return
         lw = self.file_list
         by_path = getattr(self, "_item_by_path", {})
-        norm_map = {os.path.normcase(os.path.abspath(k)): v for k, v in by_path.items()}
+        norm_map = {os.path.normcase(os.path.abspath(k)): v
+                    for k, v in by_path.items()}
         src_items = [norm_map[os.path.normcase(os.path.abspath(p))]
-                     for p in src_paths if os.path.normcase(os.path.abspath(p)) in norm_map]
+                     for p in src_paths
+                     if os.path.normcase(os.path.abspath(p)) in norm_map]
         if not src_items:
             return
         tgt_path = (target_item.data(Qt.ItemDataRole.UserRole)
                     if target_item is not None else None)
 
-        # stack: files/folders dropped onto a folder slot go inside it
-        if (tgt_path and os.path.isdir(tgt_path)):
-            drop_paths = [it.data(Qt.ItemDataRole.UserRole) for it in src_items
-                          if it.data(Qt.ItemDataRole.UserRole)]
-            if drop_paths and all(os.path.abspath(p) != os.path.abspath(tgt_path) for p in drop_paths):
-                self._chest_stack_into(tgt_path, drop_paths)
-                sm = getattr(self.main_win, "sound_manager", None)
-                if sm is not None:
-                    sm.play("click")
-                return
-
         # dropped onto itself / its own selection: a Minecraft no-op
         if target_item is not None and target_item in src_items:
             return
 
-        occupied = (target_item is not None and not is_placeholder(target_item))
-        if occupied and len(src_items) == 1 and src_items[0] is not target_item:
-            # classic Minecraft slot swap
-            a, b = lw.row(src_items[0]), lw.row(target_item)
-            lo, hi = (a, b) if a < b else (b, a)
-            it_hi = lw.takeItem(hi)
-            it_lo = lw.takeItem(lo)
-            lw.insertItem(lo, it_hi)
-            lw.insertItem(hi, it_lo)
+        slots = {}
+        for r in range(lw.count()):
+            it = lw.item(r)
+            if it and not is_placeholder(it):
+                p = it.data(Qt.ItemDataRole.UserRole)
+                if p:
+                    slots[os.path.basename(p)] = r
+        names = [os.path.basename(it.data(Qt.ItemDataRole.UserRole))
+                 for it in src_items
+                 if it.data(Qt.ItemDataRole.UserRole)]
+
+        if (target_item is not None and not is_placeholder(target_item)
+                and tgt_path and len(names) == 1
+                and os.path.basename(tgt_path) in slots):
+            # classic Minecraft slot swap -- the old rule: one dragged item
+            # onto one occupied slot exchanges them, at both sparse ends
+            slots = swap_slots(slots, names[0], os.path.basename(tgt_path))
+            self._chest_apply_slot_map(slots)
         else:
-            real = self._chest_real_count() - len(src_items)
-            for it in src_items:
-                lw.takeItem(lw.row(it))
-            row = (lw.row(target_item) if target_item is not None
-                   else lw.count())
-            row = max(0, min(row, real))
-            for offset, it in enumerate(src_items):
-                lw.insertItem(row + offset, it)
+            first = (lw.row(target_item) if target_item is not None
+                     else append_slot(slots))
+            self._chest_apply_slot_map(
+                place_group(slots, names, first))
         self._chest_save_order()
         sm = getattr(self.main_win, "sound_manager", None)
         if sm is not None:
             sm.play("click")
 
     def _chest_stack_into(self, tgt_dir, src_paths):
-        """Move dropped files inside the folder slot they were stacked onto."""
+        """Move dropped files INSIDE a folder slot (explicit move-into only).
+
+        Every safety gate runs here, because this is the one chest path that
+        mutates the filesystem: the target must be inside this silo's own
+        folder, no source may already live inside the target (moving a folder
+        into its own descendant is refused), aliases are never followed, and
+        the destination names are collision-safe and never overwrite."""
         planned = set()
 
         def reserve(name):
@@ -2824,14 +3331,51 @@ class FileContainerPanel(QWidget):
                     return os.path.join(tgt_dir, cand)
                 n += 1
 
+        tgt_abs = os.path.abspath(tgt_dir)
+        if tgt_abs != os.path.abspath(self.folder or "") and not self._folder_owns_path(
+                tgt_dir):
+            logger.error("chest move-into refused: %s is outside the silo folder",
+                         tgt_dir)
+            return
         ops = []
         for src in src_paths:
             src_abs = os.path.abspath(src)
-            if os.path.dirname(src_abs) == os.path.abspath(tgt_dir):
+            if os.path.dirname(src_abs) == tgt_abs:
+                continue
+            if os.path.normcase(src_abs).startswith(
+                    os.path.normcase(tgt_abs) + os.sep):
+                logger.error(
+                    "chest move-into refused: %s already lives inside %s",
+                    src_abs, tgt_dir)
+                continue
+            if _is_alias(tgt_abs) or _is_alias(src_abs):
+                logger.error(
+                    "chest move-into refused: alias path %s -> %s", src_abs,
+                    os.path.realpath(src_abs))
                 continue
             ops.append(("move", src_abs, reserve(os.path.basename(src)), False))
         if ops:
             self._run_container_ops(ops, publish_guard=self._make_publish_guard())
+
+    def _folder_owns_path(self, candidate):
+        """True when candidate resolves inside this panel's silo folder."""
+        if not self.folder:
+            return False
+        return _path_is_under(self.folder, candidate)
+
+    def _chest_move_selected_into(self, tgt_dir):
+        """The EXPLICIT 'Move Into Folder' action from the context menu."""
+        if not self.session_alive():
+            return
+        tgt_abs = os.path.abspath(tgt_dir)
+        srcs = [p for p in self.selected_paths()
+                if os.path.abspath(p) != tgt_abs]
+        if not srcs:
+            return
+        self._chest_stack_into(tgt_abs, srcs)
+        sm = getattr(self.main_win, "sound_manager", None)
+        if sm is not None:
+            sm.play("click")
 
     def _clear_chest_placeholders(self):
         lw = self.file_list
@@ -2840,14 +3384,27 @@ class FileContainerPanel(QWidget):
                 lw.takeItem(i)
 
     def _sync_chest_placeholders(self):
-        """Pad the grid with empty slots up to the chest size (Chest view)."""
-        self._clear_chest_placeholders()
-        if self._view_mode() != "Chest":
-            return
+        """Pad the grid with empty slots up to the chest size (Chest view).
+
+        Sparse gap placeholders are part of the layout, so only the TAIL
+        grows to the required total; nothing between placed items is ever
+        removed here (the rebuild in _chest_apply_slot_map owns the gaps).
+        A capacity shrink never discards an occupied row -- the grid keeps
+        every row it already holds and the slots simply overflow."""
         lw = self.file_list
-        files = lw.count()
+        if self._view_mode() != "Chest":
+            # leaving the chest drops every empty slot: sparse placeholders
+            # are a chest-view artefact, not list rows
+            self._clear_chest_placeholders()
+            return
+        top = 0
+        for r in range(lw.count()):
+            it = lw.item(r)
+            if it is not None and not is_placeholder(it):
+                top = r + 1
         columns = max(1, (lw.viewport().width() - 8) // SLOT)
-        for _ in range(slot_total(files, self._chest_capacity(), columns) - files):
+        for _ in range(slot_total(top, self._chest_capacity(), columns)
+                       - lw.count()):
             lw.addItem(make_placeholder())
         self._update_count_label()
 

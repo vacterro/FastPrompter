@@ -28,6 +28,7 @@ import tempfile
 import threading
 import wave
 from array import array
+from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,25 @@ RENDER_MAX_SECONDS_WORKER = 120.0
 
 _PURE_PYTHON_MAX_FRAMES = 44100 * 6
 
+#: PERF-001: the polyphase table is ``up`` phases x ``_TAPS`` coefficients, and
+#: ``up`` is the OUTPUT rate over the pair's gcd -- a property of the RATE
+#: RATIO alone. A coprime 44,101 -> 48,000 pair therefore asks for 48,000
+#: phases = 1,536,000 coefficients (~124 MB and ~1 s of CPU) for a 200-byte
+#: cue, and a coprime conversion to the 192 kHz output ceiling would ask for
+#: 6,144,000. The duration/frame limits cannot see this dimension at all, so
+#: admission guards it explicitly: refuse, and let the caller play the source
+#: raw, which is strictly better than resampling twice or freezing a worker.
+MAX_RESAMPLE_PHASES = 2048
+
+#: PERF-001: process-global kernel cache budgets. Entry count alone does not
+#: describe the memory -- one huge table can cost as much as many small ones --
+#: so the coefficient total is bounded separately, with deterministic
+#: least-recently-used eviction under both. Eviction drops only the map's
+#: claim: a kernel already handed to a caller stays valid because the caller
+#: holds its own reference.
+_KERNEL_CACHE_MAX_ENTRIES = 32
+_KERNEL_CACHE_MAX_COEFFS = 1 << 21
+
 #: The same loop on a BACKGROUND thread starves the GUI (the GIL is held for
 #: the whole render), so a worker without numpy renders only very short cues
 #: and leaves the rest to play unrendered.
@@ -150,6 +170,22 @@ _PURE_PYTHON_WORKER_MAX_FRAMES = 44100 // 2
 #: Without this, a 66 ms transient's attack shifts ~0.35 ms late and the
 #: waveform tail loses source transparency -- measured defect T-1242.
 
+def _resample_admitted(rate_in: int, rate_out: int) -> bool:
+    """False when the polyphase table this ratio would build is out of budget.
+
+    ``up`` is decided by the RATIO alone, so the only place to refuse is here:
+    once the kernel exists the memory and the ~1 s of CPU are already spent.
+    """
+    try:
+        rate_in = int(rate_in)
+        rate_out = int(rate_out)
+    except (TypeError, ValueError):
+        return False
+    if rate_in <= 0 or rate_out <= 0:
+        return False
+    return rate_out // math.gcd(rate_in, rate_out) <= MAX_RESAMPLE_PHASES
+
+
 def _resample(channels: list[list[float]], rate_in: int, rate_out: int) -> list[list[float]]:
     """Band-limited rational resample of each channel, -1.0..1.0 floats.
 
@@ -157,7 +193,13 @@ def _resample(channels: list[list[float]], rate_in: int, rate_out: int) -> list[
     is compensated exactly; output length is the nominal resampled length
     of the SOURCE content (``ceil(n_in * up / down)``), matching what a
     trusted offline reference produces.
+
+    Returns ``[]`` for a ratio the kernel budget refuses: the caller plays
+    the source raw, which is strictly better than resampling twice or
+    freezing a worker building a table no duration limit could have caught.
     """
+    if not _resample_admitted(rate_in, rate_out):
+        return []
     g = math.gcd(rate_in, rate_out)
     up, down = rate_out // g, rate_in // g
     cutoff = 0.5 / max(up, down)
@@ -290,7 +332,7 @@ def ensure_numpy() -> bool:
 _MISSING = object()
 _device_rate_cache: object = _MISSING
 
-_kernel_cache: dict[tuple[int, int, int], list[list[float]]] = {}
+_kernel_cache: OrderedDict[tuple[int, int, int], list[list[float]]] = OrderedDict()
 
 
 def _cache_dir() -> str:
@@ -352,6 +394,7 @@ def _polyphase_kernel(up: int, taps: int, cutoff: float) -> list[list[float]]:
     key = (up, taps, int(cutoff * 1_000_000))
     cached = _kernel_cache.get(key)
     if cached is not None:
+        _kernel_cache.move_to_end(key)
         return cached
     length = taps * up
     center = (length - 1) / 2.0
@@ -378,6 +421,17 @@ def _polyphase_kernel(up: int, taps: int, cutoff: float) -> list[list[float]]:
             for k in range(len(phase)):
                 phase[k] *= scale
     _kernel_cache[key] = kernel
+    # PERF-001: eviction drops only the MAP's claim -- a kernel already handed
+    # to a caller stays valid because that caller holds its own reference, so
+    # an in-flight render can never lose its table.
+    while (len(_kernel_cache) > _KERNEL_CACHE_MAX_ENTRIES
+           and len(_kernel_cache) > 1):
+        _kernel_cache.popitem(last=False)
+    while len(_kernel_cache) > 1:
+        total = sum(len(k) * len(k[0]) for k in _kernel_cache.values())
+        if total <= _KERNEL_CACHE_MAX_COEFFS:
+            break
+        _kernel_cache.popitem(last=False)
     return kernel
 
 
@@ -636,6 +690,17 @@ def device_ready_wav(path: str, rate: int | None = None) -> str | None:
         if src_rate == target and not _edge_pad_enabled:
             # Nothing to resample and no padding requested: raw file is
             # already device-valid.
+            return None
+        if src_rate != target and not _resample_admitted(src_rate, target):
+            # PERF-001: a ratio this coprime would ask the polyphase table for
+            # more phases than the budget allows.  Refuse from the header --
+            # before the content digest, the cache path or the kernel -- and
+            # let the caller play the original file: raw playback beats a
+            # second resample or a worker frozen building a table no duration
+            # limit could have caught.
+            logger.debug(
+                "device-rate render refused: %s:%d -> %d exceeds the %d-phase "
+                "budget", path, src_rate, target, MAX_RESAMPLE_PHASES)
             return None
         on_worker = threading.current_thread() is not threading.main_thread()
         max_seconds = (RENDER_MAX_SECONDS_WORKER if on_worker

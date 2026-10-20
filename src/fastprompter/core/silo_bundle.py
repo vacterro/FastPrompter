@@ -63,6 +63,11 @@ INDEX_SCHEMA_VERSION = silo_index.INDEX_SCHEMA_VERSION
 # preflight fingerprint and a published fingerprint describe one payload.
 FINGERPRINT_SCHEMA = 6
 
+# PERF-004: the deep reuse-verification read block. Bounded so a single huge
+# member never becomes a memory spike; a member larger than this is streamed
+# in several read() calls whose CRC and digest still cover the whole member.
+_VERIFY_CHUNK_BYTES = 1 << 16
+
 _LINK_PREFIX_RE = re.compile(r"(!?)\[([^\]\n]*)\]\(")
 _REMOTE_URL_RE = re.compile(r"https?://[^\s)\]>\"'`]+", re.IGNORECASE)
 
@@ -114,6 +119,30 @@ _PATH_START_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A bare POSIX absolute path is only ours to redact when it starts at a real
+# workstation root. A blanket ``/word/word`` rule would eat ordinary prose and
+# URLs-in-prose (``/api/v1/endpoint``), and a share bundle whose redaction
+# mangles legible text is its own defect. Depth is free here: the token is
+# consumed to its boundary once the root is proven, so ``/home/bob`` never
+# survives as a half-path the way ``C:\`` once did.
+_POSIX_ROOTS = (
+    "home", "users", "mnt", "media", "private", "var", "tmp",
+    "opt", "srv", "etc", "root", "usr",
+)
+_POSIX_START_RE = re.compile(
+    r"(?<![A-Za-z0-9_])/(?:" + "|".join(_POSIX_ROOTS) + r")/",
+    re.IGNORECASE,
+)
+
+
+def _earlier(match, other):
+    """The earlier of two match objects, tolerating either being None."""
+    if match is None:
+        return other
+    if other is None or match.start() <= other.start():
+        return match
+    return other
+
 _PATH_STOP_CHARS = "\n\r\"'<>)]"
 _PATH_TAIL_EXTS = re.compile(r"\.[A-Za-z0-9]{1,8}$")
 _PROSE_WORD_RE = re.compile(r"^[A-Za-z][A-Za-z'’]*$")
@@ -145,7 +174,11 @@ def _cut_trailing_prose(raw: str) -> str:
     while i >= 0 and _PROSE_WORD_RE.match(tokens[i].group(0)):
         cut = tokens[i].start()
         i -= 1
-    if cut is not None and i >= 0 and _ends_a_filename(tokens[i].group(0)):
+    # A comma riding on the end of the path (``a.txt, then continue``) is not
+    # part of the filename; without stripping it first, the filename test fails
+    # and every following word is swallowed into the redaction.
+    if cut is not None and i >= 0 and _ends_a_filename(
+            tokens[i].group(0).rstrip(".,;:!?")):
         return raw[:cut]
     return raw
 
@@ -164,11 +197,15 @@ def _consume_local_path(text: str, start: int, limit: int) -> tuple[str, str]:
         k += 1
     raw = text[start:k]
 
-    trailing = ""
-    while raw and raw[-1] in ".,;:!?":
-        trailing = raw[-1] + trailing
+    raw = _cut_trailing_prose(raw)
+    # Whatever was cut off is still the user's text: the separator whitespace
+    # (and any trailing punctuation) is handed back so the omission marker is
+    # never glued onto the following word.
+    suffix = ""
+    while raw and raw[-1] in " \t.,;:!?":
+        suffix = raw[-1] + suffix
         raw = raw[:-1]
-    return _cut_trailing_prose(raw), trailing
+    return raw, suffix
 
 
 def _omission(raw: str) -> str:
@@ -225,18 +262,29 @@ def sanitize_residual_local_paths(text: str) -> tuple[str, int]:
             idx += 1
             continue
 
-        # A bare token must never run across a proven remote URL.
+        # A bare token must never run across a proven span: over a remote URL it
+        # would redact the URL, and over an already-proven local span it would
+        # swallow the very path this function exists to redact.
         limit = n
-        for s_start, _s_end, s_kind in spans[idx:]:
+        next_start = None
+        for s_start, _s_end, _s_kind in spans[idx:]:
             if s_start > pos:
-                if s_kind == "keep":
-                    limit = s_start
+                limit = s_start
+                next_start = s_start
                 break
 
-        match = _PATH_START_RE.search(text, pos, limit)
+        match = _earlier(_PATH_START_RE.search(text, pos, limit),
+                         _POSIX_START_RE.search(text, pos, limit))
         if not match:
-            out.append(text[pos:])
-            break
+            if next_start is None:
+                out.append(text[pos:])
+                break
+            # No bare token before the proven span -- step up to that span and
+            # let the span branch decide, instead of ending the walk here and
+            # leaving everything after it unredacted.
+            out.append(text[pos:next_start])
+            pos = next_start
+            continue
 
         out.append(text[pos:match.start()])
         raw, trailing = _consume_local_path(text, match.start(), limit)
@@ -566,12 +614,24 @@ class BundlePlan:
     readme_member: str | None = "README.txt"
     readme_body: str | None = None
     dimensions: dict = field(default_factory=dict)
+    # W2-002: the ONE reference-resolution context this plan was built with.
+    # Publication must resolve against the SAME base, or a relative reference
+    # that was valid at plan time reads as "missing" at write time while its
+    # bytes are archived anyway — a ZIP contradicting itself, with a
+    # fingerprint that differs from the preflight one.
+    reference_base_dir: str = ""
 
     def member_for(self, canonical: str) -> str | None:
         for item in self.items:
             if item.source == canonical:
                 return item.member
         return None
+
+
+def plan_refs(plan: BundlePlan):
+    """Resolve the plan's document references against its recorded base."""
+    return find_local_refs(getattr(plan, "origin_text", "") or "",
+                           plan.reference_base_dir or None)
 
 
 @dataclass(frozen=True)
@@ -590,6 +650,11 @@ class BundleResult:
     bundle_status: str = "complete"  # "complete" | "partial" | "degraded"
     index_status: str = "full"        # "full" | "degraded" | "unavailable"
     warnings: tuple[str, ...] = ()
+    # T-1433: the short locator derived from THIS archive's own published
+    # fingerprint. It is a display face of `fingerprint`, never a second
+    # identity, and it survives a transport rename because the manifest says
+    # the same thing the name does.
+    artifact_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -645,6 +710,62 @@ def _safe_title(title: str) -> str:
 
 def archive_basename(title: str, now: _dt.datetime) -> str:
     return f"{_safe_title(title)}_bundle_{now:%Y%m%d_%H%M%S}.zip"
+
+
+# ---------------------------------------------------------------------------
+# Bundle artifact identity (T-1433)
+#
+# The full content_fingerprint is the ONE authoritative identity: reuse,
+# retention and ownership are all decided against it. A 64-character hash is
+# not something a person can read out over a call, so the published basename
+# carries a short derived locator -- FPB<schema>-<first 12 hex, upper-cased>.
+#
+# The locator is DERIVED ONLY from the FINAL published fingerprint, never from
+# a planning-time preflight one: media that vanishes between planning and
+# packing changes the payload, so a name minted earlier would name an archive
+# that was never written. A renamed archive is still the same artifact, because
+# the name is a label and the fingerprint stays the identity.
+# ---------------------------------------------------------------------------
+
+#: Scheme token prefix of the short locator (FastPrompter Bundle).
+ARTIFACT_ID_SCHEME = "FPB"
+#: Version of the locator grammar itself, independent of the fingerprint schema.
+ARTIFACT_ID_VERSION = 1
+_ARTIFACT_ID_HEX_LEN = 12
+_HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+def bundle_artifact_id(fingerprint: str,
+                       fingerprint_schema: int | None = None) -> str:
+    """Short, deterministic locator for ONE full content fingerprint.
+
+    Raises ``ValueError`` for anything that is not a 64-character
+    hexadecimal SHA-256 digest, so a truncated or mistyped fingerprint can
+    never mint a second identity for the same archive.
+    """
+    schema = FINGERPRINT_SCHEMA if fingerprint_schema is None else int(fingerprint_schema)
+    value = str(fingerprint or "").strip().lower()
+    if len(value) != 64 or not _HEX_DIGITS.issuperset(value):
+        raise ValueError(f"not a SHA-256 content fingerprint: {fingerprint!r}")
+    return f"{ARTIFACT_ID_SCHEME}{schema}-{value[:_ARTIFACT_ID_HEX_LEN].upper()}"
+
+
+def artifact_basename(archive_name: str, artifact_id: str) -> str:
+    """A planned archive name plus the artifact id, appended exactly once.
+
+    Idempotent: a name that already ends in the id is returned untouched, so
+    repacking over an already-named plan never grows ``..._FPB6-X_2`` labels
+    per pass. An empty id leaves the name exactly as planned, which is what
+    the pre-publication preview sees.
+    """
+    name = str(archive_name or "").strip()
+    token = str(artifact_id or "").strip()
+    if not name or not token:
+        return name
+    stem, ext = os.path.splitext(name)
+    if stem == token or stem.endswith("_" + token):
+        return name
+    return f"{stem}_{token}{ext}"
 
 
 def _assign_members(entries, folder: str, name_map: dict[str, str] | None = None) -> dict:
@@ -815,26 +936,37 @@ _BUILD_PROVENANCE_CACHE: dict | None = None
 
 
 def get_build_provenance(app_version: str = "") -> dict:
-    """Return compact technical build provenance (cached, zero machine paths)."""
-    global _BUILD_PROVENANCE_CACHE
-    if _BUILD_PROVENANCE_CACHE is not None:
-        res = dict(_BUILD_PROVENANCE_CACHE)
-        if app_version and not res.get("app_version"):
-            res["app_version"] = app_version
-        return res
+    """Return compact technical build provenance (cached, zero machine paths).
 
+    Only the MACHINE facts are cached -- the expensive part is the two git
+    subprocesses, not the version string. Caching the version too made the
+    answer depend on which call happened first in the process: after one plan
+    asked for "0.8.71", every later plan published that version even though it
+    asked for another one, or for none. A manifest may never name a build
+    nobody asked for, so a caller version always wins over the cache.
+    """
+    global _BUILD_PROVENANCE_CACHE
+    if _BUILD_PROVENANCE_CACHE is None:
+        _BUILD_PROVENANCE_CACHE = _discover_build_facts()
+    res = dict(_BUILD_PROVENANCE_CACHE)
+    if app_version:
+        res["app_version"] = app_version
+    return res
+
+
+def _discover_build_facts() -> dict:
+    """Collect the machine facts once: revision, channel, tree dirtiness."""
     import subprocess
     import sys
 
-    version = app_version or ""
-    if not version:
-        try:
-            cand = os.path.join(os.path.dirname(__file__), "..", "..", "..", "VERSION")
-            if os.path.isfile(cand):
-                with open(cand, encoding="utf-8") as f:
-                    version = f.read().strip()
-        except Exception:
-            pass
+    version = ""
+    try:
+        cand = os.path.join(os.path.dirname(__file__), "..", "..", "..", "VERSION")
+        if os.path.isfile(cand):
+            with open(cand, encoding="utf-8") as f:
+                version = f.read().strip()
+    except Exception:
+        pass
 
     channel = "release" if getattr(sys, "frozen", False) else "development"
     rev = None
@@ -861,13 +993,12 @@ def get_build_provenance(app_version: str = "") -> dict:
         except Exception:
             pass
 
-    _BUILD_PROVENANCE_CACHE = {
+    return {
         "app_version": version,
         "source_revision": rev,
         "channel": channel,
         "working_tree_dirty": dirty,
     }
-    return dict(_BUILD_PROVENANCE_CACHE)
 
 
 def _share_safe(value) -> str:
@@ -888,7 +1019,8 @@ def _build_readme(*, title: str, category: str, created_iso: str,
                   req_count: int, group_count: int,
                   media_count: int, missing_count: int,
                   bundle_kind: str = "silo_bundle",
-                  index_status: str = "full") -> str:
+                  index_status: str = "full",
+                  artifact_id: str = "") -> str:
     header = (
         "FastPrompter Selection Bundle"
         if bundle_kind == "selection_bundle"
@@ -905,6 +1037,10 @@ def _build_readme(*, title: str, category: str, created_iso: str,
     if bundle_kind == "selection_bundle":
         lines.append("Scope: selected fragment")
     lines.append(f"Created: {created_iso}")
+    if artifact_id:
+        # T-1433: the readable face of the content fingerprint, so the identity
+        # stays legible after the ZIP is renamed.
+        lines.append(f"Artifact ID: {artifact_id}")
     lines.append("")
     lines.append("This bundle is self-contained; paths inside the Markdown are relative to this archive.")
     lines.append("")
@@ -939,6 +1075,7 @@ def plan_bundle(*, text: str, title: str, target_dir: str,
                 app_version: str = "", silo_media_meta: dict | None = None,
                 excluded=(), now: _dt.datetime | None = None,
                 dimensions: dict | None = None,
+                dimension_probe=None,
                 bundle_kind: str = "silo_bundle",
                 scope: str = "full",
                 custom_archive_name: str | None = None,
@@ -1066,6 +1203,22 @@ def plan_bundle(*, text: str, title: str, target_dir: str,
     created_iso = _dt.datetime.fromtimestamp(now.timestamp()).isoformat(timespec="seconds")
     valid_media = {i.member for i in items if i.member.startswith("media/") and i.available}
     missing_count = sum(1 for i in items if not i.available)
+    # PERF-005: the ONE canonical inventory is already in `items`, so the
+    # header-only probe runs here, on whichever thread planned the bundle —
+    # the capture on the GUI thread no longer walks the silo or decodes a
+    # pixel. A probe that yields nothing leaves the member dimension-less
+    # honestly instead of failing the pack.
+    dims = dict(dimensions or {})
+    if dimension_probe is not None:
+        for item in items:
+            if item.media_type == "image" and item.available \
+                    and item.source not in dims:
+                try:
+                    dim = dimension_probe(item.source)
+                except Exception:
+                    dim = None
+                if dim:
+                    dims[item.source] = dim
     readme_body = _build_readme(
         title=title,
         category=category,
@@ -1132,7 +1285,8 @@ def plan_bundle(*, text: str, title: str, target_dir: str,
         index_data=index_data,
         readme_member=readme_member,
         readme_body=readme_body,
-        dimensions=dict(dimensions or {}),
+        dimensions=dims,
+        reference_base_dir=base_dir or silo_dir or "",
     )
     return replace(plan, manifest=_build_manifest(plan))
 
@@ -1334,22 +1488,29 @@ def resolve_plan_hashes(plan: BundlePlan, source_cache: dict | None = None, canc
 
     Returns ``(member_hashes, updated_cache)`` where member_hashes maps
     ``member -> sha256`` and updated_cache maps ``source_path -> {size, mtime_ns, sha256}``.
+
+    PERF-009: the incoming cache is only ever CONSULTED -- an entry kept from
+    an earlier plan may still serve a reuse. The cache that comes back is
+    rebuilt from this plan alone, so paths nothing references any more are
+    dropped instead of being copied forward forever.
     """
     member_hashes = {}
-    updated_cache = dict(source_cache or {})
+    updated_cache: dict = {}
     for item in plan.items:
         if cancel is not None and cancel.is_set():
             raise _Cancelled()
         if not item.available:
             continue
         sig = file_stat_signature(item.source)
-        cached = updated_cache.get(item.source) if sig else None
+        cached = ((source_cache or {}).get(item.source)
+                  if sig else None)
         h = None
         if isinstance(cached, dict) and sig:
             if cached.get("size") == sig[0] and cached.get("mtime_ns") == sig[1]:
                 h = cached.get("sha256")
         if h:
             member_hashes[item.member] = h
+            updated_cache[item.source] = cached
         else:
             try:
                 h = sha256_file(item.source, cancel)
@@ -1375,6 +1536,47 @@ def resolve_plan_hashes(plan: BundlePlan, source_cache: dict | None = None, canc
             plan.readme_body.encode("utf-8")).hexdigest()
 
     return member_hashes, updated_cache
+
+
+def resolve_plan_hashes_stable(plan: BundlePlan, source_cache: dict | None = None,
+                                cancel=None) -> tuple[dict, dict, dict]:
+    """``resolve_plan_hashes`` plus a source-stability gate (W2-006).
+
+    A hash captured before a source mutated is no longer a fact ABOUT that
+    source, so a reuse hit whose sources moved between the fingerprint and the
+    publication must be refused rather than trusted. The signatures gathered
+    here are exactly what ``sources_still_stable`` re-checks before the
+    decision is honoured.
+    """
+    if cancel is not None and cancel.is_set():
+        raise BundleCancelled()
+    hashes, cache = resolve_plan_hashes(plan, source_cache, cancel=cancel)
+    signatures: dict[str, tuple[int, int]] = {}
+    for item in plan.items:
+        if not item.available:
+            continue
+        sig = file_stat_signature(item.source)
+        if sig is None:
+            # A source that vanished mid-preflight is not stable either.
+            raise BundleCancelled()
+        signatures[item.source] = sig
+    return hashes, cache, signatures
+
+
+def sources_still_stable(signatures: dict[str, tuple[int, int]] | None,
+                         cancel=None) -> bool:
+    """Did every source keep the size and mtime the fingerprint was built on?
+
+    False means a source moved, was rewritten or disappeared: the recorded
+    fingerprint no longer describes the payload, so the reuse decision it
+    supported is void. An empty or missing map gates nothing.
+    """
+    if cancel is not None and cancel.is_set():
+        raise BundleCancelled()
+    for path, sig in (signatures or {}).items():
+        if file_stat_signature(path) != sig:
+            return False
+    return True
 
 
 def compute_content_fingerprint(plan: BundlePlan, hashes: dict) -> str:
@@ -1420,6 +1622,22 @@ def compute_content_fingerprint(plan: BundlePlan, hashes: dict) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def preflight_content_fingerprint(
+    plan: BundlePlan, source_cache: dict | None = None
+) -> tuple[str, dict]:
+    """Content fingerprint for a plan before any archive is written (§ 18).
+
+    Resolves the member hashes (fast-cache aware) and folds them into the
+    exact identity ``write_bundle`` publishes, so a reuse decision — repack
+    or republish — is made before a byte of the archive exists. Returns
+    ``(fingerprint, updated_cache)``; the cache lets a caller hash each
+    source at most once across preflight and write.
+    """
+    hashes, updated_cache = resolve_plan_hashes(plan, source_cache)
+    fingerprint = compute_content_fingerprint(plan, hashes)
+    return fingerprint, updated_cache
+
+
 def verify_reuse_candidate(
     zip_path: str,
     expected_fingerprint: str,
@@ -1459,18 +1677,33 @@ def verify_reuse_candidate(
             if stat_matches:
                 return True
 
-            # Suspicious / changed mtime / no mtime recorded: deep verification
-            if zf.testzip() is not None:
-                return False
-
+            # Suspicious / changed mtime / no mtime recorded: deep verification.
+            # PERF-004: one streaming pass. Reading every member to EOF still
+            # makes ZipExtFile check its CRC (the guarantee testzip() provided),
+            # and manifest members accumulate a SHA-256 in bounded chunks rather
+            # than materializing the largest member in memory.
             manifest_hashes = data.get("hashes", {})
+            names = set(zf.namelist())
             for member, exp_hash in manifest_hashes.items():
-                if member not in zf.namelist():
+                if member not in names:
                     return False
-                member_bytes = zf.read(member)
-                h = hashlib.sha256(member_bytes).hexdigest()
-                if h != exp_hash:
+                with zf.open(member, "r") as fh:
+                    digest = hashlib.sha256()
+                    while True:
+                        chunk = fh.read(_VERIFY_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        digest.update(chunk)
+                if digest.hexdigest() != exp_hash:
                     return False
+            for name in names:
+                if name.endswith("/") or name == "manifest.json":
+                    continue
+                if name in manifest_hashes:
+                    continue
+                with zf.open(name, "r") as fh:
+                    while fh.read(_VERIFY_CHUNK_BYTES):
+                        pass          # read to EOF: the CRC is checked here
 
             return True
     except Exception:
@@ -1504,19 +1737,34 @@ def _is_proven_fastprompter_bundle(zip_path: str, expected_fingerprint: str | No
 
 def prune_silo_history(records: list[dict], canonical_exports_dir: str,
                        keep_versions: int, prune_custom: bool = False,
-                       bundle_kind: str | None = None) -> tuple[list[dict], list[str]]:
+                       bundle_kind: str | None = None,
+                       protect: str | None = None) -> tuple[list[dict], list[str]]:
     """Apply retention to managed bundle history (T-1411/T-1413 §§ 14-16, T-1414).
 
     ``records`` is ordered newest-first. By default, auto-pruning affects only
     bundles located in ``canonical_exports_dir``. Excess managed archives are
     verified for positive FastPrompter ownership before deletion.
+
+    ``protect`` names ONE path that must survive regardless of its age: the
+    archive the current operation is about to hand to the clipboard. A
+    content-identical reuse returns an OLDER record, so newest-first counting
+    alone would delete the very file the toast calls "Bundle unchanged" —
+    unless that path is provably a FastPrompter bundle, in which case it
+    occupies the newest retention slot (T-1437 W2-007).
     """
     if keep_versions < 0:
         return records, []
     canon_dir = _canonical(canonical_exports_dir) if canonical_exports_dir else ""
+    protect_canon = _canonical(protect) if protect else ""
+    protect_ok = False
+    if protect_canon and os.path.isfile(protect):
+        protect_ok = _is_proven_fastprompter_bundle(protect, None)
     kept = []
     pruned_paths = []
     managed_count = 0
+    # W2-007: a protected result occupies the NEWEST slot, so the remaining
+    # budget for ordinary newest-first counting is keep_versions minus one.
+    budget = max(0, keep_versions - 1) if protect_ok else keep_versions
 
     for rec in records:
         path = rec.get("path")
@@ -1536,8 +1784,13 @@ def prune_silo_history(records: list[dict], canonical_exports_dir: str,
             kept.append(rec)
             continue
 
+        if protect_ok and _canonical(path) == protect_canon:
+            # The live result: slot 1 belongs to it, never to a newer sibling.
+            kept.append(rec)
+            continue
+
         managed_count += 1
-        if managed_count <= keep_versions:
+        if managed_count <= budget:
             kept.append(rec)
         else:
             # Excess version; delete ONLY if positively proven to be owned by FastPrompter
@@ -1598,6 +1851,13 @@ class _Cancelled(Exception):
     pass
 
 
+#: One public cancellation class for every phase that can abort a bundle:
+#: the preflight hashing, the stability gate and the write itself all raise
+#: this, and the caller maps it to the cancel outcome -- never to the error
+#: channel, which is what the worker's ``("cancel", None)`` payload is.
+BundleCancelled = _Cancelled
+
+
 def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
     """Build into a unique temp sibling, publish atomically, never clobber.
 
@@ -1612,8 +1872,13 @@ def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
     tmp = None
     try:
         os.makedirs(plan.target_dir, exist_ok=True)
-        target = allocate_bundle_path(plan.target_dir, plan.archive_name)
-        tmp = path_safety.unique_temp_path(target, "fpbundle")
+        # The PUBLISHED name is not known until the payload is: a media source
+        # can vanish between planning and packing, so the archive is built under
+        # a unique scratch sibling and named from its own final fingerprint at
+        # publication time (T-1433). The scratch name is never the final name,
+        # so a collision there cannot decide what the user sees.
+        tmp = path_safety.unique_temp_path(
+            os.path.join(plan.target_dir, plan.archive_name), "fpbundle")
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             # 1. Stream media items first to determine factual inclusion
             for item in plan.items:
@@ -1647,7 +1912,9 @@ def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
             # existing honest omission marker instead.
             hide_paths = bool(plan.manifest.get("portable_paths", True))
             included_bundle_map = {item.source: item.member for item in included}
-            refs = find_local_refs(plan.origin_text, None)
+            # W2-002: publication re-resolves against the SAME base the plan was
+            # built with, never against a fresh guess.
+            refs = plan_refs(plan)
             final_text_body = None
             omitted_local_refs: list[dict] = []
             privacy_stats: dict = {
@@ -1672,6 +1939,19 @@ def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
                 done += 1
                 if progress:
                     progress(done, total, plan.text_member)
+
+            # T-1433: every member's bytes are in the archive now, and the
+            # structured index is a derived projection that is deliberately NOT
+            # part of the identity (T-1417 § 23), so the FINAL fingerprint is
+            # already known. Resolving it here is what lets the published name,
+            # the README and the manifest state ONE identity -- minted from what
+            # this archive actually carries, never from a preflight guess.
+            fp = compute_content_fingerprint(
+                replace(plan, items=tuple(included + missing),
+                        text_body=final_text_body),
+                hashes,
+            )
+            artifact_id = bundle_artifact_id(fp)
 
             # 3. Build and validate final structured index (bounded fail-open degradation)
             included_members = {item.member for item in included}
@@ -1795,6 +2075,7 @@ def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
                     missing_count=len(missing),
                     bundle_kind=plan.manifest.get("bundle_kind", "silo_bundle"),
                     index_status=index_status,
+                    artifact_id=artifact_id,
                 )
                 readme_bytes = readme_body.encode("utf-8")
                 hashes[plan.readme_member] = hashlib.sha256(readme_bytes).hexdigest()
@@ -1832,6 +2113,16 @@ def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
 
             fp = compute_content_fingerprint(updated_plan, hashes)
             manifest["content_fingerprint"] = fp
+            # T-1433: the identity block names the SAME fingerprint the name and
+            # the README already state. Nothing here reverses into the name: a
+            # renamed archive keeps this manifest, so it keeps its identity.
+            manifest["artifact_identity"] = {
+                "scheme": ARTIFACT_ID_SCHEME,
+                "version": ARTIFACT_ID_VERSION,
+                "id": artifact_id,
+                "fingerprint_schema": FINGERPRINT_SCHEMA,
+                "content_fingerprint": fp,
+            }
 
             if cancel is not None and cancel.is_set():
                 raise _Cancelled()
@@ -1843,7 +2134,11 @@ def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
             if progress:
                 progress(done, total, "manifest.json")
 
-        # Atomic publication
+        # Atomic publication. The desired basename carries the artifact id
+        # minted above, and the existing no-clobber rule (section 7) appends its
+        # `_2` suffix AFTER that id, so a collision never hides an identity.
+        target = allocate_bundle_path(
+            plan.target_dir, artifact_basename(plan.archive_name, artifact_id))
         os.rename(tmp, target)
         try:
             st = os.stat(target)
@@ -1884,6 +2179,7 @@ def write_bundle(plan: BundlePlan, progress=None, cancel=None) -> BundleResult:
         bundle_status=bundle_status,
         index_status=index_status,
         warnings=tuple(w.get("code", str(w)) for w in manifest_warnings),
+        artifact_id=artifact_id,
     )
 
 

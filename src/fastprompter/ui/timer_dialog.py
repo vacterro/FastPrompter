@@ -2317,11 +2317,34 @@ class TimerDialog(QDialog):
         self._cal_refresh_if_changed()
         self._refresh_temp_tab()
 
-    def closeEvent(self, event):
+    def _sync_temp_settings(self):
+        """Hand the temp-timer settings to the owner, once per dialog."""
+        if getattr(self, "_temp_synced", False):
+            return
         if (hasattr(self, "_temp_behavior")
                 and hasattr(self.main_win, "configure_temp_timer")):
+            self._temp_synced = True
             self.main_win.configure_temp_timer(self._temp_settings())
-        self._tick.stop()
+
+    def _finish_dialog_lifecycle(self):
+        self._sync_temp_settings()
+        tick = getattr(self, "_tick", None)
+        if tick is not None:
+            tick.stop()
+
+    def done(self, result):
+        """Every finish routes through here: stop the tick, then sync once.
+
+        ``accept``/``reject`` only HIDE the dialog, so the 1 Hz tick would keep
+        running against hidden widgets; ``close`` arrives as ``closeEvent``.  The
+        sync is idempotent, so a finish followed by a close still reports the
+        settings exactly once.
+        """
+        self._finish_dialog_lifecycle()
+        super().done(result)
+
+    def closeEvent(self, event):
+        self._finish_dialog_lifecycle()
         super().closeEvent(event)
 
 

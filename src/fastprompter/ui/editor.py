@@ -606,6 +606,9 @@ class VaultTextEdit(QTextEdit):
         self._coverage_reconcile_timer.setInterval(250)
         self._coverage_reconcile_timer.timeout.connect(self.refresh_pack_coverage)
         self.textChanged.connect(self._on_text_changed_coverage)
+        from fastprompter.core import silo_coverage as _sc
+        self._coverage_reconciler = _sc.CoverageReconciler(
+            self._run_coverage_reconcile, self._apply_coverage_result)
 
         # Persistent Ctrl+click word selections: list of QTextCursor objects.
         # Toggle with Ctrl+click; clear all with Ctrl+triple-click on any
@@ -1038,12 +1041,32 @@ class VaultTextEdit(QTextEdit):
             return False
         return main_win.data.get("show_pack_coverage", "False") == "True"
 
+    def _coverage_document_identity(self) -> tuple[int, int]:
+        """The identity of the document being reconciled, plus its revision.
+
+        The token keys on the C++ address: PyQt can hand back a NEW Python
+        wrapper for the SAME QTextDocument, so keying on ``id()`` made a
+        settled edit drop its own reconciliation result on the floor.
+        """
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            return 0, 0
+        return int(sip.unwrapinstance(doc)), int(doc.revision())
+
+    def _coverage_token(self) -> tuple[int, int]:
+        return self._coverage_document_identity()
+
     def _on_text_changed_coverage(self):
         if self.is_pack_coverage_visible():
             self._coverage_reconcile_timer.start()
 
     def refresh_pack_coverage(self, trigger_fade=False):
-        """Reconcile live document text against coverage ledger (T-1415 §§ 5, 27)."""
+        """Reconcile live document text against coverage ledger (T-1415 §§ 5, 27).
+
+        PERF-001: the reconcile runs through the one-in-flight / one-pending
+        reconciler, so a document that changes mid-reconcile can never have an
+        older result painted over a newer one.
+        """
         if not self.is_pack_coverage_visible():
             self._coverage_map = None
             if self._gutter_active():
@@ -1055,19 +1078,43 @@ class VaultTextEdit(QTextEdit):
         if not main_win or not hasattr(main_win, "_get_coverage_store"):
             return
 
-        store = main_win._get_coverage_store()
-        silo_id = getattr(main_win, "_active_silo_id", lambda: None)()
-        ledger = store.get_ledger(str(silo_id)) if silo_id else None
-
         cutoff = 0.0
         if getattr(self, "_coverage_fade_start_time", 0.0) > 0.0:
             cutoff = self._coverage_fade_start_time
 
-        from fastprompter.core import silo_coverage as sc
-        text = self.toPlainText()
-        self._coverage_map = sc.reconcile_pack_coverage(text, ledger, recent_epoch_cutoff=cutoff)
+        # Everything the reconcile needs is captured HERE, on the GUI thread:
+        # the runner reads no widget, so it may move off-thread unchanged.
+        self._coverage_reconciler.submit(
+            self._coverage_token(),
+            (self.toPlainText(), cutoff, trigger_fade, main_win))
 
-        if trigger_fade and main_win.data.get("pack_coverage_fade", "True") == "True":
+    def _run_coverage_reconcile(self, request):
+        """Reconcile one frozen capture and deliver it back through the reconciler."""
+        token, (text, cutoff, trigger_fade, main_win) = request
+        store = main_win._get_coverage_store()
+        silo_id = getattr(main_win, "_active_silo_id", lambda: None)()
+        ledger = store.get_ledger(str(silo_id)) if silo_id else None
+
+        from fastprompter.core import silo_coverage as sc
+        cmap = sc.reconcile_pack_coverage(
+            text, ledger, recent_epoch_cutoff=cutoff)
+        self._coverage_reconciler.result(token, (cmap, trigger_fade))
+
+    def _on_coverage_result(self, token, coverage_map, trigger_fade=False):
+        self._coverage_reconciler.result(token, (coverage_map, trigger_fade))
+
+    def _apply_coverage_result(self, token, value):
+        """Paint a delivered result, unless it no longer describes this document."""
+        coverage_map, trigger_fade = value
+        if token != self._coverage_token():
+            return                            # the document moved on
+        if not self.is_pack_coverage_visible():
+            return                            # hidden for the session
+        self._coverage_map = coverage_map
+
+        main_win = getattr(self, "main_win", None)
+        if trigger_fade and main_win is not None and \
+                main_win.data.get("pack_coverage_fade", "True") == "True":
             self._start_coverage_fade()
 
         if self._gutter_active():
@@ -1117,8 +1164,14 @@ class VaultTextEdit(QTextEdit):
             covered = self.palette().text().color().name()
         return accent, covered
 
-    def _paint_coverage_marker(self, painter, line_no, top, height, is_hovered=False, cov_x=1):
-        """Render coverage indicator (fresh notch, full bar, or partial dashed) (T-1415 §§ 3, 12, 23, 26)."""
+    def _paint_coverage_marker(self, painter, line_no, top, height, is_hovered=False, cov_x=1, theme=None):
+        """Render coverage indicator (fresh notch, full bar, or partial dashed) (T-1415 §§ 3, 12, 23, 26).
+
+        ``theme`` is the (accent, covered) pair already resolved for this paint
+        pass: resolving it per row re-read the theme cache for every visible
+        line, so the passes hand theirs down and the fallback stays for
+        callers that have none.
+        """
         if not self._coverage_map:
             return
         cov_state, _item = self._coverage_map.get_line_state(line_no)
@@ -1127,7 +1180,10 @@ class VaultTextEdit(QTextEdit):
 
         from fastprompter.core.silo_coverage import CoverageState
 
-        accent_color, covered_color = self._coverage_theme_colors()
+        if theme is None:
+            accent_color, covered_color = self._coverage_theme_colors()
+        else:
+            accent_color, covered_color = theme
         cov_w = 2
         h = max(1, height)
 
@@ -1287,6 +1343,9 @@ class VaultTextEdit(QTextEdit):
             painter.setFont(self.font())
             bg, text_color = self._gutter_colors()
             painter.fillRect(event.rect(), bg)
+            # PERF-001: the coverage theme is resolved once per pass, not per row
+            cov_theme = (
+                self._coverage_theme_colors())
 
             for block, top, row_height in self.gutter_rows():
                 block_number = block.blockNumber()
@@ -1374,6 +1433,7 @@ class VaultTextEdit(QTextEdit):
                         is_hovered=is_hovered,
                         cov_x=(self.line_number_area.width() - 6 if queue_state
                                else self.line_number_area.width() - 3),
+                        theme=cov_theme,
                     )
 
         finally:
@@ -4341,6 +4401,20 @@ class VaultTextEdit(QTextEdit):
         if not self.textCursor().hasSelection():
             pack_sel_act.setEnabled(False)
 
+        # T-1456: run the selected code through the Smart Code Runner. Disabled
+        # (not hidden) when the selection is not runnable, so it stays
+        # discoverable. Execution still requires the approval dialog.
+        if hasattr(self.main_win, "run_selection_code"):
+            run_sel_act = menu.addAction(
+                tr("Run Selected Code", lang),
+                self.main_win.run_selection_code,
+            )
+            try:
+                if not self.main_win.selection_has_runnable_code():
+                    run_sel_act.setEnabled(False)
+            except Exception:
+                run_sel_act.setEnabled(False)
+
         # T-1415: Pack Coverage Overlay submenu
         cov_menu = menu.addMenu(tr("Pack Coverage", lang))
         show_cov_act = cov_menu.addAction(tr("Show Pack Coverage", lang))
@@ -4361,6 +4435,13 @@ class VaultTextEdit(QTextEdit):
         menu.addAction(tr("Insert Divider Line\tCtrl+W", lang), self.main_win.insert_divider_line)
         menu.addAction(tr("Insert Table", lang), self._insert_table)
         menu.addAction(tr("Insert Kanban", lang), self._insert_kanban)
+        # T-1462: a text silo can hold a markdown table, and a table is
+        # miserable to edit character by character. This opens the SAME grid
+        # the Table silo uses, over the table under the caret — and only
+        # appears when the caret really is in one, so it is discoverable
+        # without cluttering the menu everywhere else.
+        if self.table_at_caret():
+            menu.addAction(tr("Edit Table…", lang), self.edit_table_dialog)
         self._add_table_menu(menu, lang)
         self._add_kanban_menu(menu, lang)
         state = tr("ON", lang) if self.main_win.data.get("auto_bullet", "False") == "True" else tr("OFF", lang)
@@ -4503,6 +4584,18 @@ class VaultTextEdit(QTextEdit):
             return None
         col = st.cell_index(lines[line], cursor.positionInBlock())
         return table, line, col
+
+    def edit_table_dialog(self):
+        """T-1462: open the interactive grid over the table at the caret.
+
+        The grid is the SAME one the Table silo uses, and the write-back goes
+        through the same region-targeted, one-undo-step path, so a table
+        edited here and one edited in the Table view land identically. The
+        silo's TYPE is never changed: this is a dialog over the document, and
+        the markdown stays the source of truth.
+        """
+        from fastprompter.ui.table_edit_dialog import open_table_edit_dialog
+        return open_table_edit_dialog(self)
 
     def _table_body_index(self, table, line):
         """Which BODY row a document line is, skipping the separator."""
@@ -4730,27 +4823,40 @@ class VaultTextEdit(QTextEdit):
             QSpinBox,
             QVBoxLayout,
         )
-        
+
+        from fastprompter.ui import silo_table as st
+
+        lang = getattr(self.main_win, "_current_lang", "EN")
+        # The dialog opens on the user's saved template, so accepting it
+        # produces exactly the table the template describes (T-1466). A
+        # different choice is honoured as typed -- it never snaps back to the
+        # old fixed 9x7.
+        template = self.main_win._default_table_layout()
+        template_cols, template_rows = st.template_shape(template)
+
         dlg = QDialog(self)
-        dlg.setWindowTitle(tr("Insert Table", getattr(self.main_win, "_current_lang", "EN")))
+        dlg.setWindowTitle(tr("Insert Table", lang))
         dlg.setStyleSheet(self.main_win.styleSheet())
         layout = QVBoxLayout(dlg)
-        
+
         grid = QGridLayout()
-        grid.addWidget(QLabel(tr("Rows:", getattr(self.main_win, "_current_lang", "EN"))), 0, 0)
+        # The spin counts every row the grid will show, the header row
+        # included, so the number is the one thing the user can check by
+        # looking at the table: the body is `value - 1` rows.
+        grid.addWidget(QLabel(tr("Rows:", lang)), 0, 0)
         spin_rows = QSpinBox()
-        spin_rows.setRange(1, 100)
-        spin_rows.setValue(3)
+        spin_rows.setRange(1, max(100, template_rows))
+        spin_rows.setValue(template_rows)
         grid.addWidget(spin_rows, 0, 1)
-        
-        grid.addWidget(QLabel(tr("Columns:", getattr(self.main_win, "_current_lang", "EN"))), 1, 0)
+
+        grid.addWidget(QLabel(tr("Columns:", lang)), 1, 0)
         spin_cols = QSpinBox()
-        spin_cols.setRange(1, 100)
-        spin_cols.setValue(3)
+        spin_cols.setRange(1, max(100, template_cols))
+        spin_cols.setValue(template_cols)
         grid.addWidget(spin_cols, 1, 1)
-        
+
         layout.addLayout(grid)
-        
+
         btn_layout = QHBoxLayout()
         btn_ok = QPushButton("OK")
         btn_ok.clicked.connect(dlg.accept)
@@ -4759,13 +4865,17 @@ class VaultTextEdit(QTextEdit):
         btn_layout.addWidget(btn_ok)
         btn_layout.addWidget(btn_cancel)
         layout.addLayout(btn_layout)
-        
+
         if dlg.exec():
-            r = spin_rows.value()
-            c = spin_cols.value()
-            
-            from fastprompter.ui import silo_table as st
-            table = st.new_table(r, c)
+            visible = spin_rows.value()
+            columns = spin_cols.value()
+
+            if visible == template_rows and columns == template_cols:
+                table = st.default_table(template)
+            else:
+                # the spin counts visible rows; the body is everything
+                # below the header row
+                table = st.new_table(visible - 1, columns)
             lines = st.render(table)
             cursor = self.textCursor()
             cursor.insertText("\n".join(lines) + "\n")
@@ -6588,6 +6698,10 @@ class VaultTextEdit(QTextEdit):
                 hr_color = QColor("#5a4a2a")
             hr_drawn = set()
 
+            # PERF-001: one theme resolution for every coverage marker this pass
+            cov_theme = (
+                self._coverage_theme_colors())
+
             # Checkbox rendering bg
             bg_color = self.viewport().palette().window().color()
 
@@ -6635,7 +6749,7 @@ class VaultTextEdit(QTextEdit):
                         # T-1415: Viewport edge pack coverage marker when gutter is inactive
                         if not self._gutter_active() and self.is_pack_coverage_visible() and self._coverage_map:
                             self._paint_coverage_marker(painter, bnum + 1, int(br.top()), int(br.height()),
-                                                        is_hovered=False, cov_x=1)
+                                                        is_hovered=False, cov_x=1, theme=cov_theme)
 
                         # Inline copy button on opening code fences:
                         # click copies the block's content to the clipboard

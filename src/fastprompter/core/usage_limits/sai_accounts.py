@@ -44,6 +44,7 @@ from fastprompter.core.usage_limits.model import (
     AccountRef,
     UsageSnapshot,
     canonical_path,
+    qualified_key,
     stable_id_for,
     stable_id_for_value,
 )
@@ -413,12 +414,32 @@ def _identity_from_plane(payload: dict) -> dict:
                               str(raw.get("source") or "sai-accounts"))
 
 
+def _pool_indices(windows: object) -> list[int]:
+    """Distinct pool numbers this payload reports, in first-seen order."""
+    out: list[int] = []
+    if not isinstance(windows, list):
+        return out
+    for item in windows:
+        if isinstance(item, dict):
+            index = item.get("pool_index")
+            if type(index) is int and index not in out:
+                out.append(index)
+    return out
+
+
 def _windows_from_plane(windows: object, source: str) -> list:
     """Translate the plane's window list into this application's windows.
 
     The two vocabularies are kept apart deliberately: the plane speaks in
     ``remaining_fraction``, this application in percent used. The conversion is
     one function so the two dialects cannot drift into two parsers.
+
+    A payload carrying MORE THAN ONE pool keeps its pool identity: the window
+    key is pool-qualified (``weekly@pool0``) and ``group``/``group_label``
+    carry the pool, or two independent pools collapse into one — colliding
+    alert-rule keys and letting one spent pool's weekly gate the other pool's
+    5h window (T-1438). A single-pool payload keeps its plain keys: it has no
+    pool identity to lose, and every existing rule keys on ``weekly``.
     """
     from fastprompter.core.usage_limits.model import UsageWindow
     out = []
@@ -427,11 +448,17 @@ def _windows_from_plane(windows: object, source: str) -> list:
     aliases = {"5h": "five_hour", "weekly": "weekly", "weekly_per_model": "weekly",
                "monthly": "monthly"}
     durations = {"five_hour": 300, "weekly": 10080, "monthly": 43200}
+    pooled = len(_pool_indices(windows)) > 1
     for item in windows:
         if not isinstance(item, dict):
             continue
         name = str(item.get("window") or item.get("pool") or "").strip().lower()
         key = aliases.get(name, name or "five_hour")
+        duration = durations.get(key)
+        pool = item.get("pool_index")
+        group = f"pool{pool}" if pooled and type(pool) is int else ""
+        if group:
+            key = qualified_key(key, group)
         fraction = item.get("remaining_fraction")
         used = None
         if isinstance(fraction, (int, float)):
@@ -446,10 +473,13 @@ def _windows_from_plane(windows: object, source: str) -> list:
             except (ValueError, OSError):
                 epoch = None
         out.append(UsageWindow(
-            key=key, duration_minutes=durations.get(key), available=True,
+            key=key, duration_minutes=duration,
+            available=item.get("disabled") is not True,
             used_percent=used,
             remaining_percent=None if used is None else 100.0 - used,
             resets_at_epoch=epoch, source=source,
+            group=group,
+            group_label=f"Pool {pool + 1}" if group else "",
         ))
     return out
 

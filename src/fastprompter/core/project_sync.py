@@ -26,8 +26,10 @@ Semantics (documented once, here):
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import os
 import re
+import zlib
 
 # Files with these extensions are treated as text by default ("all normal
 # popular readable files with text").
@@ -341,6 +343,103 @@ def read_text_file(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
         return None
     eol = detect_eol(text)
     return text.replace("\r\n", "\n"), eol, had_utf8_bom
+
+
+# W2-001: the identity token of a destination that was read as ABSENT. The
+# publish below refuses the moment a writer creates the file in the window
+# between that read and the replace, because "absent" is a precondition too.
+MISSING_ON_DISK = ("<missing>", 0, 0)
+
+
+def raw_identity(data: bytes):
+    """The content identity of the EXACT bytes a reader consumed.
+
+    Identity is deliberately not mtime/size: an external editor that rewrites
+    the same number of bytes inside the same timestamp tick would otherwise be
+    invisible, and its save would be silently overwritten.
+    """
+    return (hashlib.sha256(data).hexdigest(), len(data),
+            zlib.crc32(data) & 0xFFFFFFFF)
+
+
+def disk_identity(path: str):
+    """The identity of ``path`` right now, or None when it cannot be read."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    return raw_identity(data)
+
+
+def read_text_file_with_identity(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
+    """Read ``path`` as text AND the identity of the bytes just consumed.
+
+    Same contract as ``read_text_file`` with a fourth value appended, and the
+    identity comes from the SAME byte string the text was decoded from — one
+    read, one truth, so a publisher can revalidate against exactly the state
+    it accepted. The returned text is EOL-normalised, as before.
+    """
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            return None
+    except OSError:
+        return None
+    if looks_binary(data):
+        return None
+    had_utf8_bom = data[:3] == b"\xef\xbb\xbf"
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return None
+    eol = detect_eol(text)
+    return (text.replace("\r\n", "\n"), eol, had_utf8_bom,
+            raw_identity(data))
+
+
+def compare_and_publish_text(path: str, text: str, expected_identity,
+                             eol: str = "\n", write_bom: bool = False,
+                             before_publish=None):
+    """Publish ``text`` to ``path`` ONLY if the disk still holds what was read.
+
+    The push worker's commit gate serializes FastPrompter's own ownership
+    transitions, but it cannot serialize an external editor. A save landing
+    after the read and before ``os.replace`` would be silently destroyed, so
+    the destination's own state becomes part of the publication precondition.
+
+    ``expected_identity`` is what the reader accepted — a ``raw_identity``
+    token from ``disk_identity``/``read_text_file_with_identity``, or
+    ``MISSING_ON_DISK`` when the destination was read as absent. ``before_publish``
+    is an optional hook that runs after the identity is captured and before the
+    atomic replace, which is exactly where the TOCTOU window lives; it exists
+    so the revalidation can be reproduced deterministically.
+
+    Returns ``(written_text, None)`` on success and ``(None, conflict_id)``
+    when the destination no longer matches — the caller reports a conflict
+    carrying the CURRENT disk content instead of overwriting it.
+    """
+    def _current():
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            return MISSING_ON_DISK
+        return raw_identity(data)
+
+    accepted = _current()
+    if accepted != expected_identity:
+        return None, accepted
+    if before_publish is not None:
+        before_publish()
+        # The window just elapsed: whatever landed must not be destroyed.
+        if _current() != expected_identity:
+            return None, _current()
+    written = write_text_file(path, text, eol, write_bom=write_bom)
+    if written is None:
+        return None, _current()
+    return written, None
 
 
 def write_text_file(path: str, text: str, eol: str = "\n",

@@ -358,6 +358,9 @@ def build_silo_index(
     raw_requirements: list[RequirementItem] = []
     all_evidence: list[MediaEvidenceItem] = []
     linked_media_set: set[str] = set()
+    # PERF-002: id-keyed ledger of what each requirement already has — the
+    # replacement for the rescan of the whole evidence list per requirement.
+    evidence_members_by_req: dict[str, set[str]] = {}
 
     current_group_idx = 1
     current_group_id = f"GROUP-{current_group_idx:03d}"
@@ -490,6 +493,8 @@ def build_silo_index(
                         caption=mb["caption"],
                     )
                 )
+                for rid in req_ids:
+                    evidence_members_by_req.setdefault(rid, set()).add(m)
                 if assoc in ("adjacent_previous", "adjacent_next"):
                     linked_media_set.add(m)
 
@@ -509,7 +514,7 @@ def build_silo_index(
             raw_requirements.append(updated_r)
 
             # Record direct evidence for media inside r.media that wasn't from detached blocks
-            already_in_evidence = {e.member for e in all_evidence if r.id in e.requirement_ids}
+            already_in_evidence = evidence_members_by_req.get(r.id, ())
             for m in updated_r.media:
                 if m not in already_in_evidence:
                     all_evidence.append(
@@ -523,6 +528,8 @@ def build_silo_index(
                             caption=None,
                         )
                     )
+                    evidence_members_by_req.setdefault(
+                        updated_r.id, set()).add(m)
 
         provisional_groups.append(
             RequirementGroup(

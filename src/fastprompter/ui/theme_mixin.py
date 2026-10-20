@@ -19,6 +19,7 @@ from fastprompter.core.config import create_tray_icon, extract_bg
 from fastprompter.core.logging import logger
 from fastprompter.theme.themes import (
     THEMES,
+    control_surfaces_qss,
     generate_custom_theme,
     header_view_qss,
     scrollbar_qss,
@@ -27,6 +28,18 @@ from fastprompter.ui.qt_lifetime import weak_qt_callback
 from fastprompter.utils.paths import get_resource_path
 
 _is_deleted = sip.isdeleted
+
+
+_BUILTIN_FONTS = (
+    "Verdana",
+    "Tahoma",
+    "Consolas",
+    "Calibri",
+    "Times New Roman",
+    "Arial",
+    "Segoe UI",
+    "Courier New",
+)
 
 
 class ThemeMixin:
@@ -179,6 +192,11 @@ class ThemeMixin:
         # Not behind a setting: an unstyled header is a white bar across a
         # dark dialog, which is a defect rather than a preference.
         extra_qss += header_view_qss(raw)
+        # T-1461: sub-controls no theme sheet ever mentioned (radio dot, combo
+        # and spin arrows, menu ticks). With the style pinned to Fusion these
+        # would otherwise take Fusion's grey; on the native Windows style they
+        # were painted with the OS's near-white chrome.
+        extra_qss += control_surfaces_qss(raw)
         app = QApplication.instance()
         app_qss = theme["stylesheet"] + extra_qss
         # setStyleSheet repolishes every widget in the process, including Qt
@@ -398,6 +416,8 @@ class ThemeMixin:
         if not path:
             return
 
+        path = os.path.abspath(path)
+
         font_id = QFontDatabase.addApplicationFont(path)
         if font_id < 0:
             QMessageBox.warning(self, tr("Load Font", getattr(self, "_current_lang", "EN")), tr("Failed to load font: {}", getattr(self, "_current_lang", "EN")).format(path))
@@ -408,20 +428,28 @@ class ThemeMixin:
             QMessageBox.warning(self, tr("Load Font", getattr(self, "_current_lang", "EN")), tr("Font loaded but no font families found.", getattr(self, "_current_lang", "EN")))
             return
 
-        loaded = self.data.get("custom_font_ids", [])
-        if isinstance(loaded, str):
+        loaded_paths = self.data.get("custom_font_paths", [])
+        if isinstance(loaded_paths, str):
             try:
-                loaded = json.loads(loaded)
+                loaded_paths = json.loads(loaded_paths)
             except Exception:
-                loaded = []
-        loaded.append(font_id)
-        self.data["custom_font_ids"] = loaded
+                loaded_paths = []
+        if not isinstance(loaded_paths, list):
+            loaded_paths = []
+        if path not in loaded_paths:
+            loaded_paths.append(path)
+        self.data["custom_font_paths"] = loaded_paths
+
+        if not hasattr(self, "_custom_font_runtime_ids"):
+            self._custom_font_runtime_ids = []
+        self._custom_font_runtime_ids.append(font_id)
 
         for family in families:
             if self.font_combo.findText(family) < 0:
                 self.font_combo.addItem(family)
 
         self.font_combo.setCurrentText(families[0])
+        self.change_font_family(families[0])
         QMessageBox.information(self, tr("Font Loaded", getattr(self, "_current_lang", "EN")), tr("Loaded: {}", getattr(self, "_current_lang", "EN")).format(families[0]))
 
     def clear_custom_fonts(self):
@@ -440,29 +468,95 @@ class ThemeMixin:
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        default_fonts = [
-            "Verdana",
-            "Tahoma",
-            "Consolas",
-            "Calibri",
-            "Times New Roman",
-            "Arial",
-            "Segoe UI",
-            "Courier New",
-        ]
+        self._unregister_custom_fonts()
+
         self.font_combo.blockSignals(True)
         self.font_combo.clear()
-        self.font_combo.addItems(default_fonts)
+        self.font_combo.addItems(_BUILTIN_FONTS)
         self.font_combo.blockSignals(False)
 
-        if self._font_family not in default_fonts:
+        if self._font_family not in _BUILTIN_FONTS:
             self.font_combo.setCurrentText("Verdana")
             self.change_font_family("Verdana")
         else:
             self.font_combo.setCurrentText(self._font_family)
 
-        self.data["custom_font_ids"] = []
-        self.mark_dirty()
+        self.data["custom_font_paths"] = []
+        self.mark_dirty("settings")
+
+    def restore_custom_fonts(self):
+        """Re-register custom fonts from persisted paths on startup.
+
+        Returns a list of successfully registered font family names.
+        Idempotent: calling twice does not duplicate entries.
+        Safe against missing files and malformed persisted data.
+        Also used on profile switch: drops every custom family and runtime
+        id from the previous profile before registering the new profile's
+        paths, so fonts do not leak across profiles.
+        """
+        # clean slate: a previous profile (or a previous restore) may have
+        # registered fonts whose ids and combo entries must not survive.
+        self._drop_custom_combo_families()
+        self._unregister_custom_fonts()
+
+        paths = self.data.get("custom_font_paths", [])
+        if isinstance(paths, str):
+            try:
+                paths = json.loads(paths)
+            except Exception:
+                paths = []
+        if not isinstance(paths, list):
+            paths = []
+
+        registered_families = []
+
+        for path in paths:
+            if not isinstance(path, str) or not path:
+                continue
+            if not os.path.isfile(path):
+                # Keep the path in data so it can be restored if the drive
+                # becomes available again (e.g., unmounted network share).
+                continue
+
+            font_id = QFontDatabase.addApplicationFont(path)
+            if font_id < 0:
+                continue
+
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            if not families:
+                QFontDatabase.removeApplicationFont(font_id)
+                continue
+
+            self._custom_font_runtime_ids.append(font_id)
+            registered_families.extend(families)
+
+            for family in families:
+                if self.font_combo.findText(family) < 0:
+                    self.font_combo.addItem(family)
+
+        return registered_families
+
+    def _drop_custom_combo_families(self):
+        """Remove non-built-in families the combo gained from custom fonts."""
+        combo = getattr(self, "font_combo", None)
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        try:
+            for i in range(combo.count() - 1, -1, -1):
+                if combo.itemText(i) not in _BUILTIN_FONTS:
+                    combo.removeItem(i)
+        finally:
+            combo.blockSignals(False)
+
+    def _unregister_custom_fonts(self):
+        """Unregister all runtime custom font IDs and clear the tracking list."""
+        for font_id in getattr(self, "_custom_font_runtime_ids", []):
+            try:
+                QFontDatabase.removeApplicationFont(font_id)
+            except Exception:
+                pass
+        self._custom_font_runtime_ids = []
 
     def _sync_live_preview_highlighter(self):
         """One place that (re)binds the markdown highlighter to the live doc.
@@ -554,12 +648,14 @@ class ThemeMixin:
             self.text_area.setVisible(True)
             self.text_area.setReadOnly(False)
             self.preview_area.setVisible(False)
+            self._suspend_preview_media()
             self.highlighter.setDocument(None)
 
         elif mode == "Live Preview":
             self.text_area.setVisible(True)
             self.text_area.setReadOnly(False)
             self.preview_area.setVisible(False)
+            self._suspend_preview_media()
             self._sync_live_preview_highlighter()
 
         elif mode == "Reading":
@@ -585,18 +681,97 @@ class ThemeMixin:
                     self._preview_timer.timeout.connect(self.update_preview)
                 self.text_area.textChanged.connect(self._preview_timer.start)
                 self._preview_connected = True
+            # Render FIRST, then resume: update_preview rebuilds the blocks, so
+            # resuming before it started a request on blocks that the rebuild
+            # then cancelled -- two round trips for one visible image.
             self.update_preview()
+            # T-1486: returning resumes exactly what is on screen (a hidden
+            # child never gets closeEvent, so this is the only entry point).
+            self._resume_preview_media()
 
         self.mark_dirty()
 
+    # -- rich-preview lifetime (T-1486) ----------------------------------
+    def _suspend_preview_media(self):
+        """Stop animations and image traffic while Reading is not presented."""
+        panel = getattr(self, "preview_area", None)
+        suspend = getattr(panel, "suspend_media", None)
+        if callable(suspend):
+            try:
+                suspend()
+            except Exception as e:
+                logger.error("preview media suspend failed: %s", e)
+
+    def _resume_preview_media(self):
+        panel = getattr(self, "preview_area", None)
+        resume = getattr(panel, "resume_media", None)
+        if callable(resume):
+            try:
+                resume()
+            except Exception as e:
+                logger.error("preview media resume failed: %s", e)
+
+    @property
+    def _preview_external_media(self):
+        """May Reading mode fetch remote images?  Off unless the user opted in.
+
+        An external image is a third-party request that reveals the user's IP
+        and mounts an untrusted decoder on whatever the host returns, so the
+        default has to be no and the preference has to be explicit.
+        """
+        try:
+            return str(self.data.get("preview_load_external_images",
+                                      "False")) == "True"
+        except Exception:
+            return False
+
+    def _preview_tokens(self):
+        """The active theme as rich-preview colour tokens.
+
+        The renderer never hardcodes a palette: every colour here traces back
+        to the theme's raw_colors, so Vintage Classic and OLED both render
+        readable documents.
+        """
+        from fastprompter.theme.themes import blend_hex
+        t = self._skin_tokens()
+        return {
+            "text": t["text"],
+            "bg": t["bg"],
+            "heading": t["accent"],
+            "subheading": t["btn_text"],
+            "link": t["accent"],
+            "code_bg": t["sunken"],
+            "code_text": t["text"],
+            "border": t["light"],
+            "quote": blend_hex(t["text"], t["bg"], 0.45),
+            "table_head_bg": t["raised"],
+            "accent": t["accent"],
+        }
+
     def update_preview(self, text=None):
-        """Update the preview area when in Reading mode."""
+        """Update the preview area when in Reading mode.
+
+        One render call feeds both the HTML string (kept for the flat fallback
+        surface and for callers that only want markup) and the structured
+        document the block surface needs for media.
+        """
         mode = self.preview_combo.currentData() or self.preview_combo.currentText()
         if mode != "Reading":
             return
         if text is None:
             text = self.text_area.toPlainText()
-        self.preview_area.setHtml(self.simple_markdown_to_html(text))
+        html_text = self.simple_markdown_to_html(text)
+        view = getattr(self, "preview_area", None)
+        doc = getattr(self, "_last_rendered_document", None)
+        if doc is None or not hasattr(view, "set_rendered_document"):
+            view.setHtml(html_text)
+            return
+        # configure() only stores; the single set_rendered_document() below is
+        # what rebuilds the blocks, so a settings change does not render twice.
+        if hasattr(view, "configure"):
+            view.configure(tokens=self._preview_tokens(),
+                           external_media=self._preview_external_media)
+        view.set_rendered_document(doc)
 
     # ---- SiloTable / SiloKanban skin ------------------------------------
     #
@@ -668,19 +843,34 @@ class ThemeMixin:
         if getattr(self, "table_widget", None) is None:
             return
         t = self._skin_tokens()
+        # T-1462: the grid is a QTableView over a model now, not a layout of
+        # QLineEdits, so the skin follows the table's own sub-controls. The
+        # QLineEdit rules stay for the inline editor the delegate pops up on
+        # a double-click: same sunken field, same instant focus.
         self.table_widget.setStyleSheet(
             f"QWidget {{ background-color: {t['bg']}; color: {t['text']}; }}"
-            # every cell is a sunken field: that is what a text input looks
-            # like in this house, and a table is a grid of them
-            f"QLineEdit {{ background-color: {t['sunken']}; color: {t['text']}; "
-            f"  {self._bevel(t, raised=False)} padding: 1px 3px; }}"
-            # focus is instant and unmistakable — no animation budget here
-            f"QLineEdit:focus {{ background-color: {t['pressed']}; "
-            f"  border-color: {t['accent']}; }}"
-            f"QLineEdit[header=\"true\"] {{ background-color: {t['raised']}; "
-            f"  color: {t['btn_text']}; font-weight: bold; "
+            # the cells are the raised surface, the grid lines are the seam
+            f"QTableView#silo_table_grid {{ background-color: {t['sunken']}; "
+            f"  color: {t['text']}; gridline-color: {t['dark']}; "
+            f"  selection-background-color: {t['accent']}; "
+            f"  selection-color: {t['bg']}; "
+            f"  {self._bevel(t, raised=False)} }}"
+            f"QTableView#silo_table_grid::item {{ padding: 1px 3px; }}"
+            # the inline editor a delegate opens on double-click
+            f"QLineEdit {{ background-color: {t['pressed']}; color: {t['text']}; "
+            f"  border: 1px solid {t['accent']}; padding: 1px 3px; }}"
+            # headers are data, not decoration: the top row IS the column name
+            f"QHeaderView::section {{ background-color: {t['raised']}; "
+            f"  color: {t['btn_text']}; font-weight: bold; padding: 1px 4px; "
             f"  {self._bevel(t)} }}"
+            # T-1462 Stage 6: QPushButton replaces QLabel for accessible add
+            # controls. Both selectors kept so existing label uses still work.
             f"QLabel#table_add {{ background-color: {t['raised']}; "
             f"  color: {t['btn_text']}; {self._bevel(t)} padding: 1px 6px; }}"
             f"QLabel#table_add:hover {{ background-color: {t['pressed']}; }}"
+            f"QPushButton#table_add {{ background-color: {t['raised']}; "
+            f"  color: {t['btn_text']}; {self._bevel(t)} padding: 1px 6px; "
+            f"  border: 1px solid {t['dark']}; }}"
+            f"QPushButton#table_add:hover {{ background-color: {t['pressed']}; }}"
+            f"QPushButton#table_add:focus {{ border: 2px solid {t['accent']}; }}"
         )

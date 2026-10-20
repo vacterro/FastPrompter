@@ -11,7 +11,7 @@ import hashlib
 import re
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -125,12 +125,25 @@ class CoverageMap:
     fresh_count: int = 0
     covered_count: int = 0
     partial_count: int = 0
+    # PERF-001: the owner of a line is resolved once and remembered, so a
+    # repaint over the visible rows does not rescan every requirement.
+    _line_owner: dict[int, CoverageItem | None] = field(
+        default_factory=dict, compare=False, repr=False)
 
-    def get_line_state(self, line_no: int) -> tuple[CoverageState | None, CoverageItem | None]:
-        for item in self.requirements:
-            if item.line_start <= line_no <= item.line_end:
-                return item.state, item
-        return None, None
+    def get_line_state(
+        self, line_no: int,
+    ) -> tuple[CoverageState | None, CoverageItem | None]:
+        if line_no not in self._line_owner:
+            owner: CoverageItem | None = None
+            for item in self.requirements:
+                if item.line_start <= line_no <= item.line_end:
+                    owner = item
+                    break
+            self._line_owner[line_no] = owner
+        owner = self._line_owner[line_no]
+        if owner is None:
+            return None, None
+        return owner.state, owner
 
 
 def create_bundle_coverage_event(
@@ -282,15 +295,42 @@ class CoverageLedger:
         return cls(entries)
 
 
+ReceiptIndex = dict[tuple[str, int], RequirementCoverageReceipt]
+
+
+def build_receipt_index(
+    entries: Sequence[RequirementCoverageReceipt],
+) -> ReceiptIndex:
+    """One pass over the ledger, keyed the way reconciliation looks up.
+
+    PERF-001: reconciliation used to scan the whole ledger for every
+    requirement, which is O(requirements * receipts). The index costs one pass
+    and keeps the FIRST entry for a repeated (key, ordinal), matching the
+    first-match scan it replaces -- a later duplicate of the same key is never
+    promoted above the receipt that was already there.
+    """
+    index: ReceiptIndex = {}
+    for rec in entries:
+        index.setdefault((rec.coverage_key, rec.duplicate_ordinal), rec)
+    return index
+
+
 def reconcile_pack_coverage(
     markdown_text: str,
-    ledger: CoverageLedger,
+    ledger: CoverageLedger | ReceiptIndex,
     recent_epoch_cutoff: float | None = None,
 ) -> CoverageMap:
-    """Reconcile live document text against coverage ledger (T-1415 § 39)."""
+    """Reconcile live document text against coverage ledger (T-1415 § 39).
+
+    ``ledger`` may be a ledger or a prebuilt index from
+    ``build_receipt_index``; a caller that reconciles the same ledger twice
+    pays for the index only once.
+    """
     if not markdown_text or not markdown_text.strip():
         return CoverageMap()
 
+    lookup = ledger if isinstance(ledger, dict) else build_receipt_index(
+        ledger.entries)
     idx = silo_index.build_silo_index(markdown_text, "source.md")
     items: list[CoverageItem] = []
     ordinals: dict[str, int] = {}
@@ -305,14 +345,8 @@ def reconcile_pack_coverage(
         ordinals[ckey] = curr_ord
 
         # Find matching receipt in ledger
-        match: RequirementCoverageReceipt | None = None
-        for existing in ledger.entries:
-            if (
-                existing.coverage_key == ckey
-                and existing.duplicate_ordinal == curr_ord
-            ):
-                match = existing
-                break
+        match: RequirementCoverageReceipt | None = lookup.get(
+            (ckey, curr_ord))
 
         if match is not None:
             is_recent = (
@@ -348,9 +382,50 @@ def reconcile_pack_coverage(
     )
 
 
+class CoverageReconciler:
+    """At most one reconciliation in flight, at most one pending.
+
+    PERF-001. A document that changes faster than it can be reconciled used
+    to queue one run per keystroke, so every run painted itself and the user
+    saw coverage lag further behind each time. This keeps a single in-flight
+    run and a single pending slot: a submit that arrives while another is
+    running REPLACES the pending one, and the result of the run that a newer
+    request superseded is discarded rather than painted.
+    """
+
+    def __init__(self, runner, apply):
+        self._runner = runner
+        self._apply = apply
+        self.in_flight = False
+        self.discarded = 0
+        self._pending: tuple[Any, Any] | None = None
+
+    def submit(self, token, payload) -> None:
+        if self.in_flight:
+            self._pending = (token, payload)
+            return
+        self._dispatch(token, payload)
+
+    def _dispatch(self, token, payload) -> None:
+        self.in_flight = True
+        self._runner((token, payload))
+
+    def result(self, token, value) -> None:
+        """Deliver a finished run. Superseded results are dropped."""
+        superseded = self._pending is not None
+        if superseded:
+            self.discarded += 1
+        self.in_flight = False
+        if not superseded:
+            self._apply(token, value)
+        if superseded:
+            nxt = self._pending
+            self._pending = None
+            self._dispatch(*nxt)
+
+
 class CoverageStore:
     """High-level per-silo coverage ledger repository."""
-
     def __init__(self, initial_data: dict[str, list[dict]] | None = None):
         self._silos: dict[str, CoverageLedger] = {}
         if initial_data and isinstance(initial_data, dict):

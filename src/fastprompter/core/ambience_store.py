@@ -52,6 +52,80 @@ def new_rule_id() -> str:
     return f"amb_{uuid.uuid4().hex[:12]}"
 
 
+#: Stable id for the shipped default (T-1455): the operator's requested
+#: starting ambience -- Computalk1 enabled at 0.01, always looping.
+DEFAULT_AMBIENCE_RULE_ID = "amb_default_computalk1"
+
+
+def default_ambience_rules() -> list[AmbienceRule]:
+    """The fresh-install rule set (T-1455): one enabled Computalk1 loop.
+
+    Unlike :func:`rule_templates`, this is NOT an inert template: it is the
+    default the operator asked for ("enabled by default, 0.01 volume,
+    immediately"), so it ships enabled and at a volume that is present.
+    """
+    return [
+        AmbienceRule(id=DEFAULT_AMBIENCE_RULE_ID, name="Computalk1",
+                     sound_ref="computalk1.wav",
+                     trigger=TRIGGER_ALWAYS, repeat=REPEAT_LOOP,
+                     enabled=True, volume=0.01,
+                     fade_in_ms=DEFAULT_FADE_MS, fade_out_ms=DEFAULT_FADE_MS),
+    ]
+
+
+def is_fresh_database(store: AmbienceStore) -> bool:
+    """A database where ambience was never configured and never decided.
+
+    "Fresh" means: no rules at all AND no recorded start/stop decision.
+    The decision row is the line: a user who started or stopped ambience
+    (or both) has made an explicit choice and must not have it overwritten,
+    even if every rule is deleted.
+    """
+    with store._lock, store._connect() as conn:  # noqa: SLF001 - same module
+        rules = conn.execute(
+            f"SELECT 1 FROM {AMBIENCE_TABLE} LIMIT 1"  # nosec B608 - closed table constant
+        ).fetchone()
+        decision = conn.execute(
+            f"SELECT 1 FROM {WEATHER_SETTINGS_TABLE} WHERE key = ?",  # nosec B608 - closed table constant
+            (SETTING_RUNTIME_ENABLED,)).fetchone()
+    return rules is None and decision is None
+
+
+def ensure_default_rules(store: AmbienceStore) -> bool:
+    """Seed the fresh-install default once (T-1455). Returns True on seed.
+
+    Idempotent and race-tolerant: the check and the insert run in one
+    immediate transaction, and once the default is written the database is
+    no longer fresh, so nothing is ever inserted twice or resurrected.
+    """
+    rules = default_ambience_rules()
+    with store._lock, store._connect() as conn:  # noqa: SLF001 - same module
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            seeded = conn.execute(
+                f"SELECT 1 FROM {AMBIENCE_TABLE} LIMIT 1"  # nosec B608 - closed table constant
+            ).fetchone()
+            decision = conn.execute(
+                f"SELECT 1 FROM {WEATHER_SETTINGS_TABLE} WHERE key = ?",  # nosec B608 - closed table constant
+                (SETTING_RUNTIME_ENABLED,)).fetchone()
+            if seeded is not None or decision is not None:
+                conn.rollback()
+                return False
+            rule = rules[0]
+            conn.execute(
+                f"INSERT INTO {AMBIENCE_TABLE}(id, position, payload) "  # nosec B608 - closed table constant
+                "VALUES(?, 0, ?)",
+                (rule.id, json.dumps(rule.to_dict(), separators=(",", ":"))))
+            conn.execute(
+                f"INSERT INTO {WEATHER_SETTINGS_TABLE}(key, value) VALUES(?, ?)",  # nosec B608 - closed table constant
+                (SETTING_RUNTIME_ENABLED, "True"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    return True
+
+
 #: Templates offered by the UI.  They ship DISABLED and without a sound: a
 #: template the user has not configured must never start making noise.
 def rule_templates() -> list[AmbienceRule]:
@@ -203,9 +277,11 @@ class AmbienceStore:
     # -- desired runtime state -------------------------------------------------
 
     def runtime_enabled(self) -> bool:
-        """Does the user want ambience running?  Default: no.
+        """Does the user want ambience running?  Default: no recorded decision.
 
-        A fresh install must be silent.  Only an explicit start writes True.
+        An absent decision row reads False (fail-closed), but a fresh
+        install no longer stays silent: :func:`ensure_default_rules` seeds
+        the T-1455 Computalk1 default and this wish together at startup.
         """
         with self._lock, self._connect() as conn:
             row = conn.execute(
@@ -222,6 +298,12 @@ class AmbienceStore:
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (SETTING_RUNTIME_ENABLED, value))
         return bool(enabled)
+
+    def is_fresh_database(self) -> bool:
+        return is_fresh_database(self)
+
+    def ensure_default_rules(self) -> bool:
+        return ensure_default_rules(self)
 
 
 def _as_float(value) -> float | None:

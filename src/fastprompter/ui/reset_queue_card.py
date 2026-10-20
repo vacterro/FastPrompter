@@ -1,4 +1,4 @@
-"""Structured column layout for the reset-queue hover (T-1279).
+"""Structured column layout for the reset-queue hover (T-1279 / T-1457-A).
 
 The soonest-reset label used to open a free-form ``setToolTip`` blob of lines
 ``N. Account · Pool · Window  Time``. That was readable for three rows and
@@ -13,8 +13,14 @@ independence and ordering rules below can be tested without a window.
 
 Requirements it encodes:
 
-* columns ``# | Account | Pool | Window | Left`` with STABLE starts — a real
-  rich-text table, never repeated spaces;
+* columns ``# | Account | Pool | Window | Left | Resets`` with STABLE starts —
+  a real rich-text table, never repeated spaces. The SIXTH column carries the
+  ABSOLUTE reset instant (clock time / weekday), because "Left" alone answers
+  "how long" and never "when": a user planning the next hour needs to know
+  whether the refill lands at 14:05 or at 06:00 tomorrow, and a relative
+  countdown cannot tell those apart. Both time facts sit side by side, and the
+  absolute one is stable across the once-per-second refresh while the relative
+  one ticks down.
 * Account primary, Pool secondary, Window compact;
 * ``Left`` right-aligned and ALWAYS present, even when other columns elide;
 * a long Pool is truncated BEFORE ``Left`` can be pushed out;
@@ -24,11 +30,14 @@ Requirements it encodes:
   not from the container, and the card itself is grow-only;
 * the SAME ``reset_candidates`` ordering the ↻ countdown already uses, so the
   label and this list can never disagree;
-* a named-model reserve (Luna) simply appears as another Pool row.
+* a named-model reserve (Luna) simply appears as another Pool row;
+* a missing/unusable reset instant degrades to an em-dash, never to a bogus
+  date or a blank column.
 """
 
 from __future__ import annotations
 
+import datetime
 import html
 
 from fastprompter.core.duration import format_remaining
@@ -39,16 +48,66 @@ from fastprompter.core.duration import format_remaining
 ACCOUNT_CHARS = 22
 POOL_CHARS = 20
 
-#: Column set, in render order. ``Left`` is last on purpose: it right-aligns
-#: against the card edge and can never be pushed off by a long Pool.
-COLUMNS = ("#", "Account", "Pool", "Window", "Left")
+#: Column set, in render order. ``Left`` is last-but-one and ``Resets`` last:
+#: the two time facts belong together, ``Left`` right-aligned against the card
+#: edge (it can never be pushed off by a long Pool) and the ABSOLUTE reset
+#: instant to its right, which is where a reader's eye lands after the
+#: countdown. T-1457-A restored the sixth column: a relative countdown alone
+#: cannot tell "14:05 today" from "06:00 tomorrow" apart.
+COLUMNS = ("#", "Account", "Pool", "Window", "Left", "Resets")
 
 #: Narrow composition (T-1298): Account and Pool stack inside ONE cell, so a
 #: narrow popup keeps every essential column readable without shrinking text.
-COMPACT_COLUMNS = ("#", "Account / Pool", "Window", "Left")
+#: ``Resets`` survives here too — it is the one field that cannot be recovered
+#: from the others, so the fallback keeps all six facts in four cells.
+COMPACT_COLUMNS = ("#", "Account / Pool", "Window", "Left", "Resets")
 
 #: Horizontal chrome budget per cell (matches the padding-right used below).
 _CELL_PADDING = 8
+
+#: Shown when the account carries no usable reset instant. An em-dash is the
+#: honest answer: it says "unknown here" without inventing a date, and it keeps
+#: the column's start position stable for every other row.
+MISSING_MOMENT = "—"
+
+#: Weekday prefix for the absolute reset column. Localized labels live in the
+#: i18n packs ("Weekday %d %b at %s"); the caller passes ``moment_format``.
+_WEEKDAY_FORMAT = "%a %H:%M"
+_SAME_DAY_FORMAT = "%H:%M"
+
+
+def moment_label(epoch, now: float | None = None, ampm: bool = False) -> str:
+    """Absolute reset instant for the sixth column: "14:05" / "Tue 06:00".
+
+    Same-day resets collapse to the clock time (the weekday adds nothing the
+    Header already shows), and anything further out carries its weekday so two
+    candidates whose countdowns look similar read as different days. A
+    missing, unusable or out-of-range epoch returns the em-dash placeholder:
+    a queue row must never claim a reset instant it does not have.
+
+    ``now`` is the same ``now`` the relative countdown is computed from, so the
+    two time columns are always about the same instant and can never disagree.
+    """
+    if not isinstance(epoch, (int, float)) or isinstance(epoch, bool) \
+            or epoch <= 0:
+        return MISSING_MOMENT
+    try:
+        moment = datetime.datetime.fromtimestamp(float(epoch))
+    except (OverflowError, OSError, ValueError):
+        return MISSING_MOMENT
+    if now is not None:
+        try:
+            today = datetime.datetime.fromtimestamp(float(now)).date()
+        except (OverflowError, OSError, ValueError):
+            today = datetime.datetime.now().date()
+    else:
+        today = datetime.datetime.now().date()
+    fmt = _SAME_DAY_FORMAT if (moment.date() == today and not ampm) \
+        else _WEEKDAY_FORMAT
+    try:
+        return moment.strftime(fmt)
+    except (ValueError, OverflowError):
+        return MISSING_MOMENT
 
 
 def _cell_texts(rows, labels):
@@ -59,7 +118,8 @@ def _cell_texts(rows, labels):
     for row in rows:
         body.append([str(row["n"]), elide(row["account"], ACCOUNT_CHARS),
                      elide(row["pool"], POOL_CHARS), str(row["window"]),
-                     str(row["left"])])
+                     str(row["left"]),
+                     str(row.get("resets") or MISSING_MOMENT)])
     return header, body
 
 
@@ -136,20 +196,27 @@ def reset_rows(candidates, now: float, name_for, pool_colors=None) -> list[dict]
 
     The caller passes ``reset_candidates`` output verbatim, so this function
     can never re-order or re-filter the queue.
+
+    Each row carries BOTH time facts about the SAME epoch: ``left`` (relative
+    countdown) and ``resets`` (absolute clock instant). They are derived from
+    one epoch and one ``now``, so the two columns can never describe different
+    moments — which is the exact failure a hand-maintained pair of strings
+    would eventually have.
     """
     rows = []
     for index, cand in enumerate(candidates, start=1):
         window = cand.window
         account = name_for(cand.account) or ""
         pool = str(getattr(window, "group_label", "") or "")
-        remaining = format_remaining(
-            cand.resets_at_epoch - now, short=True, minutes=True)
+        epoch = getattr(cand, "resets_at_epoch", None)
+        remaining = format_remaining(epoch - now, short=True, minutes=True)
         rows.append({
             "n": index,
             "account": account,
             "pool": pool,
             "window": window_label(window, cand.provider_id),
             "left": remaining,
+            "resets": moment_label(epoch, now),
             "provider_id": cand.provider_id,
             "color": (pool_colors or {}).get(cand.provider_id, ""),
         })
@@ -168,8 +235,14 @@ def render_table(rows, *, header: str = "Next resets", labels=None,
     ``available_width`` + ``measure`` select the NARROW composition: when the
     wide table's real measured extent exceeds the width the card can show,
     Account and Pool stack inside one cell (``# | Account / Pool | Window |
-    Left``) instead of letting the popup clip them (T-1298).  Without a
-    measurement the historical wide table is rendered.
+    Left | Resets``) instead of letting the popup clip them (T-1298).  Without
+    a measurement the historical wide table is rendered.
+
+    Column widths are derived from measured text extents only (never from the
+    container), so the FIRST render of a card and every later refresh of the
+    same queue produce identical column starts: no first-open jump, no
+    per-second horizontal twitch, and no column that pops into existence only
+    after the second render.
     """
     if not rows:
         return f"<b>{html.escape(header)}</b>"
@@ -192,10 +265,11 @@ def render_table(rows, *, header: str = "Next resets", labels=None,
                                + labels.get("Pool", "Pool")),
             "Window": labels.get("Window", "Window"),
             "Left": labels.get("Left", "Left"),
+            "Resets": labels.get("Resets", "Resets"),
         }
         header_cells = "".join(
             f"<td style='color:#8f856c; font-size:10px; padding-right:8px; "
-            f"{'text-align:right;' if col == 'Left' else ''}'>"
+            f"{'text-align:right;' if col in ('Left', 'Resets') else ''}'>"
             f"{html.escape(cell_labels[col])}</td>"
             for col in COMPACT_COLUMNS
         )
@@ -219,6 +293,9 @@ def render_table(rows, *, header: str = "Next resets", labels=None,
                 f"<td style='color:#d8ccaa; font-weight:bold; "
                 f"text-align:right; white-space:nowrap;'>"
                 f"{html.escape(row['left'])}</td>"
+                f"<td style='color:#d8ccaa; text-align:right; "
+                f"white-space:nowrap;'>"
+                f"{html.escape(str(row.get('resets') or MISSING_MOMENT))}</td>"
                 "</tr>"
             )
         parts.append("</table>")
@@ -226,7 +303,7 @@ def render_table(rows, *, header: str = "Next resets", labels=None,
 
     header_cells = "".join(
         f"<td style='color:#8f856c; font-size:10px; padding-right:8px; "
-        f"{'text-align:right;' if col == 'Left' else ''}'>"
+        f"{'text-align:right;' if col in ('Left', 'Resets') else ''}'>"
         f"{html.escape(labels.get(col, col))}</td>"
         for col in COLUMNS
     )
@@ -248,6 +325,9 @@ def render_table(rows, *, header: str = "Next resets", labels=None,
             f"white-space:nowrap;'>{html.escape(row['window'])}</td>"
             f"<td style='color:#d8ccaa; font-weight:bold; "
             f"text-align:right; white-space:nowrap;'>{html.escape(row['left'])}</td>"
+            f"<td style='color:#d8ccaa; text-align:right; "
+            f"white-space:nowrap;'>"
+            f"{html.escape(str(row.get('resets') or MISSING_MOMENT))}</td>"
             "</tr>"
         )
     parts.append("</table>")

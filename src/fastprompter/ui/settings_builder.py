@@ -297,11 +297,11 @@ def build_settings_tabs(self):
     self.cb_customize_toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     self.cb_customize_toolbar.customContextMenuRequested.connect(
         lambda _p: self.reset_toolbar_order())
-    self.cb_silo_home = create_footer_cb(
-        "🏠 Silos at Start",
-        "Place the cursor at the top of a silo when opening it",
-        self.data.get("silo_home", "False") == "True",
-        self.on_silo_home_toggled,
+    self.cb_silo_remember_scroll = create_footer_cb(
+        "💾 Remember Silo Scroll Position",
+        "Reopen a silo where you left off instead of at the top",
+        self.data.get("silo_remember_scroll", "True") == "True",
+        self.on_silo_remember_scroll_toggled,
     )
     self.cb_portable_backup = create_footer_cb(
         "💾 Auto Backup (.md)",
@@ -1612,7 +1612,7 @@ def build_settings_tabs(self):
     # --- TAB 3: DATA ---
     self.settings_tabs.addTab(_tab([
         _settings_group("Silo list", [
-            self.cb_silo_home, self.cb_silo_pinned_gap, self.cb_silo_ticks,
+            self.cb_silo_remember_scroll, self.cb_silo_pinned_gap, self.cb_silo_ticks,
             self.cb_snippet_arrows, self.cb_hide_shortkeys, gap_row,
             self.lbl_silo_mode, self.cb_silo_mode,
         ]),

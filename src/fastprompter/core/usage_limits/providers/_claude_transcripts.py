@@ -16,12 +16,13 @@ Nothing here estimates or interpolates a percentage — a refusal means zero
 remaining, and an unknown percentage stays unknown.
 
 Reading is bounded on purpose: only the newest transcripts, only their tail,
-only lines that mention the field, and cached per (path, mtime, size) so a
-3-minute sweep re-reads nothing that did not change.
+only lines that mention the field, and the parsed events are cached per
+(path, mtime, size) so a 3-minute sweep re-reads nothing that did not change.
 """
 
 from __future__ import annotations
 
+import heapq
 import json
 import os
 import time
@@ -139,7 +140,8 @@ def _events_from_file(path: str) -> list[dict]:
             "session": str(record.get("sessionId") or "")[:64],
         })
     # A cache entry per transcript is bounded by MAX_FILES worth of live
-    # sessions; stale paths are dropped when the directory listing changes.
+    # sessions per slug; paths outside every live selection stay until the
+    # whole cache is trimmed past its cap.
     if len(_cache) > 64:
         _cache.clear()
     _cache[path] = (stat.st_mtime, stat.st_size, events)
@@ -160,47 +162,131 @@ def _iso_epoch(value):
         return None
 
 
-def _recent_transcripts(root: str, now: float, max_files: int,
-                        max_age_s: float) -> list[str]:
+def _top_k(items, limit: int) -> list[tuple[float, str]]:
+    """The ``limit`` newest (mtime, path) pairs, newest first.
+
+    A bounded min-heap of the K best, so neither the heap nor the final
+    ``sorted`` ever holds the tree: 250 transcripts in one project produce a
+    ``limit``-item result and a ``limit``-item sort, never a 250-item one.
+    ``items`` is consumed as a stream -- a caller that materialised the pool
+    first would defeat the bound, so the caller passes a generator.
+    """
+    heap: list[tuple[float, str]] = []
+    for item in items:
+        if len(heap) < limit:
+            heapq.heappush(heap, item)
+        elif item > heap[0]:
+            heapq.heappushpop(heap, item)
+    return sorted(heap, reverse=True)
+
+
+def _eligible_entries(slug_dir, now: float, max_age_s: float):
+    """Stream a project slug's eligible (mtime, path) pairs.
+
+    A generator on purpose: the directory's entry list is never materialised,
+    each JSONL child costs at most one ``stat``, and an aged-out or vanished
+    entry simply never yields, so the caller's heap stays bounded by its limit
+    instead of by the slug. An unreadable slug yields nothing rather than
+    costing the sweep its answer.
+    """
     try:
-        slugs = os.listdir(root)
+        with os.scandir(slug_dir) as entries:
+            for child in entries:
+                if not child.name.endswith(".jsonl"):
+                    continue
+                try:
+                    mtime = child.stat().st_mtime
+                except OSError:
+                    continue
+                if now - mtime > max_age_s:
+                    continue
+                yield mtime, child.path
     except OSError:
-        return []
-    found: list[tuple[float, str]] = []
+        return
+
+
+def transcript_inventory(directory: str | os.PathLike, *, now: float | None = None,
+                         max_files: int = MAX_FILES,
+                         max_age_s: float = MAX_AGE_S) -> dict:
+    """The newest ``max_files`` transcripts plus the tree's newest mtime.
+
+    One selection pass answers BOTH questions the provider asks -- which files
+    hold refusals, and whether Claude Code ran at all -- because the old code
+    walked the whole tree twice per refresh (K=8 for the blocks, K=1 for the
+    activity) and sorted every entry it found before slicing ``[:max_files]``.
+
+    Selection is streamed end to end: each slug's eligible entries are yielded
+    one at a time into a bounded per-slug top-K heap, and every slug's bounded
+    selection is merged into ONE bounded heap for the whole sweep, so the
+    transient candidate state never exceeds K items per slug and K items
+    overall -- never the tree, never the slugs x K product. Every refresh
+    performs exactly one metadata scan (one stat per JSONL entry) and no sort
+    ever sees more than the final K items. No transcript is retained between
+    refreshes: correctness comes from re-stat'ing on every sweep, not from a
+    directory-keyed memo that a moved mtime would defeat.
+
+    Correctness: a transcript's mtime can move while its directory's stamp
+    and entry names stay put, so unchanged directory metadata is NOT evidence
+    that the transcripts are unchanged -- the previous cache keyed on exactly
+    that pair and silently hid an edited transcript that sat outside the
+    previous top-K. Each refresh therefore re-stats every transcript and
+    selects from the live mtimes; a file that was excluded and then modified
+    becomes eligible at the very next refresh, and a removal, aging-out or
+    permission loss disappears from the selection at the same refresh.
+    """
+    now = time.time() if now is None else now
+    limit = max(1, int(max_files))
+    root = transcript_root(directory)
+    try:
+        with os.scandir(root) as slug_entries:
+            slugs = list(slug_entries)
+    except OSError:
+        return {"paths": [], "newest_mtime": None}
+
+    merged: list[tuple[float, str]] = []
+    newest: float | None = None
     for slug in slugs:
-        directory = os.path.join(root, slug)
         try:
-            names = os.listdir(directory)
+            if not slug.is_dir():
+                continue
         except OSError:
             continue
-        for name in names:
-            if not name.endswith(".jsonl"):
-                continue
-            path = os.path.join(directory, name)
-            try:
-                mtime = os.path.getmtime(path)
-            except OSError:
-                continue
-            if now - mtime > max_age_s:
-                continue
-            found.append((mtime, path))
-    found.sort(reverse=True)
-    return [path for _mtime, path in found[:max_files]]
+        selected = _top_k(_eligible_entries(slug.path, now, max_age_s), limit)
+        if not selected:
+            continue
+        newest = selected[0][0] if newest is None else max(newest, selected[0][0])
+        for item in selected:
+            # one bounded heap for the whole sweep: the merge never grows past
+            # the K the answer needs, never slugs x K
+            if len(merged) < limit:
+                heapq.heappush(merged, item)
+            elif item > merged[0]:
+                heapq.heappushpop(merged, item)
+    selected = sorted(merged, reverse=True)
+    paths = [path for _mtime, path in selected]
+    return {"paths": paths, "newest_mtime": newest}
 
 
 def active_quota_blocks(claude_dir: str | os.PathLike, *, now: float | None = None,
                         max_files: int = MAX_FILES,
-                        max_age_s: float = MAX_AGE_S) -> dict:
+                        max_age_s: float = MAX_AGE_S,
+                        inventory: dict | None = None) -> dict:
     """Windows Claude itself refused, keyed by provider-neutral window key.
 
     Only refusals whose reset time is still in the future are returned: once
     ``resetsAt`` passes, the window is no longer blocked and reporting it
     would be a lie the moment the clock ticks past it.
+
+    ``inventory`` is the sweep's already-built selection, so a provider that
+    also asks about Claude Code activity walks the tree once, not twice.
     """
     now = time.time() if now is None else now
-    root = transcript_root(claude_dir)
+    if inventory is None:
+        inventory = transcript_inventory(claude_dir, now=now,
+                                         max_files=max_files,
+                                         max_age_s=max_age_s)
     blocks: dict[str, dict] = {}
-    for path in _recent_transcripts(root, now, max_files, max_age_s):
+    for path in inventory["paths"]:
         for event in _events_from_file(path):
             if event["status"] != "rejected":
                 continue
@@ -221,13 +307,18 @@ def active_quota_blocks(claude_dir: str | os.PathLike, *, now: float | None = No
 
 
 def last_transcript_activity(claude_dir: str | os.PathLike, *,
-                             now: float | None = None) -> float | None:
-    """Newest transcript mtime — proof Claude Code ran, whatever it reported."""
-    now = time.time() if now is None else now
-    paths = _recent_transcripts(transcript_root(claude_dir), now, 1, MAX_AGE_S)
-    if not paths:
-        return None
-    try:
-        return os.path.getmtime(paths[0])
-    except OSError:
-        return None
+                             now: float | None = None,
+                             max_files: int = MAX_FILES,
+                             max_age_s: float = MAX_AGE_S,
+                             inventory: dict | None = None) -> float | None:
+    """Newest transcript mtime — proof Claude Code ran, whatever it reported.
+
+    ``max_files`` is irrelevant to the answer (the newest file is always the
+    newest) but kept so a caller can share one inventory with
+    ``active_quota_blocks``.
+    """
+    if inventory is None:
+        inventory = transcript_inventory(claude_dir, now=now,
+                                         max_files=max_files,
+                                         max_age_s=max_age_s)
+    return inventory["newest_mtime"]

@@ -23,6 +23,31 @@ from fastprompter.core.interval_presets import DAYPART_CHIME_RULES
 # mutate profile values in place after deepcopying the whole map.
 _INTERVAL_NOTIFS_DEFAULT = copy.deepcopy(DAYPART_CHIME_RULES)
 
+#: One-shot migration marker (T-1459). The old "Silos at Start" switch meant
+#: the OPPOSITE of the new "Remember Silo Scroll Position" one, so an existing
+#: profile's choice is inverted exactly once and the legacy key is dropped.
+SILO_SCROLL_MIGRATION_KEY = "silo_remember_scroll_migrated"
+
+
+def migrate_silo_scroll_settings(data: dict) -> bool:
+    """Invert the legacy ``silo_home`` switch into ``silo_remember_scroll``.
+
+    ``silo_home == "True"`` meant "always open at the top" (never remember) —
+    that is the new switch OFF; its absence or "False" let the remembered
+    position win, i.e. the new switch ON. Runs once per profile; the marker
+    keeps a later explicit choice untouched. Returns True when applied.
+    """
+    if str(data.get(SILO_SCROLL_MIGRATION_KEY, "")) == "True":
+        return False
+    legacy = data.get("silo_home")
+    if legacy is not None:
+        data["silo_remember_scroll"] = \
+            "False" if str(legacy) == "True" else "True"
+    data.pop("silo_home", None)
+    data[SILO_SCROLL_MIGRATION_KEY] = "True"
+    return True
+
+
 DEFAULT_PROFILE = {
     "altw_blanks_after": '1',
     "altw_blanks_before": '0',
@@ -53,7 +78,7 @@ DEFAULT_PROFILE = {
     "always_on_top_hotkey_alt": '',
     "analog_clock": 'True',
     "archive_visible": 'False',
-    "audio_device_render": 'True',
+    "audio_device_render": 'False',
     "audio_edge_pad": 'False',
     "audio_global_muted": 'False',
     "audio_render_policy_migrated_v2": 'True',
@@ -256,11 +281,13 @@ DEFAULT_PROFILE = {
     "silo_chest_slots": 'dynamic',
     "silo_color_box": 'True',
     "silo_gap_height": '12',
-    "silo_home": 'True',
     "silo_links": {},
     "silo_links_all": {},
     "silo_pinned_gap": 'True',
     "silo_random_color_on_new": 'True',
+    "silo_remember_scroll": 'True',
+    "silo_remember_scroll_migrated": 'True',
+    "table_default_layout": '{"version": 1, "columns": 7, "visible_rows": 10, "col_widths": [100, 100, 100, 100, 100, 100, 100], "row_heights": [30, 30, 30, 30, 30, 30, 30, 30, 30, 30], "manual_cols": [], "manual_rows": [], "word_wrap": false}',
     "silo_tabs_mode": 'sidebar',
     "silo_ticks_enabled": 'True',
     "snippet_0_hotkey": 'Ctrl+Shift+Numpad1',
@@ -568,6 +595,11 @@ DEFAULT_PROFILE = {
                                             'priority': 52,
                                             'ultra': 'auto',
                                             'wide': 'show'},
+                     'btn_code_run': {   'medium': 'auto',
+                                         'narrow': 'auto',
+                                         'priority': 54,
+                                         'ultra': 'auto',
+                                         'wide': 'show'},
                      'btn_quote': {   'medium': 'auto',
                                       'narrow': 'auto',
                                       'priority': 28,

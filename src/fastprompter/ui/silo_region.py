@@ -28,10 +28,20 @@ from fastprompter.ui import silo_table as st
 
 
 def table_region(lines: list[str]) -> tuple[int, int] | None:
-    """(first, last) of the first markdown table, or None if there is none."""
+    """(first, last) of the first markdown table, or None if there is none.
+
+    Lines inside a code fence never qualify: a fenced pipe run is the user's
+    sample text, and claiming it would hand it to the table widget to rewrite.
+    """
+    mask = st.fenced_mask(lines)
     for i, line in enumerate(lines):
+        if mask[i]:
+            continue
+        # Re-parse each hit with its OWN mask: the run may have started inside a
+        # fence that a different candidate line escaped, and a region must
+        # never span one (a fence opener/closer is a bare ```, mask included).
         if st.is_table_row(line):
-            table = st.parse(lines, i)
+            table = st.parse(lines, i, mask)
             if table is not None:
                 return table.first_block, table.last_block
     return None
@@ -58,25 +68,11 @@ def split(lines: list[str], span: tuple[int, int] | None):
 
 
 def splice(prefix: list[str], region: list[str], suffix: list[str]) -> str:
-    """Rebuild the silo text, keeping one blank line between the parts.
+    """Rebuild the silo text. Exact inverse of `split`: no line is added,
+    removed or re-padded.
 
-    Without the separators a heading would end up glued to the first table
-    row, which is a different document to a markdown parser.
+    The old version trimmed blank lines at the seams and injected exactly one
+    back, so `splice(split(x)) != x`: a silo reopened and saved grew or lost
+    blank lines it never had, and the drift compounded on every save.
     """
-    out: list[str] = []
-    if prefix:
-        out.extend(prefix)
-        while out and not out[-1].strip():
-            out.pop()
-        if out and region:
-            out.append("")
-    out.extend(region)
-    if suffix:
-        tail = list(suffix)
-        while tail and not tail[0].strip():
-            tail.pop(0)
-        if tail:
-            if out:
-                out.append("")
-            out.extend(tail)
-    return "\n".join(out)
+    return "\n".join(list(prefix) + list(region) + list(suffix))

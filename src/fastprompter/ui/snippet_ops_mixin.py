@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QInputDialog, QMessageBox
 from fastprompter.core.logging import logger
 from fastprompter.core.silo_export import _ILLEGAL, _title_from
 from fastprompter.core.translations import tr
+from fastprompter.utils.path_safety import recovery_path_owned
 
 _is_deleted = sip.isdeleted
 
@@ -115,6 +116,15 @@ def _reconcile_merge_journal(root, data):
         orig = rec.get("original")
         trashed = rec.get("trashed")
         if not (orig and trashed):
+            continue
+        # W2-001: a surviving journal is untrusted metadata; only pairs both of
+        # whose sides this root owns (the trash side inside ``_trash``) may be
+        # reversed. Anything else stays in the journal for the operator.
+        if not recovery_path_owned(root, orig):
+            remaining.append(rec)
+            continue
+        if not recovery_path_owned(root, trashed, subtree="_trash"):
+            remaining.append(rec)
             continue
         if not os.path.lexists(trashed):
             continue          # already back home / never landed
@@ -278,6 +288,16 @@ def _reconcile_retirement_journal(root, data, owner_is_live=None):
             inside = False
         if not inside:
             # different/unreachable storage context: do not guess, retry later
+            remaining.append(rec)
+            continue
+        # W2-001: the journal is untrusted metadata. Even when the original
+        # path looks local, the trash side must really be INSIDE this root's
+        # _trash branch after every reparse point resolves — a record naming
+        # a live top-level folder, or a path on another storage context, is
+        # retried on a later startup instead of being guessed about.
+        owned = recovery_path_owned(root, orig) and recovery_path_owned(
+            root, trashed, subtree="_trash")
+        if not owned:
             remaining.append(rec)
             continue
         live = False
@@ -518,11 +538,11 @@ class SnippetOpsMixin:
             if path:
                 ext = os.path.splitext(path)[1].lower()
                 if ext == ".md":
-                    self.data["last_save_format"] = "md"
+                    self.set_setting("last_save_format", "md")
                 elif ext == "" or ext == ".":
-                    self.data["last_save_format"] = "*"
+                    self.set_setting("last_save_format", "*")
                 else:
-                    self.data["last_save_format"] = "txt"
+                    self.set_setting("last_save_format", "txt")
         finally:
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(300, self._decrement_focus_lock)

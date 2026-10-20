@@ -12,7 +12,10 @@ Weather is opt-in, user-configured-location only, served through a
 from __future__ import annotations
 
 import datetime as _datetime
+import logging
 import threading
+
+logger = logging.getLogger(__name__)
 
 # Trigger types
 TRIGGER_ALWAYS = "ALWAYS"
@@ -234,6 +237,12 @@ class AmbienceEngine:
         # against it before committing so a stale answer can never win.
         self._weather_generation = 0
         self._fade_ticks_total = 0
+        # Hub refusals this engine observed.  A refused stop leaves a channel
+        # audible with no layer claiming it, and a refused volume leaves the UI
+        # showing a level the transport is not playing at; neither is a reason
+        # to raise, but neither may vanish without a trace.
+        self._failed_stops = 0
+        self._failed_volume_sets = 0
         # Layers whose channel is still audible while fading out.  They are
         # off ``_layers`` (logically inactive) but physically alive until the
         # ONE fade driver finishes them.
@@ -324,7 +333,14 @@ class AmbienceEngine:
                             self._hub.set_channel_volume(layer.handle,
                                                          rule.volume)
                         except Exception:
-                            pass
+                            # The store and the UI already report rule.volume;
+                            # a refused level means what is sounding disagrees.
+                            with self._lock:
+                                self._failed_volume_sets += 1
+                            logger.warning(
+                                "channel %s refused level %s for rule %s",
+                                layer.handle, rule.volume, rule_id,
+                                exc_info=True)
 
             # 3. Per-rule state belongs to the rule, not to the id slot.
             for state in (self._prev_trigger_state, self._last_interval_fire):
@@ -564,7 +580,14 @@ class AmbienceEngine:
             try:
                 self._hub.stop_channel_handle(layer.handle)
             except Exception:
-                pass
+                # The layer is retired either way, so the channel is now
+                # untracked and nobody can silence it again: this is the last
+                # place a refusal can be seen at all.
+                with self._lock:
+                    self._failed_stops += 1
+                logger.warning(
+                    "stop refused for channel %s (rule %s); it may still be"
+                    " audible", layer.handle, layer.rule_id, exc_info=True)
         layer.handle = ""
         layer.fading = None
 
@@ -617,7 +640,14 @@ class AmbienceEngine:
                 self._hub.set_channel_volume(layer.handle,
                                              layer.current_volume)
             except Exception:
-                pass
+                # A fade that cannot reach the transport leaves the layer
+                # sitting at a level the hub is not playing at.
+                with self._lock:
+                    self._failed_volume_sets += 1
+                logger.warning(
+                    "channel %s refused the fade level %s for rule %s",
+                    layer.handle, layer.current_volume, layer.rule_id,
+                    exc_info=True)
         if ratio >= 1.0:
             layer.fading = None
             layer.fade_elapsed_ms = 0
@@ -629,6 +659,18 @@ class AmbienceEngine:
     def fading_layers(self) -> int:
         with self._lock:
             return self._fading_count()
+
+    def failed_hub_calls(self) -> dict[str, int]:
+        """How often the hub refused a stop or a volume change so far.
+
+        These are the refusals the engine absorbed rather than propagated.  A
+        non-zero count means the audible state and the reported state have
+        already diverged, so a diagnostic surface can say so instead of the
+        user finding out by ear.
+        """
+        with self._lock:
+            return {"stop": self._failed_stops,
+                    "volume": self._failed_volume_sets}
 
     def layer_volume(self, rule_id: str) -> float | None:
         with self._lock:
