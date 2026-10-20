@@ -175,6 +175,9 @@ def test_open_timer_dialog_clears_missed_alert(monkeypatch):
         def exec(self):
             return 0
 
+        def deleteLater(self):
+            pass
+
     from fastprompter.ui import timer_dialog
     monkeypatch.setattr(timer_dialog, "TimerDialog", _MockDialog)
 

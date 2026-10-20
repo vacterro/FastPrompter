@@ -302,6 +302,9 @@ def test_fast_pack_selection_editor_resolution():
         "text_area": dummy_editor,
         "text_edit": FastPrompter.text_edit,
         "_show_in_app_toast": MagicMock(),
+        # CORE-005: the shared admission gate runs before any selection read.
+        "_active_silo_bundle_context": lambda self: (None, {
+            "silo_id": "silo_test_1", "silo_dir": ".", "category": "TestCat"}),
     })()
 
     assert obj.text_edit is dummy_editor
@@ -349,9 +352,18 @@ def test_fast_pack_selection_with_selection(qapp, tmp_path):
         "active_temp_slot": 0,
         "active_is_archive": False,
         "_active_silo_id": lambda self: "silo_test_1",
+        # CORE-005: the shared admission gate runs before any selection read.
+        "_active_silo_bundle_context": lambda self: (None, {
+            "silo_id": "silo_test_1", "silo_dir": silo_dir,
+            "category": "TestCat"}),
         "_silo_folder_dir": lambda self, slot, is_arc: silo_dir,
         "_silo_bundle_history_candidates": lambda self, sid, tdir: [],
         "_silo_bundle_candidates_for_target": FastPrompter._silo_bundle_candidates_for_target,
+        "_silo_bundle_request": FastPrompter._silo_bundle_request,
+        "_silo_bundle_dispatch": FastPrompter._silo_bundle_dispatch,
+        "_silo_save_settings": FastPrompter._silo_save_settings,
+        "_bundle_on_finished": FastPrompter._bundle_on_finished,
+        "_fast_pack_complete": FastPrompter._fast_pack_complete,
         "_silo_bundle_record_success": MagicMock(),
         "_silo_bundle_apply_retention": MagicMock(),
         "_editor_text_snapshot": lambda self: "• Hello World item",
@@ -364,7 +376,13 @@ def test_fast_pack_selection_with_selection(qapp, tmp_path):
         "_last_bundle_path": None,
     })()
 
-    res = FastPrompter.fast_pack_selection(obj)
+    # PERF-001 (SRC-097): the entry point dispatches onto the owned worker
+    # and returns the operation; the ZIP is published asynchronously.
+    from _bundle_op_wait import pump_until_idle
+    op = FastPrompter.fast_pack_selection(obj)
+    assert op is not None
+    assert pump_until_idle(obj)
+    res = obj._last_bundle_path
     assert res is not None
     assert os.path.isfile(res)
     assert res.endswith(".zip")

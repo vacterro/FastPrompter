@@ -167,7 +167,7 @@ _LEGACY_CHECKBOX_NAMES = (
     # `_en_text`" is only safe if it loses nobody.
     "cb_top", "cb_lock_window", "cb_normal_window", "cb_tray",
     "cb_sidebar", "cb_focus", "cb_snippet_arrows", "cb_silo_ticks",
-    "cb_ctrl_c", "cb_lock_cursor", "cb_silo_home", "cb_portable_backup",
+    "cb_ctrl_c", "cb_lock_cursor", "cb_silo_remember_scroll", "cb_portable_backup",
     "cb_custom_cursors", "cb_static_cursor",
     "cb_wrap", "cb_line_numbers", "cb_line_marks", "cb_zebra",
     "cb_hide_shortkeys", "cb_double_line", "cb_bold_titles",

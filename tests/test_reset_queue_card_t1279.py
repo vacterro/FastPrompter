@@ -7,7 +7,7 @@ was the only one never aligned.
 
 This suite pins the renderer and the wiring that replaced it:
 
-* columns ``# | Account | Pool | Window | Left`` with a header row;
+* columns ``# | Account | Pool | Window | Left | Resets`` with a header row;
 * a real rich-text table, never repeated-space alignment;
 * ``Left`` right-aligned and always present;
 * a long Pool truncates BEFORE ``Left`` can be pushed out;
@@ -15,6 +15,10 @@ This suite pins the renderer and the wiring that replaced it:
 * a named-model reserve (Luna) appears as its own Pool row;
 * the card is the EXISTING ``LimitHoverCard`` — no second hover system;
 * geometry is stable across a one-second refresh.
+
+T-1457-A added the sixth column (``Resets``): the ABSOLUTE reset instant beside
+the relative countdown. The tests below pin BOTH time facts, their agreement on
+one epoch, and the em-dash fallback for a row with no usable instant.
 """
 
 from __future__ import annotations
@@ -37,8 +41,10 @@ from fastprompter.core.usage_limits.model import AccountRef as AR
 from fastprompter.ui.reset_queue_card import (
     ACCOUNT_CHARS,
     COLUMNS,
+    MISSING_MOMENT,
     POOL_CHARS,
     elide,
+    moment_label,
     render_table,
     reset_rows,
     window_label,
@@ -91,6 +97,11 @@ class TestColumns:
         for column in COLUMNS:
             assert f">{column}</td>" in html
 
+    def test_the_six_column_contract_is_explicit(self):
+        """T-1457-A: six columns, and the sixth is the ABSOLUTE reset instant."""
+        assert COLUMNS == ("#", "Account", "Pool", "Window", "Left", "Resets")
+        assert len(COLUMNS) == 6
+
     def test_every_candidate_gets_one_structured_row(self):
         cands = _candidates()
         rows, html = _render(cands)
@@ -119,6 +130,46 @@ class TestColumns:
                                         None)) == "1d"
 
 
+class TestResetInstantColumn:
+    """T-1457-A: the sixth column, and the fallback that keeps it honest."""
+
+    def test_both_time_facts_come_from_the_same_epoch(self):
+        cands = _candidates()
+        now = time.time()
+        rows = reset_rows(cands, now, name_for=lambda a: a.display_name)
+        for row, cand in zip(rows, cands):
+            assert row["resets"] == moment_label(cand.resets_at_epoch, now)
+
+    def test_same_day_resets_show_a_clock_time_and_later_ones_a_weekday(self):
+        now = time.time()
+        assert moment_label(now + 120, now) == time.strftime(
+            "%H:%M", time.localtime(now + 120))
+        later = moment_label(now + 3 * 86400, now)
+        assert later == time.strftime("%a %H:%M", time.localtime(now + 3 * 86400))
+        assert later != moment_label(now + 120, now)
+
+    def test_a_missing_instant_is_an_em_dash_not_a_bogus_date(self):
+        for bad in (None, "", 0, -1, "soon", object(), float("nan")):
+            assert moment_label(bad, time.time()) == MISSING_MOMENT
+
+    def test_the_column_survives_a_row_without_an_instant(self):
+        """A row dict lacking ``resets`` still renders all six columns."""
+        rows = [{"n": 1, "account": "A", "pool": "", "window": "5h",
+                 "left": "1m 00s", "color": ""}]
+        html = render_table(rows)
+        assert html.count("<td") == len(COLUMNS) * 2   # header + one row
+        assert MISSING_MOMENT in html
+
+    def test_the_instant_column_is_labelled_by_the_caller(self):
+        cands = _candidates()
+        now = time.time()
+        rows = reset_rows(cands, now, name_for=lambda a: a.display_name)
+        html = render_table(rows, labels={"Resets": "Сбросы"})
+        assert ">Сбросы</td>" in html
+        for row in rows:
+            assert row["resets"] in html
+
+
 class TestTruncation:
     def test_long_pool_is_truncated_before_left(self):
         now = time.time()
@@ -134,6 +185,7 @@ class TestTruncation:
         assert elide("A" * 90, ACCOUNT_CHARS) in html
         assert "P" * 90 not in html
         assert rows[0]["left"] in html               # Left survived truncation
+        assert rows[0]["resets"] in html             # so did the instant
 
     def test_elide_never_exceeds_the_budget(self):
         assert len(elide("abcdef", 4)) == 4
@@ -276,3 +328,45 @@ class TestGeometryStability:
         for column in COLUMNS:
             assert html_a.count(f">{column}</td>") == html_b.count(
                 f">{column}</td>")
+
+    def test_first_render_equals_a_later_render_of_the_same_queue(self):
+        """T-1457-A: no first-open jump — the column set and structure a card
+        gets on its FIRST paint must match every later refresh, so the popup
+        cannot grow a column or re-measure its widths once it is already open.
+        """
+        now = time.time()
+        cands = _candidates()
+        rows = reset_rows(cands, now, name_for=lambda a: a.display_name)
+
+        def measure(text):
+            return len(text) * 7
+
+        from fastprompter.ui.reset_queue_card import required_width
+        wide = required_width(rows, {}, measure)
+        first = render_table(rows, available_width=wide + 40, measure=measure)
+        later = render_table(rows, available_width=wide + 40, measure=measure)
+        assert first == later
+        assert first.count("<td") == len(COLUMNS) * (len(rows) + 1)
+
+    def test_a_narrower_screen_stacks_account_and_pool_without_losing_a_column(
+            self):
+        """The compact composition keeps all six facts in four cells."""
+        now = time.time()
+        cands = _candidates()
+        rows = reset_rows(cands, now, name_for=lambda a: a.display_name)
+
+        def measure(text):
+            return len(text) * 7
+
+        from fastprompter.ui.reset_queue_card import (
+            COMPACT_COLUMNS,
+            required_width,
+        )
+        wide = required_width(rows, {}, measure)
+        html = render_table(rows, available_width=wide - 1, measure=measure)
+        assert "Account / Pool" in html
+        assert html.count("<td") == len(COMPACT_COLUMNS) * (len(rows) + 1)
+        for row in rows:
+            assert row["left"] in html
+            assert row["resets"] in html
+

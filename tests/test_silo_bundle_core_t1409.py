@@ -339,7 +339,11 @@ def test_target_dir_is_created_and_never_overwritten(tmp_path):
     second = sb.write_bundle(plan)
     assert first.zip_path != second.zip_path
     assert os.path.isfile(first.zip_path) and os.path.isfile(second.zip_path)
-    assert first.zip_path.endswith("_bundle_20261003_173945.zip")
+    # T-1433: the planned stem survives verbatim and publication appends the
+    # short locator of the FINAL fingerprint, so the published name states the
+    # planned identity and the artifact's own identity together.
+    assert first.zip_path.endswith(f"_bundle_20261003_173945_{first.artifact_id}.zip")
+    assert first.artifact_id.startswith(f"{sb.ARTIFACT_ID_SCHEME}{sb.FINGERPRINT_SCHEMA}-")
 
 
 def test_cancel_leaves_no_partial_archive(tmp_path):

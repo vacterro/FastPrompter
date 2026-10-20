@@ -22,7 +22,11 @@ import time
 import pytest
 
 from fastprompter.core.usage_limits import sai_accounts as sai
-from fastprompter.core.usage_limits.model import AccountRef, UsageSnapshot
+from fastprompter.core.usage_limits.model import (
+    AccountRef,
+    UsageSnapshot,
+    resolved_windows,
+)
 
 ENGINE = r"C:\fake\sai-accounts.exe"
 
@@ -319,6 +323,38 @@ class TestCentralFailure:
         assert [w.key for w in got.windows] == ["five_hour", "weekly"]
         assert got.windows[0].used_percent == pytest.approx(75.0)
         assert got.windows[0].resets_at_epoch is not None
+
+    def test_two_plane_pools_stay_two_pools(self, plane: Plane) -> None:
+        # The real multi-pool shape (T-1438): colliding keys would give one
+        # alert rule two limits, and a spent pool's weekly would gate the
+        # OTHER pool's 5h window. Each window keeps its duration behind the
+        # qualified key.
+        plane.usage_stdout = json.dumps({
+            "account_id": "antigravity:windows-user:aaa",
+            "context_state": "ONLINE", "auth_state": "AUTHENTICATED",
+            "usage_status": "authenticated_usage",
+            "windows": [
+                {"pool_index": 0, "window": "weekly", "remaining_fraction": 0.5,
+                 "reset_time": "2999-01-01T00:00:00Z"},
+                {"pool_index": 0, "window": "5h", "remaining_fraction": 0.75,
+                 "reset_time": "2999-01-01T00:00:00Z"},
+                {"pool_index": 1, "window": "weekly", "remaining_fraction": 0.0,
+                 "reset_time": "2999-01-01T00:00:00Z"},
+                {"pool_index": 1, "window": "5h", "remaining_fraction": 1.0,
+                 "reset_time": "2999-01-01T00:00:00Z"}]})
+        got = sai.probe_shared(self._shared_account(), time.monotonic() + 5)
+        assert got.status == "OK"
+        assert [w.key for w in got.windows] == ["weekly@pool0", "five_hour@pool0",
+                                                "weekly@pool1", "five_hour@pool1"]
+        by_key = {w.key: w for w in got.windows}
+        assert by_key["five_hour@pool0"].duration_minutes == 300
+        assert by_key["weekly@pool0"].duration_minutes == 10080
+        resolved = {w.key: w for w in resolved_windows(got.windows, now=0)}
+        # pool 1 weekly spent: it gates that pool's own 5h window, nothing else
+        assert resolved["weekly@pool1"].gated_by is None
+        assert resolved["five_hour@pool1"].gated_by == "weekly@pool1"
+        assert resolved["five_hour@pool0"].gated_by is None     # pool 0 untouched
+        assert resolved["five_hour@pool0"].remaining_percent == pytest.approx(75.0)
 
     def test_offline_context_is_reported_not_faked(self, plane: Plane) -> None:
         plane.usage_stdout = json.dumps({

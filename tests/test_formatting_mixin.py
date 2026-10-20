@@ -135,13 +135,14 @@ _RE_URL = _mod._RE_URL
 FormattingMixin = _mod.FormattingMixin
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def _force_fallback_renderer():
-    """Force the fallback renderer by making markdown.markdown raise.
+    """Force the markdown engine to fail, to test graceful degradation.
 
-    Scoped to each test: this used to be a permanent assignment on the shared
-    markdown module, which left every later test in the process rendering
-    through the fallback too.
+    Requested explicitly by the tests that care about it (T-1484): the
+    renderer no longer has a second regex implementation to fall back to, so
+    a failure must degrade to escaped plain text, and only the degradation
+    tests should be driving that path.
     """
     import markdown as markdown_mod
     real = markdown_mod.markdown
@@ -266,11 +267,11 @@ class TestRegexPatterns:
 
 
 class TestSimpleMarkdownToHtml:
-    """Test FormattingMixin.simple_markdown_to_html via the fallback path.
+    """Test FormattingMixin.simple_markdown_to_html through the real renderer.
 
-    The method tries markdown.markdown() first; if that fails, it falls
-    back to a regex-based renderer.  By patching markdown.markdown to
-    raise an exception we can test the fallback deterministically.
+    T-1484 replaced the regex fallback with one structural pipeline
+    (fastprompter.core.rich_preview), so these cases now assert the actual
+    rendered structure: real elements, real anchors, real tables.
     """
 
     def _call(self, text):
@@ -353,8 +354,12 @@ class TestSimpleMarkdownToHtml:
 
     def test_html_escaping(self):
         result = self._call("<script>alert('xss')</script>")
-        assert "&lt;" in result
+        # the element never reaches the document, but its text is not deleted
         assert "<script>" not in result
+        assert "alert('xss')" in result
+        # ordinary angle brackets in prose are escaped, not interpreted
+        plain = self._call("a < b and c > d")
+        assert "a &lt; b and c &gt; d" in plain
 
     def test_empty_string(self):
         result = self._call("")
@@ -385,15 +390,15 @@ class TestSimpleMarkdownToHtml:
 
     def test_blockquote_with_formatting(self):
         result = self._call("> **important** quote")
-        # Fallback wraps blockquote content in <i> and applies html.escape
-        # before any markdown substitution, so ** is not rendered as bold.
+        # The structural renderer keeps block structure AND inline emphasis,
+        # instead of escaping the markers into the visible text.
         assert "<blockquote" in result
-        assert "**important**" in result
+        assert "<b>important</b>" in result
 
     def test_empty_block_still_wraps_body(self):
         result = self._call("\n\n")
         assert "<body" in result
-        assert "<br" in result
+        assert result.endswith("</body></html>")
 
     def test_bullet_with_inline_code(self):
         result = self._call("- use `os.path.join()` here")
@@ -411,6 +416,23 @@ class TestSimpleMarkdownToHtml:
         result = self._call("- [docs](https://docs.example.com)")
         assert "<li" in result
         assert 'href="https://docs.example.com"' in result
+
+
+class TestRendererDegradation:
+    """A failing markdown engine must never mangle the document."""
+
+    @pytest.mark.usefixtures("_force_fallback_renderer")
+    def test_engine_failure_renders_escaped_plain_text(self):
+        result = FormattingMixin().simple_markdown_to_html(
+            "<script>alert(1)</script> **not bold**")
+        assert "**not bold**" in result
+        assert "<script>" not in result
+        assert "alert(1)" in result
+
+    @pytest.mark.usefixtures("_force_fallback_renderer")
+    def test_engine_failure_still_wraps_the_document(self):
+        result = FormattingMixin().simple_markdown_to_html("# Heading")
+        assert result.startswith("<html>") and result.endswith("</body></html>")
 
 
 # ---------------------------------------------------------------------------

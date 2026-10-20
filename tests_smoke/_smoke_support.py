@@ -23,6 +23,7 @@ Ownership rules:
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -224,13 +225,20 @@ class SmokeEnv:
         root = self.root
         stem = self.db_stem
         mp = self._mp
+        # T-1450: resolve the LIVE module from sys.modules instead of the module-
+        # level `state_mod` binding. tests/_qt_stub.py may have dropped and
+        # re-imported fastprompter.core.state during a prior tests/ run, leaving
+        # `state_mod` pointing at the stale object. Patching the stale object
+        # silently no-ops: FastPrompterState imports from the live module, so it
+        # would read the real local_data.db instead of the temp DB.
+        live_state_mod = sys.modules.get("fastprompter.core.state", state_mod)
         mp.setattr(
-            state_mod,
+            live_state_mod,
             "get_db_path",
             lambda profile_id=1, **kw: str(root / f"{stem}_{profile_id}.db"),
         )
         mp.setattr(
-            state_mod,
+            live_state_mod,
             "run_portable_backup",
             lambda data=None, profile_id=1, *a, **kw: None,
             raising=False,

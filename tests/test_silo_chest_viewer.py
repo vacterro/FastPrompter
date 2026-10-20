@@ -359,3 +359,54 @@ def test_themed_chest_palette(app):
     assert pal["slot_light"].name() == "#5a5040"
     assert pal["select_frame"].name() == "#f0d060"
     assert pal["badge_fg"].name() == "#d4c89a"
+
+# ---- the pure sparse slot model -------------------------------------------
+
+def test_sparse_slot_model_pure_functions():
+    """The slot model is data, so it is tested as data (no widget)."""
+    from fastprompter.ui.silo_chest import (
+        CHEST_SLOT_MAX,
+        append_slot,
+        migrate_slot_map,
+        next_free_at_or_after,
+        place_group,
+        swap_slots,
+    )
+    # a legacy compact order migrates by rank, not by guesswork
+    assert migrate_slot_map(["a", "b", "c"]) == {"a": 0, "b": 1, "c": 2}
+    assert migrate_slot_map({"a": 2, "b": 1}) == {"a": 2, "b": 1}
+    # junk positions are dropped, never materialised as impossible geometry
+    assert migrate_slot_map({"a": 9999}) == {}
+    assert migrate_slot_map({"a": "x", "b": None, "c": 3}) == {"c": 3}
+    assert migrate_slot_map("junk") == {}
+    assert CHEST_SLOT_MAX > 0
+    # a new file appends above the highest placement
+    assert append_slot({}) == 0
+    assert append_slot({"a": 0, "b": 5}) == 6
+    # the next free slot skips occupants and the reserved group range
+    assert next_free_at_or_after({"a": 2, "b": 3}, 2) == 4
+    assert next_free_at_or_after({"a": 2}, 2, reserved=(3, 4)) == 5
+    # a swap trades both positions, keeping every other slot untouched
+    assert swap_slots({"a": 0, "b": 1, "c": 2}, "a", "c") == {
+        "a": 2, "b": 1, "c": 0}
+    # a group lands at its exact target range, displaced items cascade
+    slots = {"a": 0, "b": 1, "c": 2}
+    place_group(slots, ["c"], 20)
+    assert slots == {"a": 0, "b": 1, "c": 20}
+    slots = {"a": 0, "b": 1, "c": 2, "d": 3}
+    place_group(slots, ["b", "c"], 1)
+    assert slots == {"a": 0, "b": 1, "c": 2, "d": 3}, \
+        "dropping a group back onto its own range must be stable"
+    slots = {"a": 0, "b": 1, "c": 2, "d": 3}
+    place_group(slots, ["d", "a"], 1)
+    # insert-before: the group takes 1,2 and the displaced rows cascade up
+    assert slots == {"d": 1, "a": 2, "b": 3, "c": 4}
+    # a drop far below the top keeps the gap as real empty slots
+    slots = {"a": 0, "b": 1}
+    place_group(slots, ["b"], 40)
+    assert slots == {"a": 0, "b": 40}
+    # nothing is ever discarded: every name still owns a slot
+    for source in (["a", "b", "c", "d", "e"], ["z"]):
+        m = {n: i for i, n in enumerate(source)}
+        place_group(m, ["a"], 12)
+        assert set(m) == set(source)

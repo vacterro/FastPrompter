@@ -1,0 +1,162 @@
+[img]https://i.ibb.co/2YPvk7cQ/otd546d2.png[/img]
+
+[h1]VRV - Vacuum Recycler Variant[/h1]
+
+[b]Overhauled mission DLLs for VSR[/b]
+
+This build rewrites the entire salvage loop of the original campaign. Every
+extractor, every scavenger route and every combat order was re-authored against
+the [url=https://steamcommunity.com/sharedfiles/filedetails/?id=1325933293]VSR[/url]
+mission table, so the recycling economy finally matches the unit list.
+
+[img]https://i.ibb.co/PZWPsqnQ/ql50flhx.png[/img]
+[img]https://i.ibb.co/spC8pKWd/0ypbm015.gif[/img]
+
+[h2]Controls and Tactical Orders[/h2]
+
+The command slot system is unchanged in spirit: you pick a slot, you give it a
+role, and the craft decides how to satisfy it. What changed is that the roles
+now survive a reload and a recycler rebuild.
+
+[h3]Essential Hotkeys[/h3]
+
+[table]
+[tr][th]Hotkey / Command[/th][th]Unit / Target[/th][th]Tactical Behavior[/th][/tr]
+[tr][td][b]7[/b][/td][td]Combat craft / Artillery[/td][td][b]Defend[/b]: Guards protect extractors and will not chase beyond the pool radius.[/td][/tr]
+[tr][td][b]Ctrl+Space[/b][/td][td]Any unit[/td][td][b]Forced Go To[/b]: Ignores hostile fire and completes the move order even under attack.[/td][/tr]
+[tr][td][b]Alt+7[/b][/td][td]Scavenger[/td][td][b]Scavenge[/b]: Claims the nearest scrap pool and returns with a full load.[/td][/tr]
+[tr][td][b]Shift+1[/b][/td][td]Service Truck[/td][td][b]Repair[/b]: Repairs allied units inside its aura without being told twice.[/td][/tr]
+[tr][td][b]8[/b][/td][td]Recycler[/td][td][b]Recycle[/b]: Consumes the queued scrap pool and pauses the route while it works.[/td][/tr]
+[tr][td][b]Ctrl+1[/b][/td][td]Extractor[/td][td][b]Hold[/b]: Stops the extraction cycle and keeps the deposit untouched.[/td][/tr]
+[/table]
+
+[h3]Command Slot 6 (Autonomous Roles)[/h3]
+
+[list]
+[*][b]Combat Craft[/b]: Autonomous patrol between the extractor and the pool.
+[*][b]Scavenger[/b]: Finds scrap pools inside the assigned sector only.
+[*][b]Service Truck[/b]: Repairs allied units in the field, one target at a time.
+[*][b]Recycler[/b]: Consumes queued scrap and reports when the queue is empty.
+[*][b]Extractor[/b]: Holds the deposit and reports depletion in advance.
+[/list]
+
+[h3]Order Precedence[/h3]
+
+[list=1]
+[*]An explicit order from the player always wins over an autonomous role.
+[*]A forced move ignores hostile fire but still respects the map boundary.
+[*]A defensive order never leaves the extractor's guard radius.
+[*]A scavenger route is abandoned when the pool is claimed by someone else.
+[/list]
+
+[h2]Economy Notes[/h2]
+
+The recycled output is capped at the [i]deposit value[/i], not at the pool
+total. That single change removes the old infinite-scrap exploit and makes the
+recycler a logistics unit instead of a printing press.
+
+[quote]If a recycler sits idle for more than one cycle, the queue is drained and the
+scrap is returned to the pool with a small loss. Idle recyclers are expensive.[/quote]
+
+[b]Thresholds[/b] are expressed on the craft's own hull, except where noted:
+
+[list]
+[*]Retreat to the recycler at [b](<25%, default)[/b] hull integrity.
+[*]Abandon the pool at [b](<8%)[/b] remaining deposit value.
+[*]Escort the scavenger when [b](2+ units)[/b] are reported in the sector.
+[*]Repair priority follows the lowest hull value first.
+[/list]
+
+[h3]Sample Order Sheet[/h3]
+
+[table]
+[tr][th]Slot[/th][th]Role[/th][th]Condition[/th][th]Fallback[/th][/tr]
+[tr][td][b]1[/b][/td][td]Combat Craft[/td][td]Hostile contact[/td][td]Return to guard[/td][/tr]
+[tr][td][b]2[/b][/td][td]Scavenger[/td][td]Pool available[/td][td]Patrol the sector[/td][/tr]
+[tr][td][b]3[/b][/td][td]Service Truck[/td][td]Ally below 60%[/td][td]Follow the recycler[/td][/tr]
+[tr][td][b]4[/b][/td][td]Recycler[/td][td]Queue not empty[/td][td]Hold position[/td][/tr]
+[/table]
+
+[h2]Code Reference[/h2]
+
+The configuration block stays literal, brackets included:
+
+[code]
+[table]
+[tr][td]not a table, just text[/td][/tr]
+[/table]
+[b]not bold either[/b]
+[/code]
+
+[h2]Localisation[/h2]
+
+The order sheet ships in every language the game supports. A few samples:
+
+[list]
+[*]German: [b]Verteidigen[/b] -- Wachen schuetzen die Extraktoren.
+[*]Spanish: [b]Defender[/b] -- Las unidades protegen los extractores.
+[*]Japanese: [b]防御[/b] -- 護衛は採掘装置を守る。
+[*]Finnish: [b]Puolusta[/b] -- Vartijat suojaavat keraejiae.
+[/list]
+
+[h2]Changelog[/h2]
+
+[h3]1.4.0[/h3]
+[list]
+[*]Recycler queue is persistent across reloads.
+[*]Scavenger no longer ignores a claimed pool.
+[*]Defensive order respects the guard radius.
+[/list]
+
+[h3]1.3.2[/h3]
+[list]
+[*]Fixed a route loop when two pools share one node.
+[*]Service truck aura no longer stacks twice.
+[/list]
+
+[h3]1.3.0[/h3]
+[list]
+[*]Command slot 6 became autonomous.
+[*]Added the forced move order.
+[*]Added the repair aura.
+[/list]
+
+[h2]Known Issues[/h2]
+
+[list]
+[*]A recycler built during a reload keeps the old queue.
+[*]The scavenger may report a full load one cycle late.
+[*]Long table cells wrap differently at very small font sizes.
+[/list]
+
+[h2]Appendix A - Full Order Table[/h2]
+
+[table]
+[tr][th]#[/th][th]Order[/th][th]Scope[/th][th]Notes[/th][/tr]
+[tr][td]1[/td][td]Move[/td][td]Single unit[/td][td]Direct path, no avoidance.[/td][/tr]
+[tr][td]2[/td][td]Forced Move[/td][td]Single unit[/td][td]Ignores hostile fire.[/td][/tr]
+[tr][td]3[/td][td]Defend[/td][td]Single unit[/td][td]Guard radius applies.[/td][/tr]
+[tr][td]4[/td][td]Scavenge[/td][td]Single unit[/td][td]Claims one pool.[/td][/tr]
+[tr][td]5[/td][td]Recycle[/td][td]Single unit[/td][td]Consumes the queue.[/td][/tr]
+[tr][td]6[/td][td]Repair[/td][td]Aura[/td][td]One target at a time.[/td][/tr]
+[tr][td]7[/td][td]Hold[/td][td]Single unit[/td][td]Stops the current cycle.[/td][/tr]
+[tr][td]8[/td][td]Patrol[/td][td]Sector[/td][td]Returns to the route start.[/td][/tr]
+[tr][td]9[/td][td]Escort[/td][td]Single unit[/td][td]Follows the scavenger.[/td][/tr]
+[tr][td]10[/td][td]Recall[/td][td]All units[/td][td]Returns everyone to the recycler.[/td][/tr]
+[/table]
+
+[h2]Appendix B - Route Notes[/h2]
+
+Route one starts at the northern extractor, crosses the crater rim and ends at
+the central recycler. Route two mirrors it. Route three is a single long leg
+with two forced stops, which is why it is the only route that respects a
+defensive order mid-move.
+
+The pool at the crater rim is the only one that never depletes. It is also the
+only one guarded by two hostile patrols, so a scavenger without an escort will
+lose the load before it arrives.
+
+[hr]
+
+[b]VRV[/b] - Vacuum Recycler Variant - built against VSR mission tables.
+Source text above is preserved exactly; the preview is presentation only.
