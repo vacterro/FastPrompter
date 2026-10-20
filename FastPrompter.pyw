@@ -46,6 +46,31 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 _REQUIRED_STARTUP_MODULES = ("PyQt6", "markdown")
 
 
+def _missing_startup_requirements():
+    """Names of everything this interpreter cannot run the app with, or [].
+
+    Two capabilities, not just imports: the modules AND the IANA timezone
+    payload. Windows has no system tz database, so Python falls back to the
+    ``tzdata`` package, and Claude's /usage answer names its zone by name
+    (providers/_claude_cli.py resolves it through ZoneInfo()). An interpreter
+    that imports PyQt6 and markdown but has no tzdata would start and then
+    silently drop every named-zone reset time, so it is not certified.
+    """
+    import zoneinfo
+
+    missing = []
+    for mod in _REQUIRED_STARTUP_MODULES:
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+    try:
+        zoneinfo.ZoneInfo("UTC")
+    except Exception:
+        missing.append("tzdata")
+    return missing
+
+
 def _ensure_venv_python():
     """Re-exec under the project venv interpreter when startup dependencies are missing.
 
@@ -59,12 +84,7 @@ def _ensure_venv_python():
     if os.path.normcase(sys.executable).startswith(os.path.normcase(venv_dir) + os.sep):
         return
 
-    missing = []
-    for mod in _REQUIRED_STARTUP_MODULES:
-        try:
-            __import__(mod)
-        except ImportError:
-            missing.append(mod)
+    missing = _missing_startup_requirements()
 
     if not missing:
         return
