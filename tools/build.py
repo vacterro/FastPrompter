@@ -100,6 +100,16 @@ def _write_report(payload: dict) -> None:
 
 
 
+def _require_artifact_reader() -> None:
+    """Fail before the compile, not after it, when the gate cannot read a payload."""
+    if importlib.util.find_spec("zstandard") is None:
+        raise SystemExit(
+            "zstandard is not installed in this environment, so the post-build "
+            "artifact gate could not inspect the EXE it produces. Install the "
+            "build extra (`uv sync --group dev --extra build`) and re-run."
+        )
+
+
 def _audit_artifact(exe: Path) -> bool:
     """Run the artifact gate on the built EXE; False means the build is rejected."""
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
@@ -136,6 +146,7 @@ def build_with_nuitka(upx_mode: str, pin: str, allow_any: bool) -> int:
     from verify_sound_allowlist import verify_sound_allowlist
 
     verify_sound_allowlist(project_root)
+    _require_artifact_reader()
     nuitka_version = _require_nuitka(pin, allow_any)
     env_upx = os.environ.get("FASTPROMPTER_UPX", "").strip().lower()
     if env_upx and upx_mode == "off":
