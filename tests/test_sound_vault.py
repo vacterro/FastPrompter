@@ -64,13 +64,16 @@ class TestDiscovery:
         _wav(tmp_path / "only.wav")
         assert discover_vault_files(str(tmp_path), force=True) == []
 
-    def test_the_shipped_vault_really_shrinks_the_picker(self):
+    def test_the_shipped_library_ships_no_vault(self):
+        # The bulk raw material that used to live in _vault/ (GoldSrc vox/fvox
+        # fragments and the cs_style pack) was unlicensed third-party audio and
+        # is no longer shipped.  The namespace mechanism stays supported for a
+        # user's own private pack; the shipped library must simply be clean.
         packaged = get_resource_path("sound")
         everyday = discover_sound_files(packaged, force=True)
         vault = discover_vault_files(packaged, force=True)
-        assert vault, "the shipped _vault/ namespace is missing"
+        assert vault == []
         assert not [ref for ref in everyday if ref.startswith("_")]
-        assert len(everyday) < len(everyday) + len(vault)
 
 
 class TestResolution:

@@ -79,10 +79,10 @@ class _FakeMain(QWidget):
                 }
             ],
             "sound_quick_bar": [
-                "file:NEWDAY.wav", "file:NEWMONTH.wav", "file:NEWWEEK.wav",
-                "file:NOMAD.wav", "file:OBELISK.wav", "file:PARALYZE.wav",
-                "file:PICKUP01.wav", "file:PICKUP03.wav", "file:QUEST.wav",
-                "file:ROGUE.wav",
+                "file:newday.wav", "file:tick_on.wav", "file:tick_off.wav",
+                "file:menu1.wav", "file:chime_bell_ding1.wav", "file:panel_open.wav",
+                "file:pop.wav", "file:click_soft.wav", "file:timer_tick_pack.wav",
+                "file:blip_b.wav",
             ],
             "fkey_action": "projects",
         }
@@ -144,9 +144,9 @@ def test_default_profile_has_user_foundational_settings():
         quick_bar = json.loads(quick_bar)
     assert isinstance(quick_bar, list)
     assert len(quick_bar) == 10
-    assert quick_bar[0] == "file:NEWDAY.wav"
-    assert quick_bar[1] == "file:NEWMONTH.wav"
-    assert quick_bar[2] == "file:NEWWEEK.wav"
+    assert quick_bar[0] == "file:tick_on.wav"
+    assert quick_bar[1] == "file:tick_off.wav"
+    assert quick_bar[2] == "file:click_soft.wav"
 
 
 def test_state_codecs_register_interval_notifs_and_quick_bar():
@@ -382,8 +382,8 @@ def test_interval_quick_bar_pick_and_store():
     assert len(d._interval_quick_buttons) == 10
 
     # Pick
-    d._interval_quick_pick("file:NEWDAY.wav")
-    assert d.interval_in_sound.currentData() == "file:NEWDAY.wav"
+    d._interval_quick_pick("file:newday.wav")
+    assert d.interval_in_sound.currentData() == "file:newday.wav"
 
     # Store via right-click handler
     d.interval_in_sound.setCurrentIndex(d.interval_in_sound.findData("click"))
@@ -435,12 +435,12 @@ def test_interval_sound_selection_persistence_and_matching():
     dlg = TimerDialog(app, initial_tab=1)
     
     # Verify _find_sound_index matches all variations
-    assert _find_sound_index(dlg.interval_in_sound, "file:GENIE.wav") >= 0
-    assert _find_sound_index(dlg.interval_in_sound, "file:genie.wav") >= 0
-    assert _find_sound_index(dlg.interval_in_sound, "GENIE.wav") >= 0
-    assert _find_sound_index(dlg.interval_in_sound, "file:NEWDAY.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:success_levelup.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:success_levelup.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "success_levelup.wav") >= 0
     assert _find_sound_index(dlg.interval_in_sound, "file:newday.wav") >= 0
-    assert _find_sound_index(dlg.interval_in_sound, "file:alert_owl2.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:newday.wav") >= 0
+    assert _find_sound_index(dlg.interval_in_sound, "file:menu1.wav") >= 0
     
     # Reset restores the same 24h Chime preset as a fresh profile.
     dlg._interval_reset_defaults()
@@ -448,7 +448,7 @@ def test_interval_sound_selection_persistence_and_matching():
 
     item0 = dlg.interval_list.topLevelItem(0)
     dlg.interval_list.setCurrentItem(item0)
-    assert dlg.interval_in_sound.currentData() == "file:GENIE.wav"
+    assert dlg.interval_in_sound.currentData() == "file:success_levelup.wav"
     rule = app.data["interval_notifs"][0]
     assert rule["enabled"] is True
     assert rule["minutes"] == 60

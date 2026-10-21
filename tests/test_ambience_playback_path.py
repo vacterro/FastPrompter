@@ -1,8 +1,8 @@
 """Two defects that made ambience completely silent (T-1242, user-reported).
 
 1. ``AmbienceEngine._start_layer`` handed the hub the rule's library REF
-   ("computalk1.wav") as if it were a path.  The transport asked
-   ``os.path.isfile("computalk1.wav")``, got False, and refused the start --
+   ("newday.wav") as if it were a path.  The transport asked
+   ``os.path.isfile("newday.wav")``, got False, and refused the start --
    so every ambience layer died as FILE_MISSING.
 2. ``_infinite_loop_value`` returned ``QSoundEffect.Loop.Infinite`` as an
    ENUM MEMBER, and PyQt6's ``setLoopCount(int)`` rejects it with TypeError.
@@ -27,7 +27,7 @@ from fastprompter.core.audio_hub import (
 )
 
 
-def _rule(rule_id="amb", ref="computalk1.wav", **kw):
+def _rule(rule_id="amb", ref="newday.wav", **kw):
     return AmbienceRule(id=rule_id, name=rule_id, sound_ref=ref,
                         trigger=TRIGGER_ALWAYS, repeat=REPEAT_LOOP,
                         enabled=True, fade_in_ms=0, fade_out_ms=0, **kw)
@@ -46,9 +46,9 @@ class TestRefResolution:
         engine = AmbienceEngine(hub, resolver=resolver)
         engine.set_rules([_rule()])
         assert engine.evaluate() == ["amb"]
-        assert seen == ["computalk1.wav"]
+        assert seen == ["newday.wav"]
         started = list(transport.channels.values())
-        assert started and started[0]["path"] == "V:/library/computalk1.wav"
+        assert started and started[0]["path"] == "V:/library/newday.wav"
 
     def test_an_unresolvable_ref_stays_silent_instead_of_guessing(self):
         transport = FakeMultiChannelTransport()
@@ -91,7 +91,7 @@ class TestSoundManagerResolver:
         resolve = SoundManager.resolve_ref_path
         manager = SoundManager.__new__(SoundManager)
         manager._sounds_dir = os.path.join("src", "fastprompter", "sound")
-        resolved = resolve(manager, "computalk1.wav")
+        resolved = resolve(manager, "newday.wav")
         assert resolved and os.path.isfile(resolved)
 
     def test_an_unknown_name_resolves_to_nothing(self):

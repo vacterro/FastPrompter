@@ -1872,7 +1872,7 @@ class SoundManager(QObject):
     def get_available_sounds(self) -> list[str]:
         """Get list of available sound files, sorting favorites and defaults to top."""
         favs = set(self._data.get("sound_favorites", []))
-        defaults = ["newday.wav", "newweek.wav", "newmonth.wav"]
+        defaults = ["newday.wav", "tick_on.wav", "tick_off.wav"]
         # The default trio must lead regardless of the letter case a checkout
         # carries on disk (Windows case-insensitive checkouts can hold either
         # casing depending on checkout order; T-1012 case-renamed the tracked

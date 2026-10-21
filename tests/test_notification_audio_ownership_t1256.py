@@ -122,15 +122,15 @@ def test_ai_limit_low_changed_disabled_reset_and_test_keep_one_owner(
         _assert_one_toast(window, window._check_limit_notifications)
 
     rule = {"enabled": "True", "sound_enabled": "True",
-            "show_notification": "True", "sound": "file:QUEST.wav",
+            "show_notification": "True", "sound": "file:timer_tick_pack.wav",
             "volume": 0.4}
     fire("low", rule)
-    assert window.sound_manager.requests == [("domain", "file:QUEST.wav", 0.4)]
+    assert window.sound_manager.requests == [("domain", "file:timer_tick_pack.wav", 0.4)]
 
     window.sound_manager.requests.clear()
-    rule["sound"] = "file:NEWDAY.wav"
+    rule["sound"] = "file:newday.wav"
     fire("low", rule)
-    assert window.sound_manager.requests == [("domain", "file:NEWDAY.wav", 0.4)]
+    assert window.sound_manager.requests == [("domain", "file:newday.wav", 0.4)]
 
     window.sound_manager.requests.clear()
     rule["sound_enabled"] = "False"
@@ -151,25 +151,25 @@ def test_ai_limit_low_changed_disabled_reset_and_test_keep_one_owner(
     _assert_one_toast(
         window, lambda: LimitSettingsDialog._test_rule(dialog, key))
     assert window.sound_manager.requests == [
-        ("preview", "file:NEWDAY.wav", 0.4)]
+        ("preview", "file:newday.wav", 0.4)]
 
     # A missing WAV or transport refusal never licenses a generic fallback.
     window.sound_manager.requests.clear()
     window.sound_manager.result = False
     fire("low", rule)
-    assert window.sound_manager.requests == [("domain", "file:NEWDAY.wav", 0.4)]
+    assert window.sound_manager.requests == [("domain", "file:newday.wav", 0.4)]
     assert "ai_limit_audio domain=low" in caplog.text
     assert f"rule_key={key}" in caplog.text
-    assert "stored_ref='file:NEWDAY.wav'" in caplog.text
-    assert "resolved_ref='NEWDAY.wav'" in caplog.text
+    assert "stored_ref='file:newday.wav'" in caplog.text
+    assert "resolved_ref='newday.wav'" in caplog.text
     assert "playback_outcome=NOT_STARTED" in caplog.text
 
 
 def test_timer_productivity_interval_and_explicit_silence_stay_silent(window):
-    timer = Timer("alarm", datetime.datetime.now(), sound="file:QUEST.wav",
+    timer = Timer("alarm", datetime.datetime.now(), sound="file:timer_tick_pack.wav",
                   volume=0.6)
     _assert_one_toast(window, lambda: window._notify_timer(timer))
-    assert window.sound_manager.requests == [("domain", "file:QUEST.wav", 0.6)]
+    assert window.sound_manager.requests == [("domain", "file:timer_tick_pack.wav", 0.6)]
 
     window.sound_manager.requests.clear()
     silent_timer = Timer("silent", datetime.datetime.now(),
@@ -178,21 +178,21 @@ def test_timer_productivity_interval_and_explicit_silence_stay_silent(window):
     assert window.sound_manager.requests == []
 
     window.productivity_timer = SimpleNamespace(
-        sound_enabled=True, work_sound="file:QUEST.wav", volume=0.2,
+        sound_enabled=True, work_sound="file:timer_tick_pack.wav", volume=0.2,
         describe=lambda: "work done",
     )
     _assert_one_toast(window, lambda: window._notify_productivity(PHASE_WORK))
-    assert window.sound_manager.requests == [("domain", "file:QUEST.wav", 0.2)]
+    assert window.sound_manager.requests == [("domain", "file:timer_tick_pack.wav", 0.2)]
 
     window.sound_manager.requests.clear()
     window.productivity_timer.sound_enabled = False
     _assert_one_toast(window, lambda: window._notify_productivity(PHASE_WORK))
     assert window.sound_manager.requests == []
 
-    rule = {"name": "Hourly", "sound": "file:NEWDAY.wav", "volume": 0.5,
+    rule = {"name": "Hourly", "sound": "file:newday.wav", "volume": 0.5,
             "show_notification": True}
     _assert_one_toast(window, lambda: window._fire_interval_notif(rule))
-    assert window.sound_manager.requests == [("domain", "file:NEWDAY.wav", 0.5)]
+    assert window.sound_manager.requests == [("domain", "file:newday.wav", 0.5)]
 
 
 def test_generic_toast_needs_explicit_appearance_audio_opt_in(window):
@@ -211,7 +211,7 @@ def test_generic_opt_in_remap_master_mute_and_stop_all(window, tmp_path,
     monkeypatch.setattr("fastprompter.core.sound_library.managed_root",
                         lambda: str(tmp_path / "sound_library"))
     data = {"sound_ui": "True", "sound_events": {
-        "notification_show": {"file": "blip01.wav", "enabled": "True"},
+        "notification_show": {"file": "problip/blip01.wav", "enabled": "True"},
     }}
     manager = SoundManager(window, data)
     transport = FakeMultiChannelTransport()

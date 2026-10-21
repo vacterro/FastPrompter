@@ -47,8 +47,8 @@ def assets(tmp_path):
     user = tmp_path / "managed"
     builtin.mkdir()
     user.mkdir()
-    for name in ("tick_on.wav", "pickup_grenade_03.wav", "KILLFADE.wav",
-                 "fiveseven_clipout.wav", "ui_save.wav", "button1.wav",
+    for name in ("tick_on.wav", "notify.wav", "menu2.wav",
+                 "blip_b.wav", "ui_save.wav", "button1.wav",
                  "menu1.wav", "chime_bell_ding1.wav"):
         _wav(builtin, name)
     return str(builtin), str(user)
@@ -86,11 +86,11 @@ def _live_custom_profile(with_events=True):
         profile["sound_events"] = {
             "click": {"file": "tick_on.wav", "enabled": "True",
                       "volume": "", "gain_db": "-3.0", "mode": "single"},
-            "paste": {"file": "pickup_grenade_03.wav", "enabled": "True",
+            "paste": {"file": "notify.wav", "enabled": "True",
                       "volume": "", "gain_db": "-1.0", "mode": "single"},
-            "clear": {"file": "KILLFADE.wav", "enabled": "True",
+            "clear": {"file": "menu2.wav", "enabled": "True",
                       "volume": "", "gain_db": "-2.9", "mode": "single"},
-            "delete": {"file": "fiveseven_clipout.wav", "enabled": "True",
+            "delete": {"file": "blip_b.wav", "enabled": "True",
                        "volume": "", "gain_db": "0.0", "mode": "single"},
             "app_show": {"file": "menu1.wav", "enabled": "False",
                          "volume": "", "gain_db": "-4.0", "mode": "single"},
@@ -148,9 +148,9 @@ def test_a_safe_custom_preferences_survive_exactly():
     assert profile["sound_typewriter"] == "True"
     assert profile["saved_sidebar_size"] == "258"
     assert profile["sound_events"]["click"]["file"] == "tick_on.wav"
-    assert profile["sound_events"]["paste"]["file"] == "pickup_grenade_03.wav"
-    assert profile["sound_events"]["clear"]["file"] == "KILLFADE.wav"
-    assert profile["sound_events"]["delete"]["file"] == "fiveseven_clipout.wav"
+    assert profile["sound_events"]["paste"]["file"] == "notify.wav"
+    assert profile["sound_events"]["clear"]["file"] == "menu2.wav"
+    assert profile["sound_events"]["delete"]["file"] == "blip_b.wav"
     assert profile["saved_sound_mappings"]["click"] == "tick_on.wav"
     assert profile["limit_colors"] == {"reset_codex": "#4bc0ff"}
 
@@ -264,8 +264,8 @@ def test_j_managed_only_is_refused_never_substituted(tmp_path):
     user = tmp_path / "managed"
     builtin.mkdir()
     user.mkdir()
-    for name in ("tick_on.wav", "pickup_grenade_03.wav", "KILLFADE.wav",
-                 "fiveseven_clipout.wav", "ui_save.wav", "menu1.wav",
+    for name in ("tick_on.wav", "notify.wav", "menu2.wav",
+                 "blip_b.wav", "ui_save.wav", "menu1.wav",
                  "chime_bell_ding1.wav"):
         _wav(builtin, name)
     _wav(user, "custom_click.wav")
@@ -294,8 +294,8 @@ def test_j2_missing_reference_is_refused(tmp_path):
     user = tmp_path / "managed"
     builtin.mkdir()
     user.mkdir()
-    for name in ("tick_on.wav", "pickup_grenade_03.wav", "KILLFADE.wav",
-                 "fiveseven_clipout.wav", "ui_save.wav", "menu1.wav",
+    for name in ("tick_on.wav", "notify.wav", "menu2.wav",
+                 "blip_b.wav", "ui_save.wav", "menu1.wav",
                  "chime_bell_ding1.wav"):
         _wav(builtin, name)
     source = _live_custom_profile()
@@ -597,11 +597,13 @@ def _diverged_live_profile():
 
     live = _copy.deepcopy(DEFAULT_PROFILE)
     for rule in live["interval_notifs"]:
-        if rule.get("sound") == "file:NEWDAY.wav":
-            rule["sound"] = "file:newday.wav"   # case-only divergence
+        if rule.get("sound") == "file:newday.wav":
+            # A live value the canonical preset must override: the sanitizer
+            # keeps source-owned daypart rules on their shipped sound.
+            rule["sound"] = "file:menu2.wav"
             break
     else:                                       # pragma: no cover - guard
-        raise AssertionError("canonical preset lost its NEWDAY rule")
+        raise AssertionError("canonical preset lost its newday rule")
     live["sound_volume"] = "0.42"
     return live
 

@@ -287,10 +287,15 @@ def test_vol_spin_drives_timer_volume_end_to_end():
 
 def test_real_dialog_editors_offer_library_files_from_one_inventory():
     """The production TimerDialog must wire the behaviour editors to the
-    REAL main window, so direct WAV choices appear (not just named events)."""
+    REAL main window, so direct WAV choices appear (not just named events).
+
+    The shipped set is deliberately small: it holds only the redistributable
+    fallback voices. A personal library reaches the picker through the addon
+    folder, so the invariant is "a usable palette exists", not a fixed count.
+    """
     d = _dlg()
     inventory = d.main_win.sound_manager.get_available_sounds()
-    assert len(inventory) > 300
+    assert len(inventory) >= 40
 
     def file_refs(editor):
         return [ref for _disp, ref in editor._sound_choices
