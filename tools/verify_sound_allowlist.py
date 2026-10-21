@@ -31,10 +31,10 @@ from pathlib import Path
 SOUNDS_REL = Path("src/fastprompter/sound")
 MANIFEST_REL = Path("sounds-redistributable.manifest")
 AUDIO_SUFFIXES = {".wav", ".mp3", ".ogg", ".flac"}
-# Snapshots and evidence directories can carry their own copy of the sound
-# tree.  A repository-wide second copy is the exact way the removed packs came
-# back once already, so every audio file outside SOUNDS_REL is an error.
-SKIP_DIRS = {".git"}
+# Directories only consulted when the tree is not under Git control.  A git
+# checkout is enumerated by Git itself (see published_audio), which is exact:
+# ignored scratch trees are not coverage, but anything a push would publish is.
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "build", "dist"}
 
 
 def read_manifest(root: Path) -> list[str]:
@@ -61,19 +61,54 @@ def shipped_wavs(root: Path) -> list[str]:
     )
 
 
+def git_published_audio(root: Path) -> list[str] | None:
+    """Audio paths Git would publish: tracked plus untracked-but-not-ignored.
+
+    A checkout carries ignored debris -- release staging clones, worktrees,
+    scratch builds -- that never reaches the remote.  Reporting those as
+    leaks would train everyone to ignore the guard.  Git's own index and
+    ignore rules answer the real question: what would the next push carry?
+    Returns None when the tree is not a Git work tree, so the caller can fall
+    back to a plain filesystem walk.
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "--cached", "--others",
+             "--exclude-standard"],
+            capture_output=True, check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    found: list[str] = []
+    for raw in proc.stdout.decode("utf-8", "surrogateescape").split("\0"):
+        if not raw or Path(raw).suffix.lower() not in AUDIO_SUFFIXES:
+            continue
+        found.append(raw.replace("\\", "/"))
+    return sorted(found)
+
+
 def stray_audio(root: Path) -> list[str]:
-    """Audio files anywhere in the repo other than the vetted sound folder."""
-    sounds = root / SOUNDS_REL
+    """Audio files that would be published anywhere but the vetted folder."""
+    sounds_rel = SOUNDS_REL.as_posix()
+    published = git_published_audio(root)
+    if published is not None:
+        return sorted(
+            rel for rel in published
+            if not rel.startswith(sounds_rel + "/") and (root / rel).is_file()
+        )
     found: list[str] = []
     for path in root.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in AUDIO_SUFFIXES:
             continue
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+        rel = path.relative_to(root)
+        if any(part in SKIP_DIRS for part in rel.parts):
             continue
         try:
-            path.relative_to(sounds)
+            path.relative_to(root / SOUNDS_REL)
         except ValueError:
-            found.append(path.relative_to(root).as_posix())
+            found.append(rel.as_posix())
     return sorted(found)
 
 
