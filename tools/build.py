@@ -16,6 +16,12 @@ Determinism contract (0.8.68 release hardening):
 
 After a successful build, build/build_report.json records Python, Nuitka,
 PyQt6, UPX policy/version, platform, and the EXE identity for the receipt.
+
+The gate is two-sided. ``tools/verify_sound_allowlist.py`` runs before Nuitka
+and answers "what would a push publish?"; ``tools/audit_release_artifact.py``
+runs after and answers "what is actually inside this EXE?". A build whose
+payload cannot be read, or whose audio differs from the vetted source tree,
+exits non-zero and writes no passing report.
 """
 
 from __future__ import annotations
@@ -34,7 +40,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 DEFAULT_NUITKA_PIN = "4.2.1"
-REPORT_PATH = Path(__file__).resolve().parents[1] / "build" / "build_report.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPORT_PATH = PROJECT_ROOT / "build" / "build_report.json"
 
 
 def _version(package: str) -> str:
@@ -92,8 +99,43 @@ def _write_report(payload: dict) -> None:
     os.replace(tmp, REPORT_PATH)
 
 
+
+def _audit_artifact(exe: Path) -> bool:
+    """Run the artifact gate on the built EXE; False means the build is rejected."""
+    sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+    from audit_release_artifact import (
+        UnreadableArtifact,
+        audit_payload,
+        payload_from_exe,
+        sha256_file,
+    )
+
+    try:
+        report = audit_payload(payload_from_exe(exe), PROJECT_ROOT)
+    except UnreadableArtifact as exc:
+        print(f"\n[ERROR] artifact gate could not read the payload: {exc}")
+        return False
+    if not report["ok"]:
+        print(f"\n[ERROR] artifact gate rejected the build: {len(report['findings'])} finding(s)")
+        for finding in report["findings"][:20]:
+            detail = ", ".join(f"{k}={v}" for k, v in finding.items() if k != "kind")
+            print(f"  {finding['kind']}: {detail}")
+        return False
+    print(f"artifact gate PASS: {report['audio_entries']} audio entries match the source tree "
+          f"({sha256_file(exe)[:16]}...)")
+    return True
+
+
 def build_with_nuitka(upx_mode: str, pin: str, allow_any: bool) -> int:
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = PROJECT_ROOT
+    # A release must never carry a WAV the manifest does not name; this runs
+    # before Nuitka so a stray third-party file cannot reach the EXE.
+    tools_dir = str(project_root / "tools")
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    from verify_sound_allowlist import verify_sound_allowlist
+
+    verify_sound_allowlist(project_root)
     nuitka_version = _require_nuitka(pin, allow_any)
     env_upx = os.environ.get("FASTPROMPTER_UPX", "").strip().lower()
     if env_upx and upx_mode == "off":
@@ -130,6 +172,12 @@ def build_with_nuitka(upx_mode: str, pin: str, allow_any: bool) -> int:
         }
         print(f"\n[SUCCESS] Build complete: FastPrompter.exe "
               f"({exe_info['size'] / 1048576:.1f} MB, sha256 {exe_info['sha256'][:16]}...)")
+        # The allowlist above answered a source question. This answers the
+        # artifact question: read the payload back out and require every audio
+        # entry to be byte-identical to the vetted source tree. A build that
+        # cannot be inspected is a failure, not a pass.
+        if not _audit_artifact(exe):
+            return 1
 
     report = {
         "schema_version": 1,
