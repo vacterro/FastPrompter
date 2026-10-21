@@ -18,10 +18,6 @@ One global hotkey brings the same workspace back from anywhere. Your text and pr
 
 Guides: [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) · [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md)
 
-<img src="docs/images/readme/01-main-workspace.png" alt="FastPrompter main workspace with editor, project list and file tools">
-
-<sub>Main workspace: project list, scratchpad editor, toolbar actions, inline image pills and file tools in one window.</sub>
-
 </div>
 
 ---
@@ -52,7 +48,7 @@ Typical uses:
 - **Auto-save** — changed text is saved automatically; there is no save button you have to remember.
 - **Markdown-aware editor** — headings, checkboxes, code fences, line numbers, folding, live preview and inline image/file interactions.
 - **Per-silo files** — drag files into a normal folder-backed container and open them outside FastPrompter whenever you want.
-- **AI usage limits** — optional multi-account quota views for configured Codex, Claude, Antigravity, ZCode and Freebuff sources, including reset-time visibility and per-window notifications where available.
+- **Optional AI usage indicators** — informational status and notification settings for locally configured providers, subject to data availability.
 - **Timers** — alarms, periodic notifications, one-off countdowns, productivity cycles and calendar events.
 - **Sound system** — per-event sounds, presets, playback rules, voice countdowns, ambience and per-event gain control.
 - **33 interface languages** — live UI language selection with flag indicators.
@@ -61,65 +57,42 @@ Typical uses:
 
 ## Screenshots
 
-The screenshots below are grouped by workflow instead of being a random wall of windows. The main README keeps the useful views visible and pushes the deep configuration screens into collapsible sections.
+The screenshots below focus on general interface settings and self-contained feature examples. Workspace content is described in the guide without exposing personal working notes.
 
-### Workspace, files and navigation
 
-<table>
-<tr>
-<td width="50%" valign="top">
-<img src="docs/images/readme/11-file-container-preview.png" alt="Per-silo file container with image preview">
-<br><sub><strong>File container.</strong> Folder-backed files, image preview, copy/open actions and the editor beside it.</sub>
-</td>
-<td width="50%" valign="top">
-<img src="docs/images/readme/12-silo-folder-grid.png" alt="Silo folder grid beside the FastPrompter editor">
-<br><sub><strong>Silo Folder view.</strong> A visual file grid attached to the current silo without hiding the editor or project list.</sub>
-</td>
-</tr>
-</table>
 
-### AI usage limits
+### AI usage display settings
+
+Optional usage monitoring is configurable per available provider source. The examples below show display preferences and notification controls, not provider account credentials or a workflow for modifying usage limits.
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/images/readme/02-ai-usage-overlay.png" alt="AI usage limits overlay with several providers and accounts">
-<br><sub><strong>Quick quota overlay.</strong> Multiple accounts and providers, remaining percentages and reset timing in one glance.</sub>
+<img src="docs/images/readme/18-ai-limits-bars.png" alt="AI usage indicator settings">
+<br><sub>Usage indicator appearance and available status data.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="docs/images/readme/03-ai-reset-queue.png" alt="Next AI usage reset queue">
-<br><sub><strong>Reset queue.</strong> Soonest upcoming automatic quota resets across configured accounts.</sub>
+<img src="docs/images/readme/19-ai-limits-accounts.png" alt="AI usage indicator presentation preferences">
+<br><sub>Local indicator labels, visibility and display order.</sub>
 </td>
 </tr>
 </table>
 
 <details>
-<summary><strong>AI limits: full settings gallery</strong></summary>
+<summary><strong>Notifications and appearance</strong></summary>
 <br>
-
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/images/readme/18-ai-limits-bars.png" alt="AI Limit Settings with quota bars">
-<br><sub>Quota bars and reset countdowns.</sub>
+<img src="docs/images/readme/20-ai-limits-notifications.png" alt="AI usage notifications settings">
+<br><sub>Optional informational alerts and thresholds.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="docs/images/readme/19-ai-limits-accounts.png" alt="AI Limit Settings account selection">
-<br><sub>Account naming, visibility and header ordering.</sub>
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<img src="docs/images/readme/20-ai-limits-notifications.png" alt="AI Limit Settings notifications">
-<br><sub>Per-window alerts, sounds, thresholds and reset notifications.</sub>
-</td>
-<td width="50%" valign="top">
-<img src="docs/images/readme/21-ai-limits-colours.png" alt="AI Limit Settings colour configuration">
-<br><sub>Theme-aware colours for quota states and provider reset timers.</sub>
+<img src="docs/images/readme/21-ai-limits-colours.png" alt="AI usage indicator colours">
+<br><sub>Colour preferences for status indicators.</sub>
 </td>
 </tr>
 </table>
-
 </details>
 
 ### Timers and reminders
@@ -127,22 +100,18 @@ The screenshots below are grouped by workflow instead of being a random wall of 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/images/readme/13-timers-alarms.png" alt="FastPrompter alarms tab">
-<br><sub><strong>Alarms.</strong> Named schedules with sounds, top-bar notifications and quick relative-time helpers.</sub>
+<img src="docs/images/readme/14-timers-interval-notifications.png" alt="Interval notifications settings">
+<br><sub><strong>Interval notifications.</strong> Clock-boundary and periodic reminders with quick presets.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="docs/images/readme/14-timers-interval-notifications.png" alt="FastPrompter interval notifications">
-<br><sub><strong>Interval notifications.</strong> Clock-boundary and periodic reminders with quick presets.</sub>
+<img src="docs/images/readme/15-timers-temp.png" alt="FastPrompter temporary timer">
+<br><sub><strong>Temporary timer.</strong> A disposable countdown for one-off tasks.</sub>
 </td>
 </tr>
 <tr>
-<td width="50%" valign="top">
-<img src="docs/images/readme/15-timers-temp.png" alt="FastPrompter temporary timer">
-<br><sub><strong>Temporary timer.</strong> A disposable countdown for the thing you only need once.</sub>
-</td>
-<td width="50%" valign="top">
+<td colspan="2" valign="top">
 <img src="docs/images/readme/16-timers-productivity.png" alt="FastPrompter productivity timer">
-<br><sub><strong>Productivity timer.</strong> Work/break cycles with phase sounds and quick controls.</sub>
+<br><sub><strong>Productivity timer.</strong> Work/break cycles with quick controls.</sub>
 </td>
 </tr>
 </table>
@@ -159,81 +128,27 @@ The screenshots below are grouped by workflow instead of being a random wall of 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/images/readme/05-settings-window.png" alt="Window and layout settings">
-<br><sub><strong>Window.</strong> Layout, presets, toolbar visibility, silo appearance and cursor integration.</sub>
-</td>
-<td width="50%" valign="top">
-<img src="docs/images/readme/06-settings-editor.png" alt="Editor settings">
-<br><sub><strong>Editor.</strong> Live preview, line appearance, wrapping, code blocks, pasted-image mode and typing behavior.</sub>
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
 <img src="docs/images/readme/07-settings-clock.png" alt="Clock and passed-event settings">
-<br><sub><strong>Clock.</strong> Date/clock presentation plus passed-event indicators and AI-limit gauges.</sub>
+<br><sub><strong>Clock.</strong> Date/clock presentation and passed-event indicators.</sub>
 </td>
 <td width="50%" valign="top">
-<img src="docs/images/readme/08-settings-data-backup.png" alt="Data, backup and sync-project settings">
-<br><sub><strong>Data.</strong> Silo-list behavior, local backup, file folders and one-way project sync.</sub>
+<img src="docs/images/readme/08-settings-data-backup.png" alt="Local data and backup preferences">
+<br><sub><strong>Data.</strong> Local backup and data management preferences.</sub>
 </td>
 </tr>
 </table>
 
 <details>
-<summary><strong>More settings: localization, Problip and shortcut help</strong></summary>
+<summary><strong>Keyboard shortcut reference</strong></summary>
 <br>
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<img src="docs/images/readme/04-settings-localization-estonian.png" alt="FastPrompter settings translated to Estonian">
-<br><sub>Live localization example: the settings UI in Estonian.</sub>
-</td>
-<td width="50%" valign="top">
-<img src="docs/images/readme/09-settings-problip.png" alt="Problip settings">
-<br><sub>Problip: optional randomized short cues with interval, sound-pool and playback controls.</sub>
-</td>
-</tr>
-</table>
-
 <img src="docs/images/readme/10-help-shortcuts.png" alt="FastPrompter keyboard shortcut help">
 <br><sub>Built-in shortcut reference for global and in-app actions.</sub>
-
 </details>
 
 ### Sound system
 
-<img src="docs/images/readme/22-sound-events.png" alt="FastPrompter per-event sound settings">
-<br><sub><strong>Per-event routing.</strong> Choose sounds, enable/disable events, tune gain and normalize individual actions.</sub>
-
-<details>
-<summary><strong>Sound presets, playback, voice countdown and ambience</strong></summary>
-<br>
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<img src="docs/images/readme/23-sound-presets.png" alt="Sound presets and managed sound library">
-<br><sub>Presets and managed sound library.</sub>
-</td>
-<td width="50%" valign="top">
 <img src="docs/images/readme/24-sound-playback.png" alt="Sound playback engine settings">
-<br><sub>Playback policy, mixer state and emergency stop.</sub>
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<img src="docs/images/readme/25-sound-voice.png" alt="Voice countdown settings">
-<br><sub>Voice countdown sources, thresholds and playback behavior.</sub>
-</td>
-<td width="50%" valign="top">
-<img src="docs/images/readme/26-sound-ambience.png" alt="Ambience sound rules">
-<br><sub>Ambience rules with trigger, looping, fade and optional weather condition.</sub>
-</td>
-</tr>
-</table>
-
-</details>
+<br><sub>Sound playback policy, mixer state and emergency stop controls.</sub>
 
 ## Quick start
 
@@ -308,36 +223,19 @@ the headings below it stay plain section markers. Both halves are settings:
   line the current template already matches, so a heading you wrote by hand is
   never touched, and once the stamp is current the note stops being rewritten.
 
-## AI usage limits
+## Optional AI usage information
 
-AI Limits is an optional monitoring surface. When a provider source is configured and available, FastPrompter can display quota windows, account labels, remaining percentages and reset timing without turning those values into the editor's own state.
+FastPrompter can display usage information supplied by locally configured provider integrations, including available quota status and reset timing. These informational views do not change provider-side quotas. If data is unavailable or stale, the interface should show that state rather than invent a reading.
 
-Current source adapters cover combinations of Codex, Claude, Antigravity, ZCode and Freebuff depending on what is installed, authenticated and exposed by each provider.
+The optional source adapters cover Codex, Claude, Antigravity, ZCode and Freebuff where the corresponding local integration is installed and authenticated.
 
-The UI includes:
+The interface offers configurable indicators, labels, display order, colours and notifications. These are presentation features; the original provider remains responsible for access controls and usage enforcement.
 
-- a compact top-bar summary;
-- a detailed hover overlay;
-- account filtering and ordering;
-- quota bars;
-- reset-time queue;
-- per-window threshold/reset notifications;
-- provider-aware colors.
+### Optional SAI Accounts integration
 
-Provider values are treated as observed data, not estimates. If a provider cannot be queried, FastPrompter should report that state instead of inventing a number.
+When the local [SAI Accounts](https://github.com/vacterro/saituls) integration is installed, FastPrompter can use account information explicitly shared by that local control plane. The integration is not required: FastPrompter remains usable with its own local configuration. Distinct accounts remain separate, and unavailable sources are not silently substituted.
 
-### SAI Accounts is optional
-
-If the [SAI Accounts](https://github.com/vacterro/saituls) control plane happens to be installed on this machine, FastPrompter picks up the accounts it shares — automatically, with no setting and no import step. If it is absent, stopped, broken or uninstalled, FastPrompter discovers and reads every account exactly as it did before, and nothing about your setup changes. **Install nothing else to use this program**; that is the standalone path and it is the default.
-
-The rules the integration follows, so you can predict what it will do:
-
-- **Your accounts stay yours.** Accounts FastPrompter discovers on its own are never published to the shared registry. Only an explicit action you take moves one there.
-- **Two accounts merge into one card only when they are provably the same identity** — the same provider and the same config directory. Two accounts that merely share a display name stay two accounts.
-- **A shared account whose control plane stops answering is marked unavailable**, with the reason shown. It is never quietly re-read through a different account's config, which would put the wrong numbers under the right name.
-- **A local setting stays local.** Hiding an account or reordering the meters here changes nothing for any other application.
-
-Contract and tests: `src/fastprompter/core/usage_limits/sai_accounts.py` and `tests/test_usage_limits_sai_accounts.py`.
+Implementation and regression contracts: `src/fastprompter/core/usage_limits/sai_accounts.py` and `tests/test_usage_limits_sai_accounts.py`.
 
 ## Timers, reminders and sound
 
