@@ -259,9 +259,9 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 **How it works:** Each rule defines a sound, volume, interval (in minutes), and optional active hours (start/end minute of day). Rules fire when the clock reaches the aligned minute (clock mode) or after the interval elapses (elapsed mode). Only the highest-priority rule fires per tick when multiple collide.
 
 **Default presets:**
-- Morning (07:00–11:00) — every 60 min, NEWDAY.wav
-- Noon (12:00) — every 60 min, GENIE.wav
-- Day & Evening (13:00–21:00) — every 60 min, NEWDAY.wav
+- Morning (07:00–11:00) — every 60 min, newday.wav
+- Noon (12:00) — every 60 min, success_levelup.wav
+- Day & Evening (13:00–21:00) — every 60 min, newday.wav
 - Night (22:00–06:00) — every 60 min, alert_owl2.wav
 
 **Sound Quick Bar:** 10 favorite sound slots shown as buttons below the sound picker. Click to select and preview; right-click to store the current sound into that slot.

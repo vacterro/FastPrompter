@@ -3516,7 +3516,7 @@ class FastPrompter(
                  else tr("Break over", lang))
         timer = getattr(self, "productivity_timer", None)
         if timer and getattr(timer, "sound_enabled", True):
-            sound_ref = getattr(timer, "work_sound", "file:QUEST.wav") if phase == PHASE_WORK else getattr(timer, "break_sound", "file:NEWDAY.wav")
+            sound_ref = getattr(timer, "work_sound", "file:timer_tick_pack.wav") if phase == PHASE_WORK else getattr(timer, "break_sound", "file:newday.wav")
             vol = getattr(timer, "volume", 0.05)
             try:
                 if hasattr(self, "sound_manager") and self.sound_manager:

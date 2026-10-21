@@ -47,8 +47,8 @@ def assets(tmp_path):
     user = tmp_path / "managed"
     builtin.mkdir()
     user.mkdir()
-    for name in ("tick_on.wav", "pickup_grenade_03.wav", "KILLFADE.wav",
-                 "fiveseven_clipout.wav", "ui_save.wav", "button1.wav",
+    for name in ("tick_on.wav", "click_double.wav", "ui_clear.wav",
+                 "ui_delete.wav", "ui_save.wav", "button1.wav",
                  "menu1.wav", "chime_bell_ding1.wav"):
         _wav(builtin, name)
     return str(builtin), str(user)
@@ -86,11 +86,11 @@ def _live_custom_profile(with_events=True):
         profile["sound_events"] = {
             "click": {"file": "tick_on.wav", "enabled": "True",
                       "volume": "", "gain_db": "-3.0", "mode": "single"},
-            "paste": {"file": "pickup_grenade_03.wav", "enabled": "True",
+            "paste": {"file": "click_double.wav", "enabled": "True",
                       "volume": "", "gain_db": "-1.0", "mode": "single"},
-            "clear": {"file": "KILLFADE.wav", "enabled": "True",
+            "clear": {"file": "ui_clear.wav", "enabled": "True",
                       "volume": "", "gain_db": "-2.9", "mode": "single"},
-            "delete": {"file": "fiveseven_clipout.wav", "enabled": "True",
+            "delete": {"file": "ui_delete.wav", "enabled": "True",
                        "volume": "", "gain_db": "0.0", "mode": "single"},
             "app_show": {"file": "menu1.wav", "enabled": "False",
                          "volume": "", "gain_db": "-4.0", "mode": "single"},
@@ -148,9 +148,9 @@ def test_a_safe_custom_preferences_survive_exactly():
     assert profile["sound_typewriter"] == "True"
     assert profile["saved_sidebar_size"] == "258"
     assert profile["sound_events"]["click"]["file"] == "tick_on.wav"
-    assert profile["sound_events"]["paste"]["file"] == "pickup_grenade_03.wav"
-    assert profile["sound_events"]["clear"]["file"] == "KILLFADE.wav"
-    assert profile["sound_events"]["delete"]["file"] == "fiveseven_clipout.wav"
+    assert profile["sound_events"]["paste"]["file"] == "click_double.wav"
+    assert profile["sound_events"]["clear"]["file"] == "ui_clear.wav"
+    assert profile["sound_events"]["delete"]["file"] == "ui_delete.wav"
     assert profile["saved_sound_mappings"]["click"] == "tick_on.wav"
     assert profile["limit_colors"] == {"reset_codex": "#4bc0ff"}
 
@@ -264,8 +264,8 @@ def test_j_managed_only_is_refused_never_substituted(tmp_path):
     user = tmp_path / "managed"
     builtin.mkdir()
     user.mkdir()
-    for name in ("tick_on.wav", "pickup_grenade_03.wav", "KILLFADE.wav",
-                 "fiveseven_clipout.wav", "ui_save.wav", "menu1.wav",
+    for name in ("tick_on.wav", "click_double.wav", "ui_clear.wav",
+                 "ui_delete.wav", "ui_save.wav", "menu1.wav",
                  "chime_bell_ding1.wav"):
         _wav(builtin, name)
     _wav(user, "custom_click.wav")
@@ -294,8 +294,8 @@ def test_j2_missing_reference_is_refused(tmp_path):
     user = tmp_path / "managed"
     builtin.mkdir()
     user.mkdir()
-    for name in ("tick_on.wav", "pickup_grenade_03.wav", "KILLFADE.wav",
-                 "fiveseven_clipout.wav", "ui_save.wav", "menu1.wav",
+    for name in ("tick_on.wav", "click_double.wav", "ui_clear.wav",
+                 "ui_delete.wav", "ui_save.wav", "menu1.wav",
                  "chime_bell_ding1.wav"):
         _wav(builtin, name)
     source = _live_custom_profile()

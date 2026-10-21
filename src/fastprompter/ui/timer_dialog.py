@@ -113,7 +113,7 @@ def _set_combo_sound(combo: QComboBox, ref, lang="EN") -> None:
     without re-picking preserves exactly what was stored, and replacement
     persists the new ref verbatim (T-1251: a stored sound reference keeps its
     EXACT token). When the ref resolves only through the stem-insensitive
-    match -- e.g. "file:NEWDAY.wav" against a checkout holding "newday.wav" --
+    match -- e.g. "file:newday.wav" against a checkout holding "newday.wav" --
     the matched item's userData is REWRITTEN to the original token, so a
     save-back can never silently re-case a stored reference.
     """
@@ -276,10 +276,10 @@ class _TimerBehaviorEditor(QWidget):
         if isinstance(saved, list) and len(saved) == 10:
             return list(saved)
         return [
-            "file:NEWDAY.wav", "file:NEWMONTH.wav", "file:NEWWEEK.wav",
-            "file:NOMAD.wav", "file:OBELISK.wav", "file:PARALYZE.wav",
-            "file:PICKUP01.wav", "file:PICKUP03.wav", "file:QUEST.wav",
-            "file:ROGUE.wav",
+            "file:newday.wav", "file:tick_on.wav", "file:tick_off.wav",
+            "file:menu1.wav", "file:chime_bell_ding1.wav", "file:panel_open.wav",
+            "file:pop.wav", "file:click_soft.wav", "file:timer_tick_pack.wav",
+            "file:blip_b.wav",
         ]
 
     def _save_quick_bar_slots(self, slots):
@@ -1303,9 +1303,9 @@ class TimerDialog(QDialog):
         self.spin_pomo_vol.setValue(getattr(t, "volume", 0.05))
 
         _set_combo_sound(self.cb_pomo_work_sound,
-                         getattr(t, "work_sound", "file:QUEST.wav"))
+                         getattr(t, "work_sound", "file:timer_tick_pack.wav"))
         _set_combo_sound(self.cb_pomo_break_sound,
-                         getattr(t, "break_sound", "file:NEWDAY.wav"))
+                         getattr(t, "break_sound", "file:newday.wav"))
 
         for w in widgets:
             w.blockSignals(False)
@@ -1338,8 +1338,8 @@ class TimerDialog(QDialog):
         t = self._pomo()
         t.sound_enabled = self.cb_pomo_sound_en.isChecked()
         t.volume = self.spin_pomo_vol.value()
-        t.work_sound = self.cb_pomo_work_sound.currentData() or "file:QUEST.wav"
-        t.break_sound = self.cb_pomo_break_sound.currentData() or "file:NEWDAY.wav"
+        t.work_sound = self.cb_pomo_work_sound.currentData() or "file:timer_tick_pack.wav"
+        t.break_sound = self.cb_pomo_break_sound.currentData() or "file:newday.wav"
         # turning the sound off must silence a still-ringing alarm (CORE-001)
         if not t.sound_enabled and t.alarm_pending:
             t.acknowledge()
@@ -2549,10 +2549,10 @@ class TimerDialog(QDialog):
         if isinstance(saved, list) and len(saved) == 10:
             return list(saved)
         return [
-            "file:NEWDAY.wav", "file:NEWMONTH.wav", "file:NEWWEEK.wav",
-            "file:NOMAD.wav", "file:OBELISK.wav", "file:PARALYZE.wav",
-            "file:PICKUP01.wav", "file:PICKUP03.wav", "file:QUEST.wav",
-            "file:ROGUE.wav",
+            "file:newday.wav", "file:tick_on.wav", "file:tick_off.wav",
+            "file:menu1.wav", "file:chime_bell_ding1.wav", "file:panel_open.wav",
+            "file:pop.wav", "file:click_soft.wav", "file:timer_tick_pack.wav",
+            "file:blip_b.wav",
         ]
 
     def _save_quick_bar_slots(self, slots):
@@ -2774,7 +2774,7 @@ class TimerDialog(QDialog):
                 "name": tr("Workday (09:00 - 18:00)", self.lang),
                 "minutes": 60,
                 "enabled": True,
-                "sound": "file:NEWDAY.wav",
+                "sound": "file:newday.wav",
                 "volume": 0.05,
                 "show_notification": True,
                 "show_in_top_bar": False,
@@ -2789,7 +2789,7 @@ class TimerDialog(QDialog):
                 "name": tr("Hourly Bell (24/7)", self.lang),
                 "minutes": 60,
                 "enabled": True,
-                "sound": "file:NEWDAY.wav",
+                "sound": "file:newday.wav",
                 "volume": 0.05,
                 "show_notification": True,
                 "show_in_top_bar": False,
@@ -2804,7 +2804,7 @@ class TimerDialog(QDialog):
                 "name": tr("Pomodoro Focus (25m)", self.lang),
                 "minutes": 25,
                 "enabled": True,
-                "sound": "file:QUEST.wav",
+                "sound": "file:timer_tick_pack.wav",
                 "volume": 0.05,
                 "show_notification": True,
                 "show_in_top_bar": True,
@@ -2819,7 +2819,7 @@ class TimerDialog(QDialog):
                 "name": tr("Night Owl (22:00 - 06:00)", self.lang),
                 "minutes": 60,
                 "enabled": True,
-                "sound": "file:alert_owl2.wav",
+                "sound": "file:menu1.wav",
                 "volume": 0.05,
                 "show_notification": True,
                 "show_in_top_bar": False,

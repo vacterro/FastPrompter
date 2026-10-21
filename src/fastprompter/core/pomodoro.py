@@ -21,8 +21,8 @@ STATE_PAUSED = "paused"
 
 DEFAULT_WORK_SECONDS = 45 * 60 + 30      # my_timer2's defaults
 DEFAULT_BREAK_SECONDS = 15 * 60 + 30
-DEFAULT_WORK_SOUND = "file:QUEST.wav"
-DEFAULT_BREAK_SOUND = "file:NEWDAY.wav"
+DEFAULT_WORK_SOUND = "file:timer_tick_pack.wav"
+DEFAULT_BREAK_SOUND = "file:newday.wav"
 DEFAULT_VOLUME = 0.05
 
 

@@ -136,3 +136,67 @@ class TestProprietaryAssetSafety:
         bound = [event for event, entry in (preset.get("events") or {}).items()
                  if (entry or {}).get("file")]
         assert bound == [], "the Minecraft preset must bind no bundled file"
+
+
+# ---------------------------------------------------------------------------
+# T-1238-E1.4b -- the whole-repository allowlist guard
+# ---------------------------------------------------------------------------
+
+class TestRepositoryAudioAllowlist:
+    """The build must refuse to package any WAV the manifest does not name.
+
+    Two separate leaks made this necessary: the shipped folder drifted away
+    from the manifest, and a snapshot copy of the whole sound tree under
+    ``.saipen/extensions/subs/saiui/kitchen/pen/`` re-published 414 removed
+    game WAVs to GitHub after they had been deleted from ``src``.
+    """
+
+    def _guard(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        from verify_sound_allowlist import verify_sound_allowlist
+
+        return verify_sound_allowlist
+
+    def test_the_checkout_passes_the_guard(self):
+        assert self._guard()(ROOT) == 0
+
+    def test_an_unlisted_wav_in_the_sound_folder_fails(self, tmp_path):
+        import shutil
+
+        root = tmp_path / "repo"
+        shutil.copytree(ROOT / "src" / "fastprompter" / "sound",
+                        root / "src" / "fastprompter" / "sound")
+        shutil.copy2(ROOT / "sounds-redistributable.manifest",
+                     root / "sounds-redistributable.manifest")
+        (root / "src" / "fastprompter" / "sound" / "smuggled.wav").write_bytes(
+            b"RIFF0000WAVEfmt ")
+        with pytest.raises(SystemExit) as excinfo:
+            self._guard()(root)
+        assert "smuggled.wav" in str(excinfo.value)
+
+    def test_audio_outside_the_sound_folder_fails(self, tmp_path):
+        import shutil
+
+        root = tmp_path / "repo"
+        shutil.copytree(ROOT / "src" / "fastprompter" / "sound",
+                        root / "src" / "fastprompter" / "sound")
+        shutil.copy2(ROOT / "sounds-redistributable.manifest",
+                     root / "sounds-redistributable.manifest")
+        snapshot = root / ".saipen" / "kitchen" / "pen" / "src" / "sound"
+        snapshot.mkdir(parents=True)
+        (snapshot / "genie.wav").write_bytes(b"RIFF0000WAVEfmt ")
+        with pytest.raises(SystemExit) as excinfo:
+            self._guard()(root)
+        assert "genie.wav" in str(excinfo.value)
+
+    def test_the_repository_carries_no_audio_outside_the_sound_folder(self):
+        found = [
+            path.relative_to(ROOT).as_posix()
+            for path in ROOT.rglob("*")
+            if path.is_file()
+            and path.suffix.lower() in {".wav", ".mp3", ".ogg", ".flac"}
+            and ".git" not in path.relative_to(ROOT).parts
+            and not path.relative_to(ROOT).as_posix().startswith(
+                "src/fastprompter/sound/")
+        ]
+        assert found == [], f"stray audio in the repository: {found}"

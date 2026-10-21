@@ -34,7 +34,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 DEFAULT_NUITKA_PIN = "4.2.1"
-REPORT_PATH = Path(__file__).resolve().parents[1] / "build" / "build_report.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+REPORT_PATH = PROJECT_ROOT / "build" / "build_report.json"
 
 
 def _version(package: str) -> str:
@@ -93,7 +94,15 @@ def _write_report(payload: dict) -> None:
 
 
 def build_with_nuitka(upx_mode: str, pin: str, allow_any: bool) -> int:
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = PROJECT_ROOT
+    # A release must never carry a WAV the manifest does not name; this runs
+    # before Nuitka so a stray third-party file cannot reach the EXE.
+    tools_dir = str(project_root / "tools")
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    from verify_sound_allowlist import verify_sound_allowlist
+
+    verify_sound_allowlist(project_root)
     nuitka_version = _require_nuitka(pin, allow_any)
     env_upx = os.environ.get("FASTPROMPTER_UPX", "").strip().lower()
     if env_upx and upx_mode == "off":

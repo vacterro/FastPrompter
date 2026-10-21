@@ -38,7 +38,7 @@ def test_extract_defaults_excludes_all_denylist_keys():
         "ui_scale": "0.60",
         "sound_ui": "True",
         "sound_volume": "0.25",
-        "sound_quick_bar": ["file:QUEST.wav", "file:NEWDAY.wav"],
+        "sound_quick_bar": ["file:timer_tick_pack.wav", "file:newday.wav"],
         "window_presets": [{"name": "Preset 1", "w": 0.5}],
         "interval_notifs": [{"id": "morning", "minutes": 60}],
         "productivity_timer": {"work_seconds": 1500, "break_seconds": 300},
@@ -73,7 +73,7 @@ def test_extract_defaults_excludes_all_denylist_keys():
     assert result["ui_scale"] == "0.60"
     assert result["sound_ui"] == "True"
     assert result["sound_volume"] == "0.25"
-    assert result["sound_quick_bar"] == ["file:QUEST.wav", "file:NEWDAY.wav"]
+    assert result["sound_quick_bar"] == ["file:timer_tick_pack.wav", "file:newday.wav"]
     assert len(result["window_presets"]) == 1
     assert len(result["interval_notifs"]) == 1
     assert result["productivity_timer"]["work_seconds"] == 1500

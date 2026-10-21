@@ -159,12 +159,12 @@ class TestSoundDiscovery:
         sm = SoundManager(_MockQObject(), {})
         sounds = sm.get_available_sounds()
         # get_available_sounds ALWAYS fronts the built-in default trio
-        # (newday/newweek/newmonth, matched against whatever casing the
+        # (newday/tick_on/tick_off, matched against whatever casing the
         # checkout carries), then the rest alphabetically; with empty settings
         # there are no favorites. Clone-location independent: pass in any
         # clean worktree regardless of on-disk letter case.
         assert all(s.lower().endswith(".wav") for s in sounds)
-        defaults = ["newday.wav", "newweek.wav", "newmonth.wav"]
+        defaults = ["newday.wav", "tick_on.wav", "tick_off.wav"]
         by_lower = {s.lower(): s for s in sounds}
         front = [by_lower[d] for d in defaults if d in by_lower]
         assert sounds[: len(front)] == front, (

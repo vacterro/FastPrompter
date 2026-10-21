@@ -347,10 +347,10 @@ _STRUCTURED_CODECS = {
     # basename; legacy_ast so already-written single-quoted rows recover.
     "trash_consumed": (dict, {}, True),
     "sound_quick_bar": (list, [
-        'file:NEWDAY.wav', 'file:NEWMONTH.wav', 'file:NEWWEEK.wav',
-        'file:NOMAD.wav', 'file:OBELISK.wav', 'file:PARALYZE.wav',
-        'file:PICKUP01.wav', 'file:PICKUP03.wav', 'file:QUEST.wav',
-        'file:ROGUE.wav'
+        'file:newday.wav', 'file:tick_on.wav', 'file:tick_off.wav',
+        'file:menu1.wav', 'file:chime_bell_ding1.wav', 'file:panel_open.wav',
+        'file:pop.wav', 'file:click_soft.wav', 'file:timer_tick_pack.wav',
+        'file:blip_b.wav'
     ], True),
     # Use the baked rule list for malformed/missing structured settings too;
     # a stale parallel four-rule codec used to disagree with fresh installs.
