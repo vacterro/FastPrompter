@@ -23,7 +23,14 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --group dev
+        # The `build` extra is not optional here.  tools/audit_release_artifact.py
+        # reads the Nuitka onefile payload through `zstandard`, and that package
+        # lives only in the build extra.  With `--group dev` alone the artifact
+        # gate raises UnreadableArtifact instead of running -- fail-closed, so a
+        # bad artifact can never slip through, but the gate is dead in CI and a
+        # broken one is indistinguishable from a broken build.  Installing the
+        # extra makes the gate actually execute below.
+        run: uv sync --group dev --extra build
 
       - name: Compile
         # catches import-time syntax errors before the long test run
@@ -37,6 +44,11 @@ jobs:
         # try/except noise); Medium+ has a scoped # nosec per finding with a
         # reason, so a new real finding turns this red.
         run: uv run bandit -q -r src/fastprompter -ll
+
+      - name: Sound allowlist (source preflight)
+        # What would a push publish?  Fails when the shipped folder and
+        # sounds-redistributable.manifest disagree in either direction.
+        run: uv run python tools/verify_sound_allowlist.py
 
       - name: Test
         run: uv run pytest tests/ tests_smoke/ -q
