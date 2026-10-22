@@ -292,12 +292,45 @@ def apply_elapsed_resets(windows, now: float) -> list:
     return out
 
 
+def _window_rank(window: UsageWindow):
+    """Reading order inside one pool: shortest first, unknown duration last."""
+    duration = _duration_minutes(window)
+    return (duration is None, duration if duration is not None else 0)
+
+
+def order_windows(windows) -> list:
+    """Shortest window above the longest, pools kept whole and in provider order.
+
+    Eliminates the weekly-above-5h reading order (T-1439): the plane and most
+    providers send weekly first, so without this pass the window that refills
+    today sits under the one that refills in a week, and the gate's own victim
+    is read last. Sorting is per ``group`` and stable, so a pool's heading can
+    never separate from its bars and the provider's pool order survives.
+    Reordering is cosmetic, so a list carrying anything that is not a
+    ``UsageWindow`` is returned untouched — its positions are not ours to
+    guess at.
+    """
+    if any(not isinstance(w, UsageWindow) for w in windows):
+        return list(windows)
+    order: list[str] = []
+    pools: dict[str, list] = {}
+    for w in windows:
+        if w.group not in pools:
+            pools[w.group] = []
+            order.append(w.group)
+        pools[w.group].append(w)
+    out: list = []
+    for group in order:
+        out.extend(sorted(pools[group], key=_window_rank))
+    return out
+
+
 def resolved_windows(windows, now: float | None = None) -> list:
-    """Expire old readings, then gate short windows by confirmed longer limits."""
+    """Expire old readings, gate short windows, then order each pool for reading."""
     if now is None:
         import time as _time
         now = _time.time()
-    return gate_windows(apply_elapsed_resets(windows, now))
+    return order_windows(gate_windows(apply_elapsed_resets(windows, now)))
 
 
 # Reset-timer label colours, one per vendor, so the header countdown tells the

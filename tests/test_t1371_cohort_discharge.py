@@ -21,6 +21,7 @@ does not discriminate; the identity does.
 """
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -98,8 +99,34 @@ def test_the_published_tag_contains_the_cohort():
     assert drifted == EXPECTED_DRIFT, drifted
 
 
+def _nuitka_pin(build_extra: list[str]) -> str:
+    """The exact version the build extra pins nuitka to.
+
+    T-1355's clause is the PIN, not the shape of the list. An artifact-gate
+    change added ``zstandard`` to the same extra, which left the pin intact
+    and broke only a literal-string assertion. Return '' when nuitka is
+    absent or not pinned with '==' -- the two ways the clause can break.
+    """
+    for req in build_extra:
+        name, sep, version = req.partition("==")
+        if sep and name.strip().lower() == "nuitka":
+            return version.strip()
+    return ""
+
+
 def test_t1355_clause_holds_on_the_published_bytes():
-    assert 'build = ["nuitka==4.2.1"]' in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    build = pyproject["project"]["optional-dependencies"]["build"]
+    assert _nuitka_pin(build) == "4.2.1", build
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
     assert 'specifier = "==4.2.1"' in lock
     assert 'version = "4.2.1"' in lock
+
+
+def test_the_pin_check_catches_an_unpinned_or_absent_nuitka():
+    """The control for the check above: rewriting the assertion into a
+    membership test must not make the gate toothless."""
+    assert _nuitka_pin(["nuitka==4.2.1"]) == "4.2.1"
+    assert _nuitka_pin(["nuitka==4.2.1", "zstandard>=0.23"]) == "4.2.1"
+    assert _nuitka_pin(["nuitka>=4.2"]) == ""
+    assert _nuitka_pin([]) == ""

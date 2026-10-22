@@ -46,7 +46,7 @@ _JSON_SETTINGS = (
     # the per-category dict behind silo_type_all, saved_sound_mappings is what
     # the CS-style toggle restores from, watcher_skills_extra is a list of
     # dicts (a list survives str() only while its ELEMENTS do — dicts do not),
-    "silo_types", "custom_font_ids",
+    "silo_types", "custom_font_paths",
     "folder_trash_log", "hidden_categories", "window_presets",
     # {logical category: physical filesystem component} — a dict, so it MUST
     # be here or a str() write would reload it as a single-quoted string and
@@ -57,6 +57,15 @@ _JSON_SETTINGS = (
     "project_sync", "project_sync_all",
     "project_sync_map", "project_sync_map_all",
     "silo_links", "silo_links_all",
+    # Per-silo pack-with-options defaults (latest comment above), plus the
+    # durable journal of a bundle whose metadata commit failed mid-way. A
+    # dict; without JSON round-trip it reloads as a single-quoted string and
+    # the retry journal is silently lost.
+    "silo_bundle_meta_retry",
+    # CORE-003: the pack-coverage ledger ({silo: [events]}). Without a JSON
+    # codec it round-trips as one str() blob and CoverageStore.from_dict
+    # sees a string instead of a dict.
+    "silo_pack_coverage",
     "typo_user_words",
     # CORE-008: Temp Timer configuration is a dict. Without this it is written
     # with str() and reloads as a single-quoted string, discarding the user's
@@ -92,6 +101,9 @@ _JSON_SETTINGS = (
     "silo_bundle_defaults",
     # T-1411: per-silo persistent bundle history and fast hash cache.
     "silo_bundle_history",
+    # T-1466: user-defined default table layout template. A dict, must
+    # round-trip as JSON or the saved layout reloads as one str() blob.
+    "table_default_layout",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -310,7 +322,7 @@ _STRUCTURED_CODECS = {
     "sound_events": (dict, {}, False),
     "saved_sound_mappings": (dict, {}, True),
     "silo_types": (dict, {}, True),
-    "custom_font_ids": (list, [], True),
+    "custom_font_paths": (list, [], True),
     "folder_trash_log": (list, [], False),
     "hidden_categories": (list, [], False),
     "window_presets": (list, [], False),
@@ -321,6 +333,13 @@ _STRUCTURED_CODECS = {
     "project_sync_map_all": (dict, {}, False),
     "silo_links": (dict, {}, False),
     "silo_links_all": (dict, {}, False),
+    # The durable bundle-metadata retry journal: silo_id -> {stage, at, ...}.
+    # A dict; without a structured codec it is written with str() and reloads
+    # as a single-quoted string, so the journal is lost on every restart.
+    "silo_bundle_meta_retry": (dict, {}, True),
+    # CORE-003: pack-coverage ledger, dict silo_id -> event list. Must
+    # round-trip as JSON or CoverageStore.from_dict receives a string.
+    "silo_pack_coverage": (dict, {}, True),
     "typo_user_words": (list, [], False),
     # CORE-008: Temp Timer settings — a dict. legacy_ast=True so the 0.8.52
     # rows written as Python str(dict) (single-quoted) recover via
@@ -365,6 +384,11 @@ _STRUCTURED_CODECS = {
     "silo_bundle_defaults": (dict, {}, True),
     # T-1411: per-silo managed bundle history and hash cache.
     "silo_bundle_history": (dict, {}, True),
+    # T-1466: user-defined default table layout template for NEW tables.
+    # Versioned dict: {version, columns, visible_rows, col_widths, row_heights,
+    # manual_cols, manual_rows, word_wrap}. Global/profile scope — controls
+    # NEW tables only; per-silo presentation is in silo_view_state_all.
+    "table_default_layout": (dict, {}, True),
 }
 
 
@@ -554,8 +578,17 @@ def _decode_structured_setting(key, raw, expected, default, legacy_ast):
                 return _normalize_decoded(key, val, default)
         except Exception:
             pass
-    elif parsed is not None and isinstance(parsed, expected):
-        return _normalize_decoded(key, parsed, default)
+    elif parsed is not None:
+        if isinstance(parsed, expected):
+            return _normalize_decoded(key, parsed, default)
+        # Unpack double-encoded JSON strings (e.g. legacy or str-wrapped structured settings)
+        if isinstance(parsed, str) and expected in (dict, list):
+            try:
+                second = json.loads(parsed)
+                if isinstance(second, expected):
+                    return _normalize_decoded(key, second, default)
+            except Exception:
+                pass
     if parsed is not None:
         logger.warning("structured setting %r is valid JSON of the wrong "
                        "top-level type (%s); adopting the correct default",
@@ -619,6 +652,14 @@ def bind_active_category(data, category):
 def _encode_setting_value(key, value):
     """Single-key canonical codec, shared by full and partial settings paths."""
     if key in _JSON_SETTINGS:
+        if isinstance(value, str):
+            try:
+                # If value is already valid JSON representing a structured type, avoid double-encoding
+                parsed = json.loads(value)
+                if isinstance(parsed, (dict, list)):
+                    return value
+            except Exception:
+                pass
         return json.dumps(value)
     return str(value)
 
@@ -2575,6 +2616,7 @@ class FastPrompterState:
             self.data.pop("silo_row_presence", None)
 
             _retired_rows = []
+            _structured_rewrite = []   # (key, canonical_json) rows to re-encode
             for row in cur.execute('SELECT key, value FROM settings'):
                 key, raw = row[0], row[1]
                 if key in _STRUCTURED_CODECS:
@@ -2584,6 +2626,15 @@ class FastPrompterState:
                     expected, default, legacy_ast = _STRUCTURED_CODECS[key]
                     self.data[key] = _decode_structured_setting(
                         key, raw, expected, default, legacy_ast)
+                    # CORE-003: a row written with str(dict) decodes fine via
+                    # ast, but its encoding then matches _last_saved_settings,
+                    # so a later save sees no diff and the legacy blob stays
+                    # on disk forever. Persist the canonical form now; the
+                    # rewrite is idempotent for rows already canonical.
+                    if legacy_ast:
+                        canon = _encode_setting_value(key, self.data[key])
+                        if raw != canon:
+                            _structured_rewrite.append((key, canon))
                 elif key in ('last_tab_idx', 'active_temp_slot', 'font_size'):
                     try: self.data[key] = int(raw) if raw else 0
                     except (ValueError, TypeError): self.data[key] = 0
@@ -2614,6 +2665,21 @@ class FastPrompterState:
                     logger.warning("could not retire settings %s; they stay "
                                    "ignored on load and will be retried",
                                    sorted(set(_retired_rows)))
+
+            # CORE-003: re-encode the legacy str() rows just decoded. Runs after
+            # _assert_loader_rows so a recovery write can never race the safety
+            # snapshot onto a database the loader would then refuse.
+            if _structured_rewrite:
+                try:
+                    with self.conn:
+                        cur.executemany(
+                            "INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)",
+                            _structured_rewrite)
+                except sqlite3.Error:
+                    logger.warning("could not re-encode legacy structured "
+                                   "settings %s; they stay as-is and the "
+                                   "next save retries",
+                                   sorted({k for k, _ in _structured_rewrite}))
 
             # Migration: old codex_gauges -> provider-neutral limit_gauges.
             # Preserve the user's existing choice; new key wins if both set.
@@ -3259,6 +3325,24 @@ class FastPrompterState:
             self._dirty_arc = getattr(self, "_dirty_arc", 0) + 1
         else:
             self._db_dirty = True
+
+    def history_needed(self, force=False) -> bool:
+        """PERF-008: could this save contain a silo-text transition at all?
+
+        The transition diff walks every category and every slot in BOTH
+        spaces and resolves a silo identity for each row, so a persistence
+        that cannot touch silo text still paid that whole traversal. A
+        settings-only or snippet-only save is therefore skipped. ``force``,
+        an unrelated generic dirty flag and a pending identity mutation still
+        take the full diff: a caller that cannot name the domain is not
+        permitted to certify that nothing moved.
+        """
+        if force or self._db_dirty:
+            return True
+        if getattr(self, "_silo_id_dirty", False):
+            return True
+        return (self._dirty_temp > self._saved_temp_gen
+                or self._dirty_arc > self._saved_arc_gen)
 
     @property
     def has_pending_changes(self):

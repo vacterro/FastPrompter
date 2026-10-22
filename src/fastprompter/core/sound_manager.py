@@ -1834,7 +1834,7 @@ class SoundManager(QObject):
     def resolve_ref_path(self, ref: str) -> str:
         """Absolute WAV for a library ref/name, or "" when it resolves to none.
 
-        The one place that turns "computalk1.wav" / "user:imported/x.wav"
+        The one place that turns "ambient_loop.wav" / "user:imported/x.wav"
         into something a transport can actually open.  Handing a transport a
         bare NAME is how ambience ended up silent: os.path.isfile() answered
         False and the layer never started (T-1242).

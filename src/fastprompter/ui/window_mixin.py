@@ -639,7 +639,7 @@ class WindowMixin:
         self.mark_dirty()
         self.refresh_snippets_panel()
 
-    def on_silo_home_toggled(self, checked: bool) -> None:
-        """Toggle silo-home behavior (silos open at startup)."""
-        self.data["silo_home"] = "True" if checked else "False"
+    def on_silo_remember_scroll_toggled(self, checked: bool) -> None:
+        """Toggle per-silo cursor/scroll memory across silo switches."""
+        self.data["silo_remember_scroll"] = "True" if checked else "False"
         self.mark_dirty()

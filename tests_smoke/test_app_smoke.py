@@ -901,7 +901,7 @@ def test_all_settings_roundtrip_through_db(win):
         "normal_window": "True",
         "lock_to_cursor": "True",
         "hide_shortkeys": "True",
-        "silo_home": "True",
+        "silo_remember_scroll": "False",
         "portable_backup_enabled": "False",
         "hide_extra": "False",
         "auto_bullet": "True",
@@ -3308,10 +3308,16 @@ def test_ctrl_e_refreshes_stale_stamp_in_place(win):
 
 def test_transfer_to_snippet_target_category(win):
     cats = win.data["cats_order"]
-    target = cats[1] if len(cats) > 1 else cats[0]
+    target = next((c for c in cats if c in win.data.get("categories", {})), None)
+    if target is None:
+        import pytest as _pytest
+        _pytest.skip("needs a snippet category")
     win.data["temp_presets"] = ["transfer this text"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
+    # A folder-less silo: folder attachments legitimately refuse a transfer
+    # into a snippet category, which this test is not about.
+    win.data["silo_folders"].clear()
     win._transfer_to_snippet(0, False, target_cat=target)
     texts = [s["text"] for s in win.data["categories"][target] if s]
     assert "transfer this text" in texts
@@ -4054,6 +4060,12 @@ def test_undoing_a_delete_puts_the_slot_keyed_state_back_too(win):
     before_colours = dict(colours)
     before_paths = {k: dict(v) for k, v in paths.items()}
 
+    # This test asserts on ITS delete's undo record: any move made by an
+    # earlier test would sit on top of the stack and be popped instead.
+    win.data_undo_stack[:] = []
+    win.data_redo_stack[:] = []
+    win._undo_kinds()[:] = []
+
     win.del_silo(0)
     assert dict(win.data["silo_colors"]) != before_colours, "the delete must remap"
 
@@ -4184,6 +4196,12 @@ def test_dragging_a_silo_out_shifts_the_slot_keyed_state_with_it(win):
     win.data["temp_presets"][:] = ["alpha", "bravo", "charlie"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
+
+    # Remove synthesized folder attachment so the cross-category move
+    # proceeds (snippets can't own attachment dirs, so a foldered silo is
+    # correctly refused). The assertion tests slot-keyed state remap, not
+    # the refusal semantics.
+    win.data["silo_folders"].clear()
 
     colours = win.data.setdefault("silo_colors", {})
     colours.clear()
@@ -4761,11 +4779,10 @@ def test_line_marks_cycle_both_ways_and_persist_per_silo(fresh_win):
 def test_selection_state_is_remembered_per_silo(win):
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
-    # "Silos at Start" deliberately OVERRIDES the remembered cursor and opens
-    # at the top, and it ships ON. Per-silo cursor memory is the other half of
-    # that switch, so it has to be exercised with the switch off.
-    previous_home = win.data.get("silo_home")
-    win.data["silo_home"] = "False"
+    # "Remember Silo Scroll Position" is the switch that keeps per-silo cursor
+    # memory alive. It ships ON, so the remembered position wins on reopen.
+    previous = win.data.get("silo_remember_scroll")
+    win.data["silo_remember_scroll"] = "True"
     try:
         win.data["temp_presets"][:] = ["first silo text", "second silo text"]
         win.silo_docs[:] = []
@@ -4792,18 +4809,18 @@ def test_selection_state_is_remembered_per_silo(win):
         assert not back2.hasSelection()
         assert back2.position() == 7
     finally:
-        if previous_home is None:
-            win.data.pop("silo_home", None)
+        if previous is None:
+            win.data.pop("silo_remember_scroll", None)
         else:
-            win.data["silo_home"] = previous_home
+            win.data["silo_remember_scroll"] = previous
 
 
-def test_silos_at_start_beats_the_remembered_cursor(win):
-    """The setting's whole point: opening a silo lands at the top."""
+def test_remember_off_always_opens_at_the_top(win):
+    """The setting's whole point: with it off, opening a silo lands at the top."""
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
-    previous_home = win.data.get("silo_home")
-    win.data["silo_home"] = "True"
+    previous = win.data.get("silo_remember_scroll")
+    win.data["silo_remember_scroll"] = "False"
     try:
         win.data["temp_presets"][:] = ["first silo text", "second silo text"]
         win.silo_docs[:] = []
@@ -4820,10 +4837,10 @@ def test_silos_at_start_beats_the_remembered_cursor(win):
         assert not back.hasSelection()
         assert back.position() == 0
     finally:
-        if previous_home is None:
-            win.data.pop("silo_home", None)
+        if previous is None:
+            win.data.pop("silo_remember_scroll", None)
         else:
-            win.data["silo_home"] = previous_home
+            win.data["silo_remember_scroll"] = previous
 
 
 def test_snippets_toggle_survives_refreshes(win):
@@ -5878,7 +5895,7 @@ def test_settings_panel_is_tabbed_and_fits_a_small_window(win):
         "cb_zebra", "cb_double_line", "cb_bold_titles",
         "cb_date_rect", "cb_date_seconds", "cb_date_daypart", "cb_date_emoji",
         "cb_date_text_month", "cb_date_ampm", "cb_analog_clock",
-        "cb_silo_home", "cb_silo_pinned_gap", "cb_silo_ticks",
+        "cb_silo_remember_scroll", "cb_silo_pinned_gap", "cb_silo_ticks",
         "cb_snippet_arrows", "cb_hide_shortkeys", "cb_portable_backup",
         "cb_sound", "cb_typewriter",
     ]
@@ -8282,9 +8299,13 @@ def test_show_is_acknowledged_so_a_frozen_owner_can_be_detected(win):
     from fastprompter.core import ipc_server
 
     # the server ACKs only authenticated SHOW; the ACK byte is what tells the
-    # newcomer the window was really shown
-    assert "ACK" in inspect.getsource(ipc_server.IpcServer._handle_command)
-    assert "TOKEN:" in inspect.getsource(ipc_server.IpcServer._handle_command)
+    # newcomer the window was really shown. The frame resolution moved out of
+    # IpcServer._handle_command (now a direct entry that arms the pending
+    # socket) into _PendingSocket._resolve_frame, so assert against the live
+    # authenticated path.
+    resolve_src = inspect.getsource(ipc_server._PendingSocket._resolve_frame)
+    assert "ACK" in resolve_src
+    assert "TOKEN:" in resolve_src
     request = inspect.getsource(ipc_server.request_show)
     assert "ACK" in request and "waitForReadyRead" in request
     entry = inspect.getsource(main_mod.main_entry)
@@ -12473,7 +12494,7 @@ def test_stale_cursor_restore_falls_back_to_start_or_end(win):
     caller's Start/End rule instead."""
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
-    win.data["silo_home"] = "False"
+    win.data["silo_remember_scroll"] = "True"
     win.data["temp_presets"][:] = ["AAAA BBBB CCCC DDDD", "other"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)
@@ -12506,7 +12527,7 @@ def test_matching_text_still_restores_the_saved_cursor(win):
     the exact saved caret position."""
     win.cat_combo.setCurrentIndex(0)
     win.on_tab_changed(0)
-    win.data["silo_home"] = "False"
+    win.data["silo_remember_scroll"] = "True"
     win.data["temp_presets"][:] = ["AAAA BBBB CCCC DDDD", "other"]
     win.silo_docs[:] = []
     win._switch_to_slot(0, initial=True)

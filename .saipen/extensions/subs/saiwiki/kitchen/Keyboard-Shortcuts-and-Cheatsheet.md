@@ -24,6 +24,8 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Navigation** | **Ctrl+F** | Find in silo | Editor |
 | **Navigation** | **Ctrl+H** | Find and replace | Editor |
 | **Navigation** | **Ctrl+Shift+S** | Export active silo to .md | App |
+| **Packing** | **Ctrl+Shift+P** | Pack Silo — one portable ZIP of the active silo | App |
+| **Packing** | **Ctrl+Shift+C** | Fast Pack Selection — selection + referenced media (needs a selection) | Editor |
 | **Formatting** | **Ctrl+E** | Header format (configurable) | Editor |
 | **Formatting** | **Ctrl+Return** | Toggle checkbox `- [ ]` / `- [x]` | Editor |
 | **Formatting** | **Ctrl+W** | Insert divider `---` (smart split) | Editor |
@@ -92,7 +94,21 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 **F1-F10** paste pre-configured text templates. Bind content via Snippet Manager (**Ctrl+S**) or right-click on F-button.
 
 ### Clear + Timers
-**Ctrl+Shift+C** — clear the current silo text. **Ctrl+Shift+T** — open timer dialog. **Alt+Shift+T** — open hashtag search.
+**Ctrl+Shift+T** — open timer dialog. **Alt+Shift+T** — open hashtag search. Clearing a silo has no default chord: it lives in the silo row's context menu, because Ctrl+Shift+C became Fast Pack Selection in T-1409.
+
+### Pack Silo Gestures (T-1409/T-1428)
+The header Pack control carries the whole vocabulary on hover, so nothing here has to be memorised:
+
+| Gesture on the Pack control | Action |
+|---|---|
+| Click | Smart Quick Pack — reuses a content-identical bundle |
+| Shift+Click | Pack With Options… dialog |
+| Ctrl+Click | Force Repack (bypasses reuse) |
+| Ctrl+Shift+Click | Copy the last bundle for this silo |
+| Alt+Click | Open the last bundle's folder |
+| Right-click | Bundle menu: Quick Pack, Pack With Options…, Force Repack, Copy Last Bundle, Open Last Bundle Folder, Open Silo Exports Folder, Media-Only Quick Pack |
+
+Above 2000 blocks the control is no longer hit-tested — use **Ctrl+Shift+P** there.
 
 ### Kanban & Table (T-630)
 Inside a kanban silo: **Alt+arrows** move cards. Inside a table silo: **Tab/Shift+Tab** walk cells, **Enter** adds row.

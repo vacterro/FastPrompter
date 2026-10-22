@@ -58,7 +58,7 @@ from fastprompter.core.sound_presets import (
     export_preset_pack,
     import_preset_payload,
     missing_asset_events,
-    open_preset_pack,
+    open_preset_pack_path,
 )
 from fastprompter.core.translations import tr
 from fastprompter.core.voice_engine import COUNTDOWN_THRESHOLDS, scan_goldsrc_folder
@@ -328,9 +328,8 @@ class PresetsPage(QWidget):
         if not path:
             return
         try:
-            payload = open(path, "rb").read()
             if path.lower().endswith(".fpsoundpack"):
-                definition, sounds = open_preset_pack(payload)
+                definition, sounds = open_preset_pack_path(path)
                 import json as _json
 
                 import_preset_payload(
@@ -338,6 +337,8 @@ class PresetsPage(QWidget):
                     sounds_dir=sound_library.ensure_managed_root(),
                     pack_sounds=sounds)
             else:
+                with open(path, "rb") as handle:
+                    payload = handle.read()
                 import_preset_payload(payload, self.store)
         except Exception as exc:
             QMessageBox.warning(self, tr("Import failed", self.lang), str(exc))
@@ -356,8 +357,15 @@ class PresetsPage(QWidget):
             return
         try:
             if path.lower().endswith(".fpsoundpack"):
-                payload, _included = export_preset_pack(
+                payload, missing_files = export_preset_pack(
                     preset, sound_library.packaged_root())
+                if missing_files:
+                    # an incomplete pack imports into a broken preset: refuse
+                    QMessageBox.warning(
+                        self, tr("Export failed", self.lang),
+                        tr("Missing sound files", self.lang) + ": "
+                        + ", ".join(missing_files))
+                    return
             else:
                 payload = export_preset_json(preset)
             with open(path, "wb") as handle:
@@ -1606,6 +1614,9 @@ class AmbiencePage(QWidget):
     def _sound_refs(self) -> list[str]:
         refs = list(self.dialog._available)
         refs += sound_library.list_managed_sounds()
+        # T-1457-C: the user's own drop-in folder is offered here too, so an
+        # ambience layer can use a custom wav without importing a copy.
+        refs += sound_library.list_addon_sounds()
         return refs
 
     def _add(self) -> None:

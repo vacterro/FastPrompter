@@ -119,3 +119,6 @@ src/fastprompter/_extract.txt
 /tools/live_sai_probe.py
 
 /_RECOVERY_*/
+
+# bake lock residue from tools/ profile bakes
+*.bake.lock

@@ -71,7 +71,7 @@ def test_allowlist_is_non_empty():
     # A green scan over an empty allowlist would also pass. Pin the size so
     # deleting the file wholesale cannot masquerade as the fix.
     verdicts = _verdicts()
-    assert sum(len(v) for v in verdicts.values()) == 999
+    assert sum(len(v) for v in verdicts.values()) == 1006
     assert len(verdicts) == 32
 
 

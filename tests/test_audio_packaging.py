@@ -190,13 +190,11 @@ class TestRepositoryAudioAllowlist:
         assert "genie.wav" in str(excinfo.value)
 
     def test_the_repository_carries_no_audio_outside_the_sound_folder(self):
-        found = [
-            path.relative_to(ROOT).as_posix()
-            for path in ROOT.rglob("*")
-            if path.is_file()
-            and path.suffix.lower() in {".wav", ".mp3", ".ogg", ".flac"}
-            and ".git" not in path.relative_to(ROOT).parts
-            and not path.relative_to(ROOT).as_posix().startswith(
-                "src/fastprompter/sound/")
-        ]
-        assert found == [], f"stray audio in the repository: {found}"
+        # Ask Git what a push would publish.  A plain filesystem walk would
+        # also report ignored debris -- release staging clones, worktrees,
+        # scratch builds -- that never reaches the remote, which would make
+        # the assertion impossible to keep green on a working checkout.
+        sys.path.insert(0, str(ROOT / "tools"))
+        from verify_sound_allowlist import stray_audio
+
+        assert stray_audio(ROOT) == []

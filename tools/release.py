@@ -150,6 +150,33 @@ def check_receipt(version: str, exe: str) -> None:
         raise SystemExit("release receipt does not bind this release: " + "; ".join(failures))
 
 
+def check_artifact_payload() -> None:
+    """Read the payload back out of the EXE and hold it to the allowlist.
+
+    The receipt binds what the toolchain *reported*; this reads what the bytes
+    actually contain, including the audio Vite-style globbing could smuggle in.
+    Acceptance mode (not artifact mode) is required here: a payload that is
+    clean but has no passing probe and bound receipt is not release evidence.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import audit_release_artifact as gate
+
+    exe = rp.Path(os.path.join("build", ASSET))
+    try:
+        report = gate.audit_payload(gate.payload_from_exe(exe), rp.Path("."))
+    except gate.UnreadableArtifact as exc:
+        raise SystemExit(f"artifact payload unreadable: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - the message names the gate
+        raise SystemExit(f"artifact audit failed: {type(exc).__name__}: {exc}") from exc
+    report["findings"].extend(gate.require_acceptance_evidence(rp.sha256_file(exe)))
+    if report["findings"]:
+        lines = ["artifact payload rejected:"]
+        for finding in report["findings"][:20]:
+            detail = ", ".join(f"{k}={v}" for k, v in finding.items() if k != "kind")
+            lines.append(f"  {finding['kind']}: {detail}")
+        raise SystemExit("\n".join(lines))
+
+
 def read_notes(version: str) -> str:
     if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
         return open(sys.argv[1], encoding="utf-8").read()
@@ -432,6 +459,7 @@ def main() -> None:
     if not os.path.exists(exe):
         raise SystemExit("build/FastPrompter.exe missing — run tools/build.py first")
     check_receipt(version, exe)
+    check_artifact_payload()
 
     tag = f"v{version}"
     head = rp.git_head()

@@ -47,7 +47,6 @@ class _MockQObject:
 sys.modules["PyQt6.QtCore"].QObject = _MockQObject
 
 from fastprompter.core import sound_library  # noqa: E402
-from fastprompter.core import sound_manager as sm_mod  # noqa: E402
 from fastprompter.core.sound_manager import (  # noqa: E402
     _DEFAULT_SOUND_MAP,
     VAULT_DIR_NAME,
@@ -60,6 +59,17 @@ from fastprompter.core.sound_presets import (  # noqa: E402
     apply_preset_to_profile,
     import_preset_payload,
 )
+
+# The module that OWNS the SoundManager class used below.  It is deliberately
+# NOT `from fastprompter.core import sound_manager`: the sys.modules.pop above
+# leaves the PARENT package's attribute pointing at the previous copy, and
+# that import form hands the stale copy back, while the
+# `from fastprompter.core.sound_manager import ...` line re-imported a second,
+# mock-built module.  Patching the stale copy therefore left the class's own
+# module untouched: manager._sounds_dir became the real
+# src/fastprompter/sound, and this file wrote hover.wav into the SHIPPED
+# sound tree (T-1500).  Bind the module the class actually came from.
+sm_mod = sys.modules["fastprompter.core.sound_manager"]
 
 _qt_stub.restore(_before_stubs)
 
@@ -84,6 +94,12 @@ def builtin_root(tmp_path):
     _make_wav(root / "hover.wav")
     _make_wav(root / "ui" / "click.wav")
     _make_wav(root / VAULT_DIR_NAME / "vox" / "thirty.wav")
+    # The SHIPPED hover default is cs_style/buttonrollover.wav (the
+    # _DEFAULT_SOUND_MAP entries and the packaged cs_style/ tree), not a
+    # hover.wav next to it.  The fixture has to carry it, or the default
+    # lookup falls through to the last-resort {event}.wav probe and the
+    # assertion below would pass for the wrong reason.
+    _make_wav(root / "cs_style" / "buttonrollover.wav")
     return str(root)
 
 
@@ -105,6 +121,33 @@ def manager(builtin_root, monkeypatch):
 
 def _managed_user_wav(managed_root) -> str:
     return _make_wav(os.path.join(managed_root, "imported", "custom.wav"))
+
+
+def _shipped_sound_tree() -> str:
+    """The REAL src/fastprompter/sound -- never a target of a test write."""
+    return os.path.normcase(os.path.abspath(os.path.join(
+        os.path.dirname(__file__), "..", "src", "fastprompter", "sound")))
+
+
+class TestTheFixtureNeverPointsAtTheShippedTree:
+    """T-1500: the manager fixture must resolve against its OWN tree.
+
+    When the fixture patched the stale module copy, ``manager._sounds_dir``
+    was the real src/fastprompter/sound and this file wrote hover.wav into
+    the shipped sound folder, which then failed the allowlist guard of the
+    NEXT full-suite run.  A manager that ever points at the shipped tree is
+    the defect itself, so it is pinned here.
+    """
+
+    def test_the_manager_resolves_against_the_fixture_tree(self, manager):
+        assert os.path.normcase(os.path.abspath(manager._sounds_dir)) != \
+            _shipped_sound_tree()
+
+    def test_the_manager_still_finds_its_own_sounds(self, manager):
+        """The guard above must not be satisfied by a manager that resolves
+        nothing at all -- the fixture tree has to answer."""
+        assert os.path.isfile(os.path.join(
+            manager._sounds_dir, "cs_style", "buttonrollover.wav"))
 
 
 # ---------------------------------------------------------------------------
@@ -133,11 +176,13 @@ class TestEventLookup:
         assert get_sound_file_for_event("hover", data, builtin_root) == "hover.wav"
 
     def test_D_shipped_defaults_still_answer(self, builtin_root):
-        assert get_sound_file_for_event("hover", {}, builtin_root) == "hover.wav"
+        assert get_sound_file_for_event("hover", {}, builtin_root) == \
+            "cs_style/buttonrollover.wav"
 
     def test_missing_override_still_falls_back_to_the_default(self, builtin_root):
         data = {"sound_events": {"hover": {"file": "gone-forever.wav"}}}
-        assert get_sound_file_for_event("hover", data, builtin_root) == "hover.wav"
+        assert get_sound_file_for_event("hover", data, builtin_root) == \
+            "cs_style/buttonrollover.wav"
 
 
 # ---------------------------------------------------------------------------

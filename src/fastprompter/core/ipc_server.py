@@ -21,6 +21,7 @@ import time
 import uuid
 from collections.abc import Callable
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 
 from fastprompter.core.logging import logger
@@ -28,6 +29,15 @@ from fastprompter.core.logging import logger
 SERVER_NAME = "FastPrompter_Server_V15"
 
 _ACK_TIMEOUT_MS = 1500
+
+#: Hard ceiling on one assembled frame. A valid authentication frame is a UUID
+#: token plus the fixed grammar, so a few hundred bytes already carries huge
+#: headroom; anything larger is refused before it can grow.
+MAX_FRAME_BYTES = 4096
+
+#: Default per-socket deadline, in Qt event-loop time. One stalled client must
+#: not retire another one's frame, so the bound is per socket and generous.
+DEFAULT_FRAME_DEADLINE_MS = 30000
 
 # Set by request_show after its grace window closes: True when a live owner's
 # IPC server was CONNECTED to at least once (the owner exists and is alive,
@@ -142,6 +152,117 @@ def _get_token() -> str:
     return token
 
 
+class _PendingSocket:
+    """Per-socket half-frame state: accumulate, bound, retire on a deadline.
+
+    One plain object per accepted connection, owned by the server. Nothing in
+    it ever waits on the socket: the ready-read, disconnect and deadline paths
+    all drive ordinary slots on the GUI thread.
+
+    A bound method keeps its owner alive through the connection, so the class
+    deliberately carries no ``__slots__`` -- a slot-only object cannot be
+    weak-referenced and Qt's connect needs that reference to tear the
+    connection down when the owner goes away.
+    """
+
+    def __init__(self, server, sock):
+        self.server = server
+        self.sock = sock
+        self.buf = b""
+        self.done = False
+        self.timer = QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(max(0, int(server._frame_deadline_ms)))
+        self.timer.timeout.connect(self._expire)
+
+    def arm(self):
+        sock = self.sock
+        sock.readyRead.connect(self._on_ready_read)
+        sock.disconnected.connect(self._on_disconnected)
+        self.timer.start()
+
+    # ---- slots ---------------------------------------------------------
+    def _on_ready_read(self):
+        if self.done:
+            return
+        sock = self.sock
+        if sock.bytesAvailable() > 0:
+            self.buf += sock.readAll().data()
+            if len(self.buf) > MAX_FRAME_BYTES:
+                self._abort()
+                return
+        if not self.buf:
+            return
+        if self._resolve_frame(self.buf):
+            return
+        if len(self.buf) > MAX_FRAME_BYTES:
+            self._abort()
+
+    def _on_disconnected(self):
+        self._abort()
+
+    def _expire(self):
+        if not self.done and self.buf:
+            logger.info("IPC: discarded an incomplete frame after the "
+                        "per-socket deadline")
+        self._abort()
+
+    # ---- resolution ----------------------------------------------------
+    def _resolve_frame(self, buf: bytes) -> bool:
+        """Resolve one complete authenticated frame. True when it terminal."""
+
+        try:
+            data_str = buf.decode("utf-8")
+        except UnicodeDecodeError:
+            self._abort()
+            return True
+        if b"|SHOW" not in buf or not buf.startswith(b"TOKEN:"):
+            return False
+        parts = data_str.split("|", 1)
+        if len(parts) != 2:
+            self._abort()
+            return True
+        recv_token, cmd = parts[0][6:], parts[1]
+        if recv_token != self.server._token or cmd.strip() != "SHOW":
+            self._abort()
+            return True
+        self._retire()
+        self.server._show_window()
+        self._ack(b"ACK")
+        return True
+
+    def _ack(self, payload: bytes):
+        try:
+            self.sock.write(payload)
+            self.sock.flush()
+        except Exception:
+            logger.debug("IPC: could not answer a frame")
+
+    def _retire(self):
+        """Drop this half-frame from the registry BEFORE destroying the socket.
+
+        ``_pending`` is per-connection state and an entry is removed exactly
+        once, whichever path retires it first.
+        """
+        if self.done:
+            return
+        self.done = True
+        pending = self.server._pending
+        if pending.get(self.sock) is self:
+            del pending[self.sock]
+        timer, self.timer = self.timer, None
+        if timer is not None:
+            timer.stop()
+            timer.deleteLater()
+
+    def _abort(self):
+        """Retire without answering: silent, or an unexplainable frame."""
+        self._retire()
+        sock = self.sock
+        sock.disconnectFromServer()
+        sock.deleteLater()
+
+
 class IpcServer:
     """Wraps a ``QLocalServer`` for single-instance IPC communication.
 
@@ -151,12 +272,21 @@ class IpcServer:
         ipc.setup()
         # … later, when a second instance sends SHOW:
         # show_window_callback() is called automatically
+
+    Every socket path is event-driven: the frame is accumulated in ready-read
+    slots, bounded per socket, and retired by that socket's own deadline. The
+    GUI thread never waits on a peer, so a silent or slowly-dripping client
+    cannot starve the owner's event loop, one stalled client cannot delay a
+    valid sibling, and an unauthenticated frame is answered by nothing.
     """
 
-    def __init__(self, show_window: Callable[[], None]) -> None:
+    def __init__(self, show_window: Callable[[], None],
+                 frame_deadline_ms: int = DEFAULT_FRAME_DEADLINE_MS) -> None:
         self._show_window: Callable[[], None] = show_window
         self._token: str = _get_token()
         self._server: QLocalServer = QLocalServer()
+        self._frame_deadline_ms = int(frame_deadline_ms)
+        self._pending: dict[QLocalSocket, _PendingSocket] = {}
 
     @property
     def token(self) -> str:
@@ -182,65 +312,44 @@ class IpcServer:
                 "IPC: could not own %s (%s); running without single-instance "
                 "handover", SERVER_NAME, self._server.errorString())
             return
-        self._server.newConnection.connect(self._handle_command)
+        self._server.newConnection.connect(self._on_new_connection)
 
     def close(self) -> None:
-        """Close the IPC server socket."""
+        """Close the IPC server and retire every half-assembled frame."""
+        for pending in list(self._pending.values()):
+            pending._abort()
+        self._pending.clear()
         self._server.close()
 
+    # ---- event paths ---------------------------------------------------
+    def _on_new_connection(self):
+        """Accept every pending connection into its own bounded state."""
+        while True:
+            sock = self._server.nextPendingConnection()
+            if sock is None:
+                return
+            pending = _PendingSocket(self, sock)
+            self._pending[sock] = pending
+            pending.arm()
+
     def _handle_command(self) -> None:
-        """Process an incoming IPC command from a sibling instance.
+        """Accept ONE connection and resolve the bytes already available.
 
-        Only ``TOKEN:<this-session's-token>|SHOW`` is a command; everything
-        else is ignored without an ACK. Answers ACK once the window has
-        actually been asked to show. The sibling waits for that byte: a
-        process that holds the socket but no longer pumps its event loop
-        never sends it, and the newcomer must then exit unresponsive instead
-        of taking the socket over.
-
-        The read loops until the command is COMPLETE (``|SHOW`` present): a
-        local-socket write can arrive split across ready-read callbacks, and a
-        single ``readAll()`` of a partial frame would silently swallow the
-        ``SHOW`` and answer no ACK — making a healthy owner look frozen.
+        The event-driven path is ``_on_new_connection``; this stays as the
+        direct entry point so a caller (or a test) that drives the server
+        without pumping the loop still exercises the SAME per-socket frame
+        resolution. A frame that is still incomplete is left registered for
+        its own ready-read slots -- never for a waiting loop.
         """
         sock = self._server.nextPendingConnection()
         if sock is None:
             return
-        handled = False
-        buf = b""
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            if sock.bytesAvailable() > 0:
-                chunk = sock.readAll().data()
-                if chunk:
-                    buf += chunk
-            elif not buf:
-                if not sock.waitForReadyRead(200):
-                    break
-                continue
-            # once we have bytes, keep pulling until the full frame is in
-            if b"|SHOW" in buf and buf.startswith(b"TOKEN:"):
-                break
-            if not sock.waitForReadyRead(200):
-                break
+        pending = self._pending.get(sock)
+        if pending is None or pending.done:
+            pending = _PendingSocket(self, sock)
+            self._pending[sock] = pending
         try:
-            data_str = buf.decode("utf-8")
-            if data_str.startswith("TOKEN:"):
-                parts = data_str.split("|", 1)
-                if len(parts) == 2:
-                    recv_token = parts[0][6:]
-                    cmd = parts[1]
-                    if recv_token == self._token and cmd.strip() == "SHOW":
-                        self._show_window()
-                        handled = True
+            pending.arm()
         except Exception:
-            logger.exception("Failed to handle IPC command")
-        if handled:
-            try:
-                sock.write(b"ACK")
-                sock.flush()
-                sock.waitForBytesWritten(300)
-            except Exception:
-                logger.debug("IPC: could not acknowledge SHOW")
-        sock.disconnectFromServer()
-        sock.deleteLater()
+            pass
+        pending._on_ready_read()

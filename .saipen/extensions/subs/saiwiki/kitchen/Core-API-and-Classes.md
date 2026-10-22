@@ -298,6 +298,82 @@ Whole-project typecheck report dialog. Right-click project tab → "Check Typos 
 
 ---
 
+### Pack Silo Bundle Engine (`core/silo_bundle.py`, T-1409…T-1417)
+
+Plan → hash → fingerprint → reuse → publish, every stage a named function:
+
+- `plan_bundle(*, text, title, target_dir, ...)` and `plan_selection_bundle(...)`
+  build a `BundlePlan`; `plan_refs(plan)` resolves local references and
+  `_assign_members` gives each one an archive member name; `portable_markdown`
+  rewrites the Markdown so its links point at those members instead of
+  workstation paths.
+- `resolve_plan_hashes` / `resolve_plan_hashes_stable` produce the per-member
+  SHA256 table; `file_stat_signature` + `sources_still_stable` refuse a plan
+  whose sources moved mid-pack; `with_hashes` folds the table back in.
+- `compute_content_fingerprint(plan, hashes)` is a deterministic SHA256 over the
+  logical payload — created-at, archive timestamps and output paths excluded —
+  so the same content fingerprints the same on any machine.
+  `preflight_content_fingerprint` computes it before publication and
+  `verify_reuse_candidate(zip_path, expected)` decides whether an existing
+  archive may be reused (`_is_proven_fastprompter_bundle` proves ownership).
+- `_build_manifest(plan)` writes `schema_version`, `index_schema_version`,
+  `bundle_kind`, `scope`, `source`, `canonical_source`, `items`,
+  `included`/`missing`, `capabilities`, `build`, `warnings`,
+  `omitted_local_refs` and `privacy` — all from publication facts, never from
+  what the plan hoped for.
+- `allocate_bundle_path(target_dir, archive_name)` returns a destination that
+  does not exist yet (never clobbers); `write_bundle(plan, progress, cancel)`
+  builds into a unique temp sibling, streams media first, then Markdown, index,
+  README and manifest, and publishes atomically; `BundleResult` carries the
+  archive path and member hashes; cancelling discards the temp tree.
+- `prune_silo_history(records, canonical_exports_dir, keep, protect=...)` —
+  newest-first retention restricted to the canonical exports folder, each
+  candidate verified as a FastPrompter archive before deletion, `protect`
+  naming the archive of the operation in flight.
+- `sanitize_residual_local_paths(text)` redacts absolute workstation paths in
+  generated share text deterministically while leaving remote URLs and safe
+  relative paths alone; `classify_media(path)` answers
+  `"image"`/`"video"`/`"audio"`/None; `list_silo_files` walks a silo folder;
+  `bundle_stem`, `archive_basename`, `bundle_artifact_id` and
+  `artifact_basename` name the artifact; `extract_selection_words`,
+  `fast_selection_basename`, `is_blank_selection` and
+  `expand_selection_token_boundaries` drive Fast Pack Selection.
+
+### Structured Index (`core/silo_index.py`, `INDEX_SCHEMA_VERSION = 4`)
+
+Pure Python, stdlib only, zero Qt. `build_silo_index(...)` segments portable
+Markdown into `RequirementItem`s (priority read from an explicit `P0`–`P3`
+marker by `extract_priority`) inside `RequirementGroup`s, maps referenced
+members onto `MediaEvidenceItem`s, and records what a requirement asked for
+that the archive does not carry (`omitted_media_members`).
+`build_fallback_index(...)` is the conservative path when the parser meets
+syntax it cannot segment; `validate_index_structure(...)` is the
+pre-publication integrity gate; `extract_plain_text` and
+`contains_absolute_local_path` are the projection and leak helpers.
+
+### Pack Coverage Ledger (`core/silo_coverage.py`, T-1415)
+
+Visual-only and requirement-aware: it answers "which content has already been
+bundled, and which is fresh?" without ever mutating Markdown, selection,
+clipboard or bundle behaviour. `requirement_coverage_key` is the content-based
+identity a receipt is stored under; `create_bundle_coverage_event(...)` mints a
+verified event on successful publication; `CoverageLedger` persists the compact
+per-silo store; `reconcile_pack_coverage(...)` matches live document text
+against it; `CoverageReconciler` allows at most one reconciliation in flight and
+one pending; `CoverageStore` is the per-silo repository (`clear_silo` wipes the
+history and nothing else).
+
+### Hotkey Tooltips (`ui/shortcut_display.py`)
+
+`resolve(owner, name, lang)` reads the live binding from the catalog,
+`tooltip_with_shortcut(description, shortcut, lang)` composes one line, and
+`tooltip_lines(owner, description, name, lang)` is the form every caller uses.
+A tooltip is **output only** — nothing is ever parsed back out of one — and the
+catalog is the single source it reads, so a tooltip cannot drift from the chord
+it advertises.
+
+---
+
 ## UI Components (`src/fastprompter/ui/`)
 
 ### `FastPrompter` (`main.py`)

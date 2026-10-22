@@ -263,6 +263,24 @@ def voice_scratch(seed: int) -> list[float]:
     return _limit([v * s for v, s in zip(noise, shape)])
 
 
+def voice_loop(seed: int, base: float = 196.0, dur: float = 4.0) -> list[float]:
+    """A seamlessly loopable bed, for names that play on repeat.
+
+    A loop file is played back-to-back indefinitely, so the sample that
+    follows the last one is the first one again.  Every partial is snapped to
+    a whole number of cycles per ``dur`` and the tremolo is periodic too, so
+    the wrap is continuous.  ``voice_pad`` cannot be used here: its
+    exponential swell is a one-shot shape that clicks at the seam.
+    """
+    n = int(dur * SAMPLE_RATE)
+    parts = []
+    for ratio, gain in ((1.0, 0.55), (1.5, 0.25), (2.0, 0.12), (3.0, 0.08)):
+        cycles = max(1, round(base * ratio * dur))
+        parts.append((_sine(cycles / dur, n, phase=(seed % 314) / 50.0), gain))
+    tremolo = [0.82 + 0.18 * math.sin(2.0 * math.pi * 2.0 * i / n) for i in range(n)]
+    return _limit([value * depth for value, depth in zip(_mix(*parts), tremolo)])
+
+
 def voice_type_key(seed: int) -> list[float]:
     n = int(0.030 * SAMPLE_RATE)
     click = _noise_burst(n, seed, smooth=2)
@@ -331,7 +349,12 @@ def synthesize(name: str) -> list[float]:
         return voice_type_key(seed) if "key" in stem or "type" in stem else voice_tick(seed, 1200.0 + (seed % 500))
     if has(CLICK_WORDS):
         return voice_click(seed, 700.0 + (seed % 700))
-    if has(("loop", "ambient", "battle", "pad", "hum", "drone")):
+    # "loop" gets the seamless voice; the other bed words get the one-shot
+    # pad.  Splitting them keeps every existing file byte-identical: none of
+    # the shipped names contains "loop".
+    if "loop" in stem:
+        return voice_loop(seed, base_note)
+    if has(("ambient", "battle", "pad", "hum", "drone")):
         return voice_pad(seed, base_note, 0.9)
     return voice_blip(seed, 440.0 + (seed % 8) * 55.0)
 
@@ -341,8 +364,18 @@ def synthesize(name: str) -> list[float]:
 # ---------------------------------------------------------------------------
 
 
-def write_wav(path: Path, samples: list[float], sample_rate: int = SAMPLE_RATE) -> None:
-    samples = _fade_edges(_limit(samples))
+def write_wav(path: Path, samples: list[float], sample_rate: int = SAMPLE_RATE,
+              *, fade_edges: bool = True) -> None:
+    """Write one mono 16-bit WAV.
+
+    ``fade_edges`` is on for one-shot cues: it removes the click a hard
+    start or end makes.  A LOOP must pass False -- its seam is already
+    continuous by construction, and fading both edges would put a short dip
+    in the middle of a bed that plays forever.
+    """
+    samples = _limit(samples)
+    if fade_edges:
+        samples = _fade_edges(samples)
     frames = bytearray()
     for value in samples:
         clamped = max(-1.0, min(1.0, value))
@@ -370,6 +403,11 @@ def read_names_file(path: Path) -> list[str]:
     return names
 
 
+def is_loop_name(rel: str) -> bool:
+    """True for a name that plays on repeat, so its edges must not fade."""
+    return "loop" in Path(rel).stem.lower()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", required=True, type=Path, help="output sound directory")
@@ -390,7 +428,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"MISSING {rel}", file=sys.stderr)
                 problems += 1
             continue
-        write_wav(target, synthesize(rel))
+        write_wav(target, synthesize(rel), fade_edges=not is_loop_name(rel))
     if args.check:
         print(f"{len(names) - problems}/{len(names)} fallback sounds present")
         return 1 if problems else 0

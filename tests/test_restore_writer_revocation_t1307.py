@@ -221,14 +221,14 @@ class TestSyncPushBarrier:
 
         entered = threading.Event()
         release = threading.Event()
-        real_read = ps.read_text_file
+        real_read = ps.read_text_file_with_identity
 
         def paused_read(p, max_bytes):
             entered.set()
             assert release.wait(5.0)
             return real_read(p, max_bytes)
 
-        monkeypatch.setattr(ps, "read_text_file", paused_read)
+        monkeypatch.setattr(ps, "read_text_file_with_identity", paused_read)
         writes = []
         real_write = ps.write_text_file
         monkeypatch.setattr(

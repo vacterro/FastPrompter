@@ -51,6 +51,12 @@ _BACKEND = (
     "_silo_bundle_history", "_silo_bundle_history_candidates",
     "_silo_bundle_last_existing", "_silo_bundle_record_success",
     "_silo_bundle_apply_retention",
+    # CORE-002: every persisted bundle-settings writer routes through here.
+    "_silo_save_settings",
+    # The meta-tx bookkeeping the success/failure paths record through.
+    "_note_bundle_meta_failure", "_clear_bundle_meta_failure",
+    # PERF-001: the request path ends in the shared dispatch.
+    "_silo_bundle_dispatch",
 )
 
 
@@ -123,6 +129,7 @@ def win(tmp_path, qapp):
     w._active_silo_id = lambda: "silo-A"
     w.get_current_category = lambda: "Notes"
     w.save_data_to_db = lambda *a, **k: True
+    w.mark_dirty = lambda *a, **k: None
     w._show_in_app_toast = (
         lambda title, message, **kw: w.toasts.append((title, message, kw)))
     yield w

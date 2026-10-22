@@ -529,6 +529,19 @@ class TopbarVisibilityDialog(QDialog):
         self.main_win.mark_dirty()
         self.main_win._apply_header_density()
 
+    def _stop_preview_timer(self):
+        timer = getattr(self, "_preview_timer", None)
+        if timer is not None and timer.isActive():
+            timer.stop()
+
+    def done(self, result):
+        self._stop_preview_timer()
+        super().done(result)
+
+    def closeEvent(self, event):
+        self._stop_preview_timer()
+        super().closeEvent(event)
+
     def _accept(self):
         self.apply_changes()
         self.accept()

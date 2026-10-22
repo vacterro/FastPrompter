@@ -511,7 +511,7 @@ class SoundSettingsDialog(QDialog):
         self._data = data
         self._sound_manager = sound_manager
         self._available = self._timed_stage(
-            "get_available_sounds", sound_manager.get_available_sounds)
+            "get_available_sounds", self._collect_available)
         # PERF: every event row used to fill its OWN combo with the whole
         # library.  With ~60 events that is tens of thousands of widget items
         # and seconds of startup.  ONE shared item model is built here and
@@ -937,7 +937,18 @@ class SoundSettingsDialog(QDialog):
                 (time.perf_counter() - self._open_t0) * 1000.0)
 
     def done(self, result):  # noqa: D102 - QDialog override
-        """Clear the theme-repaint hook registration before widgets die."""
+        """Stop the poll, then clear the theme-repaint hook registration.
+
+        ``done`` is where every finish lands -- accept, reject and the
+        window-close button all route through it -- but it only HIDES the
+        dialog, so a timer left running keeps firing against hidden widgets.
+        """
+        poll = getattr(self, "_master_poll", None)
+        if poll is not None:
+            try:
+                poll.stop()
+            except RuntimeError:
+                pass
         try:
             if type(self)._LAST_INSTANCE is self:
                 type(self)._LAST_INSTANCE = None
@@ -957,8 +968,7 @@ class SoundSettingsDialog(QDialog):
         """The managed library changed: rebuild the shared picker model."""
         self._ensure_all_events_built()
         self._sound_manager.invalidate_cache()
-        self._available = self._sound_manager.get_available_sounds()
-        self._available += sound_library.list_managed_sounds()
+        self._available = self._collect_available()
         was_loading = self._loading
         self._loading = True
         try:
@@ -1007,6 +1017,40 @@ class SoundSettingsDialog(QDialog):
             payload["transport_trace"] = trace()
         QApplication.clipboard().setText(
             json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+
+    @staticmethod
+    def _dedupe_available(names: list[str]) -> list[str]:
+        """One entry per sound, first occurrence order preserved.
+
+        The picker is filled from three roots (packaged, managed, addon), so
+        the same file can legitimately be reachable twice — most often a user
+        who both imported a wav into the library and kept the original in the
+        addon folder. A duplicate combo item is indistinguishable to the user
+        and makes "which entry did I pick" ambiguous, so the first occurrence
+        wins and the rest are dropped.
+        """
+        seen: set[str] = set()
+        out: list[str] = []
+        for name in names:
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
+        return out
+
+    def _collect_available(self) -> list[str]:
+        """The ONE composition of the picker's sound list.
+
+        Packaged first (the shipped defaults stay at the top of the sorted
+        list), then the managed imports, then the user's addon folder. Every
+        site that refreshes ``_available`` goes through here, so the three
+        roots can never drift apart between the first build, a library rescan
+        and a favourite toggle.
+        """
+        names = list(self._sound_manager.get_available_sounds())
+        names += sound_library.list_managed_sounds()
+        names += sound_library.list_addon_sounds()
+        return self._dedupe_available(names)
 
     def _rebuild_sound_model(self):
         """Build the ONE model every file combo shares."""
@@ -1066,7 +1110,7 @@ class SoundSettingsDialog(QDialog):
             if hasattr(self.main_win, "state"):
                 self.main_win.state.mark_dirty()
             # Update all combos with the new favorite state and sorting
-            self._available = self._sound_manager.get_available_sounds()
+            self._available = self._collect_available()
             was_loading = self._loading
             self._loading = True
             # One model rebuild, not one per row.

@@ -20,13 +20,17 @@ performs no I/O of its own and never triggers a provider request.
 
 from __future__ import annotations
 
+import weakref
+
+from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer
-from PyQt6.QtGui import QCursor
+from PyQt6.QtGui import QColor, QCursor, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
     QLabel,
     QScrollArea,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -48,6 +52,11 @@ MAX_HEIGHT = 620
 class LimitHoverCard(QFrame):
     """Frameless, non-focus-stealing panel anchored under an anchor widget."""
 
+    #: Every live card.  Two cards open at once is the double-presentation
+    #: defect wearing a different hat, so a card that opens retires the
+    #: others instead of letting them sit on top of each other.
+    _live_cards: weakref.WeakSet[LimitHoverCard] = weakref.WeakSet()
+
     def __init__(self, anchor: QWidget) -> None:
         # Tool + Frameless: no taskbar entry, no title bar, and -- unlike
         # Qt.WindowType.ToolTip -- it still receives enter/leave events, which
@@ -60,7 +69,9 @@ class LimitHoverCard(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setObjectName("LimitHoverCard")
-        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self._focus_lock_taken = False
+        LimitHoverCard._live_cards.add(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
@@ -126,8 +137,15 @@ class LimitHoverCard(QFrame):
         # this frameless Tool window deactivates the owner on Windows, so
         # reacting to it made the card close itself the instant it appeared.
         if event.type() in (QEvent.Type.Hide, QEvent.Type.Close):
-            if obj is not self and (self._anchor is not None and obj is self._anchor.window()):
-                self.hide_now()
+            if obj is not self and self._anchor is not None:
+                try:
+                    owner = self._anchor.window()
+                except (RuntimeError, TypeError):
+                    owner = None
+                # The anchor disappearing ends the session as well: a card
+                # anchored to a hidden target is a stale popup.
+                if obj is self._anchor or obj is owner:
+                    self.hide_now()
         elif event.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and self.isVisible():
             if event.key() == Qt.Key.Key_Shift:
                 if hasattr(self._anchor, "refresh_hover_card"):
@@ -281,47 +299,85 @@ class LimitHoverCard(QFrame):
 
     # -- show / hide with grace -------------------------------------------
 
+    def _retire_other_cards(self) -> None:
+        """One visible card at a time -- and no native popup beside it.
+
+        Two cards open at once is the double-tooltip defect in another
+        guise, and a native QToolTip that was already on screen would sit
+        ON TOP of the card.  The card that takes over dismisses both.
+        """
+        for other in LimitHoverCard.visible_cards():
+            if other is self:
+                continue
+            try:
+                other.hide_now()
+            except RuntimeError:
+                continue
+        QToolTip.hideText()
+
+    @classmethod
+    def visible_cards(cls) -> list:
+        """Every card that is still on screen (deleted ones are dropped)."""
+        out = []
+        for card in list(cls._live_cards):
+            try:
+                if not sip.isdeleted(card) and card.isVisible():
+                    out.append(card)
+            except (RuntimeError, TypeError):
+                continue
+        return out
+
     def show_card(self, html: str) -> None:
         """Show (or refresh) the card without stealing focus."""
         self._hide_timer.stop()
+        self._retire_other_cards()
         if not self.isVisible():
             self._width_floor = 0     # fresh hover: fit the content again
             self._session_x = None
             self._session_y = None
             self._session_anchor_global = None
-        self.set_html(html)
+        try:
+            self.set_html(html)
+        except Exception:
+            self._release_focus_lock()
+            raise
         if not self.isVisible():
-            self.reposition()         # ONE placement for the whole session
-            self._session_x = self.x()
-            self._session_y = self.y()
             try:
-                window = self._anchor.window() if self._anchor else None
-                self._session_anchor_global = (
-                    window.mapToGlobal(QPoint(0, 0)) if window is not None
-                    else None)
-            except (RuntimeError, TypeError):
-                self._session_anchor_global = None
-            self.show()
-            self.raise_()
-            app = QApplication.instance()
-            if app is not None and not getattr(self, "_app_filter_installed", False):
+                self.reposition()         # ONE placement for the whole session
+                self._session_x = self.x()
+                self._session_y = self.y()
                 try:
-                    app.installEventFilter(self)
-                    self._app_filter_installed = True
+                    window = self._anchor.window() if self._anchor else None
+                    self._session_anchor_global = (
+                        window.mapToGlobal(QPoint(0, 0)) if window is not None
+                        else None)
+                except (RuntimeError, TypeError):
+                    self._session_anchor_global = None
+                self._acquire_focus_lock()
+                self.show()
+                self.raise_()
+                app = QApplication.instance()
+                if app is not None and not getattr(self, "_app_filter_installed", False):
+                    try:
+                        app.installEventFilter(self)
+                        self._app_filter_installed = True
+                    except Exception:
+                        pass
+                # T-1245: card hidden/nonexistent -> visible. The refresh path
+                # (set_html / reposition while already visible) never reaches
+                # this branch: it is guarded by the isVisible() probe above, so
+                # geometry changes on an open card stay silent.
+                try:
+                    from fastprompter.ui.appearance_sounds import (
+                        emit_hover_card_show,
+                    )
+                    emit_hover_card_show(
+                        self._anchor.window() if self._anchor else None)
                 except Exception:
                     pass
-            # T-1245: card hidden/nonexistent -> visible. The refresh path
-            # (set_html / reposition while already visible) never reaches
-            # this branch: it is guarded by the isVisible() probe above, so
-            # geometry changes on an open card stay silent.
-            try:
-                from fastprompter.ui.appearance_sounds import (
-                    emit_hover_card_show,
-                )
-                emit_hover_card_show(
-                    self._anchor.window() if self._anchor else None)
             except Exception:
-                pass
+                self._release_focus_lock()
+                raise
 
     def schedule_hide(self) -> None:
         """Start the grace interval; entering either surface cancels it."""
@@ -331,8 +387,41 @@ class LimitHoverCard(QFrame):
     def cancel_hide(self) -> None:
         self._hide_timer.stop()
 
+    def _main_window(self):
+        anchor = self._anchor
+        mw = getattr(anchor, "main_win", None) if anchor is not None else None
+        if mw is None and anchor is not None:
+            try:
+                mw = anchor.window()
+            except (RuntimeError, TypeError):
+                mw = None
+        return mw
+
+    def _acquire_focus_lock(self) -> None:
+        if self._focus_lock_taken:
+            return
+        mw = self._main_window()
+        if mw is not None and hasattr(mw, "_increment_focus_lock"):
+            try:
+                mw._increment_focus_lock()
+                self._focus_lock_taken = True
+            except (RuntimeError, TypeError):
+                self._focus_lock_taken = False
+
+    def _release_focus_lock(self) -> None:
+        if not self._focus_lock_taken:
+            return
+        mw = self._main_window()
+        if mw is not None and hasattr(mw, "_decrement_focus_lock"):
+            try:
+                mw._decrement_focus_lock()
+            except (RuntimeError, TypeError):
+                pass
+        self._focus_lock_taken = False
+
     def hide_now(self) -> None:
         self._hide_timer.stop()
+        self._release_focus_lock()
         self._width_floor = 0
         self._session_x = None
         self._session_y = None
@@ -348,6 +437,7 @@ class LimitHoverCard(QFrame):
             self.hide()
 
     def hideEvent(self, event):  # noqa: N802 (Qt naming)
+        self._release_focus_lock()
         app = QApplication.instance()
         if app is not None and getattr(self, "_app_filter_installed", False):
             try:
@@ -360,6 +450,19 @@ class LimitHoverCard(QFrame):
     def _pointer_inside(self) -> bool:
         """True while the cursor is over the card OR its anchor gauge."""
         position = QCursor.pos()
+        app = QApplication.instance()
+        if app is not None:
+            try:
+                widget = app.widgetAt(position)
+                if widget is self or widget is self._anchor:
+                    return True
+                if widget is not None and self._anchor is not None \
+                        and self._anchor.isAncestorOf(widget):
+                    return True
+                if widget is not None and self.isAncestorOf(widget):
+                    return True
+            except (RuntimeError, TypeError):
+                pass
         for widget in (self, self._anchor):
             if widget is None:
                 continue
@@ -396,3 +499,118 @@ class LimitHoverCard(QFrame):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def _border_color(self) -> QColor:
+        anchor = self._anchor
+        mw = getattr(anchor, "main_win", None) if anchor is not None else None
+        if mw is None and anchor is not None:
+            try:
+                mw = anchor.window()
+            except (RuntimeError, TypeError):
+                mw = None
+        try:
+            from fastprompter.ui.limit_colors import resolve_hex
+            return QColor(resolve_hex(mw, "good"))
+        except Exception:
+            return QColor("#D9B340")
+
+    def paintEvent(self, event):  # noqa: N802 (Qt naming)
+        super().paintEvent(event)
+        p = QPainter(self)
+        try:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            color = self._border_color()
+            thickness = 2
+            w = self.width()
+            h = self.height()
+            p.fillRect(0, 0, w, thickness, color)
+            p.fillRect(0, h - thickness, w, thickness, color)
+            p.fillRect(0, 0, thickness, h, color)
+            p.fillRect(w - thickness, 0, thickness, h, color)
+        finally:
+            p.end()
+
+
+class HoverCardLabel(QLabel):
+    """A label whose hover is owned by an interactive card, not by QToolTip.
+
+    Qt paints a native tooltip for every widget that carries tooltip text,
+    and it paints it ON TOP of whatever else the same hover opened.  A label
+    that opens a hover card must therefore own the tooltip EVENT as well, or
+    the user gets a small native popup beside the big card.
+
+    The description is kept -- as ``toolTip()`` and as the accessible
+    description -- so assistive technology still announces it.  Only the
+    VISUAL is suppressed, and only while a card owns the hover.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._hover_open = None
+        self._hover_close = None
+        self._press_handler = None
+        # No card owns the hover until one is actually available.
+        self._card_owns_hover = False
+
+    def set_hover_owner(self, opener=None, closer=None, press=None) -> None:
+        """Wire the hover lifecycle: open on enter, close on leave, click."""
+        self._hover_open = opener
+        self._hover_close = closer
+        self._press_handler = press
+
+    def set_card_owns_hover(self, owns: bool) -> None:
+        """Say who presents this hover.
+
+        True  -- the interactive card owns it: the native tooltip event is
+                 consumed, so QToolTip never paints a second popup.
+        False -- there is no card to show, so the native tooltip owns the
+                 presentation and the description is shown the Qt way.
+        """
+        self._card_owns_hover = bool(owns)
+
+    def set_hover_description(self, text: str) -> None:
+        """Publish the description without re-arming a native popup.
+
+        Called on every countdown refresh, so an unchanged text must not
+        touch the widget: re-assigning the tooltip re-arms the native popup
+        timer, and a second presentation would appear beside the card.
+        """
+        text = text or ""
+        if self.toolTip() != text:
+            self.setToolTip(text)
+        if self.accessibleDescription() != text:
+            self.setAccessibleDescription(text)
+
+    def pointer_over(self) -> bool:
+        """True while the cursor is over this label."""
+        app = QApplication.instance()
+        if app is None:
+            return False
+        try:
+            widget = app.widgetAt(QCursor.pos())
+            if widget is None:
+                return False
+            return widget is self or self.isAncestorOf(widget)
+        except (RuntimeError, TypeError):
+            return False
+
+    def event(self, event):
+        kind = event.type()
+        if kind == QEvent.Type.ToolTip:
+            if self._card_owns_hover:
+                event.accept()
+                return True
+        elif kind == QEvent.Type.Enter:
+            if self._hover_open is not None:
+                self._hover_open()
+        elif kind == QEvent.Type.Leave:
+            if self._hover_close is not None:
+                self._hover_close()
+        return super().event(event)
+
+    def mousePressEvent(self, event):  # noqa: N802 (Qt naming)
+        if self._press_handler is not None:
+            self._press_handler()
+            event.accept()
+            return
+        super().mousePressEvent(event)

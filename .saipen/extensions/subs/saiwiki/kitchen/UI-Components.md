@@ -69,6 +69,8 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 
 **Drop overlay:** 4 options on drag-drop: Insert Text, Insert Link, Copy to Files, Create Shortcut.
 
+**Pack control on the header (T-1409/T-1428):** the first block's header carries a Pack glyph whose rect comes from one capability gate (`_silo_bundle_rect`) that paint, hit-test, cursor, press, release and the context menu all share, so the six surfaces cannot disagree. Hover renders `_pack_tooltip_text` — the complete cheat sheet, not a one-line hint: the resolved chords (`Pack Silo (Ctrl+Shift+P)`, `Fast Pack Selection: Ctrl+Shift+C`, `Export Silo to file: Ctrl+Shift+S`) followed by Click / Shift+Click / Ctrl+Click / Ctrl+Shift+Click / Alt+Click / Right-click. Above 2000 blocks `_silo_bundle_block_at` stops hit-testing the glyph, so the chord stays the reliable route. **Pack coverage** marks (`show_pack_coverage`) are painted from the silo's coverage ledger and fade rather than persist when `pack_coverage_fade` is on.
+
 ### 4. File Container Drawer (`ui/file_container.py`)
 
 Per-silo collapsible drawer. Attached files, image thumbnails, document shortcuts.
@@ -76,6 +78,7 @@ Per-silo collapsible drawer. Attached files, image thumbnails, document shortcut
 - Templates: IN/OUT, Assets, Drafts, Custom folder structure
 - Drag-drop to add files
 - Silo export: Ctrl+click 📁 exports silo text to .md
+- **Chest view** (`ui/silo_chest.py`): sparse slot grid with real disabled placeholders, so an empty slot keeps its position across refresh/restart. Click selects; hold-and-move drags; drop on an empty slot moves, drop on an occupied slot swaps; Shift+press/drag range-selects without moving, Ctrl+Shift adds to the selection, and the drop highlight names the pending operation (move/swap vs. invalid) (T-1477/T-1478/T-1479)
 
 ### 5. Kanban Board (`ui/silo_kanban.py`)
 
@@ -84,6 +87,18 @@ Pure-text markdown kanban. Alt+arrows move cards between columns. Enter adds row
 ### 6. Table Builder (`ui/silo_table.py`)
 
 Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row. Enter adds row. No split-cell. Works on plain text.
+
+**Interactive grid (T-1462).** `ui/table_grid.py` + `ui/table_model.py` put a
+real `QTableView` over the cells: rectangle selection, clipboard TSV round-trip
+through `ui/clipboard_tsv.py` (multiline cells quoted, so a cell with a newline
+survives Excel and back), column/row resize, insert row/column, and grid-level
+undo/redo that never disturbs a column the user dragged.
+
+**Text-silo editing.** `ui/table_edit_dialog.py` opens the same grid over the
+table at the caret and writes back through `ui/table_edit_target.py`, which
+captures the table's exact content and span at open time and refuses an Apply
+when the live document no longer holds that content; the write-back is whole
+lines and one undo step, and the silo's type never changes.
 
 ### 7. Dialogs & Overlays
 
@@ -100,12 +115,35 @@ Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row.
 | `Trash Dialog` | Browse/restore soft-deleted silos |
 | `Typo Check Dialog` | Right-click project tab → "Check Typos in this project…"; scans every silo with the dictionary, groups unknown words per silo, add-to-dictionary from the report |
 | `Backup Dialog` | DB export/import, backup snapshot |
+| `Smart Code Runner (⚡)` | Detection (`ui/code_detection.py`) plus a review dialog naming the language and an output dialog. Nothing runs before the explicit approval; adapters execute by argument vector (never a shell) and each output is decoded with its adapter's encoding — PowerShell `utf-16-le`, CMD `cp437`, the rest UTF-8 (T-1456/T-1460) |
+| `Edit Table (text silo)` | The Table-silo grid over the table at the caret; Apply replaces exactly that table's lines in one undo step and is refused when the document changed under the dialog (T-1462) |
+| `Pack Silo With Options…` (`ui/silo_bundle_dialog.py`) | Shift+Click on the Pack control. Rows are the silo's bundle candidates with their read/unavailable state, plus Include silo text (`.md`), Select All/None/Invert, sort (Newest first / Oldest first / Document order / Name), destination (Silo folder / Desktop / Documents / Choose folder…), *Make exported Markdown portable* (Hide local path vs Keep original links), Include non-media Silo Files, **Keep last versions in exports** (default `silo_bundle_keep_versions` = 5), and Remember these choices for Quick Pack. The summary line counts what is about to be packed (T-1409/T-1410) |
 | `Help Dialog` | Interactive shortcut reference |
 | `Window Presets` | Save/rename/reorder/move window geometry presets; optional full-state capture — theme, font, scale, toolbar, zen, sidebar (T-728) |
 | `Project Manager` | Show/hide projects, reorder (▲▼) |
 | `Color Config` | Custom theme color editing |
 
-### 8. Window Components
+### 8. Reading Surface (`ui/rich_preview_view.py`, T-1484/T-1486)
+
+The Reading view is a vertical list of blocks, not one `QTextEdit`:
+
+- `_HtmlBlock` holds one contiguous run of formatted content (headings,
+  paragraphs, real tables, lists, links) and sizes itself to its own height.
+- `_MediaBlock` holds one image: a `QMovie` when the payload animates, a scaled
+  `QPixmap` otherwise, or an honest placeholder. The placeholder always keeps
+  the URL clickable and names its cause — external images off, refused by
+  policy, transfer failed, too large, not decodable, local file missing — so a
+  blank box is never anonymous.
+- **Policy toggle.** `IMG` in the toolbar is external media **off**; clicking
+  it turns it into `IMG+` and permits HTTPS fetches for this session. The
+  syntax selector beside the view mode pins Auto / Markdown / BBCode.
+- **Lifecycle.** Leaving Reading stops every movie and cancels in-flight
+  requests while keeping the decoded-payload cache; returning replays the
+  cached payload instead of re-downloading it and restores the scroll offset
+  when the source text is unchanged. Repeated switching reuses one transport,
+  never a new `QNetworkAccessManager` per switch.
+
+### 9. Window Components
 
 - **FancyZoneOverlay** — visual 7-zone picker for screen snap
 - **AnalogClock** — custom-painted clock widget (header)

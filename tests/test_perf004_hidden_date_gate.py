@@ -87,6 +87,9 @@ class _Host:
     def _apply_topbar_visibility(self):
         self.visual["topbar_applied"] += 1
 
+    def _reconcile_topbar_visibility(self, force=False):
+        self._apply_topbar_visibility()
+
     def _clock_time_fmt(self, show_secs=False):
         return "%H:%M:%S" if show_secs else "%H:%M"
 

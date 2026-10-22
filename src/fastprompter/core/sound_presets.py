@@ -39,6 +39,9 @@ PRESET_SUFFIX = ".fpsoundpreset.json"
 PACK_SUFFIX = ".fpsoundpack"
 MAX_PACK_MEMBER_BYTES = 64 * 1024 * 1024  # one entry hard bound
 MAX_PACK_MEMBERS = 4096
+MAX_PACK_BYTES = 64 * 1024 * 1024          # compressed input bound
+MAX_PACK_PRESET_BYTES = 1024 * 1024        # preset.json declared bound
+MAX_PACK_TOTAL_BYTES = 256 * 1024 * 1024   # aggregate declared bound
 
 PRESET_DB_NAME = "audio.db"
 SOUND_LIBRARY_DIR_NAME = "sound_library"
@@ -373,27 +376,27 @@ def export_preset_pack(preset: dict, sounds_dir: str) -> tuple[bytes, list[str]]
     """
     definition = copy.deepcopy(preset)
     manifest: dict[str, str] = {}
-    copied: set[str] = set()
+    payloads: dict[str, bytes] = {}
     missing: list[str] = []
     for event, entry in (definition.get("events") or {}).items():
         rel = (entry or {}).get("file") or ""
-        if not rel or rel in copied:
+        if not rel or rel in payloads or rel in missing:
             continue
         src = os.path.join(sounds_dir, rel)
-        if not os.path.isfile(src):
+        try:
+            with open(src, "rb") as handle:
+                data = handle.read()
+        except OSError:
             missing.append(rel)
             continue
-        copied.add(rel)
-        with open(src, "rb") as handle:
-            data = handle.read()
         manifest[rel] = hashlib.sha256(data).hexdigest()
+        payloads[rel] = data
     definition["asset_manifest"] = manifest
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("preset.json", _definition_bytes(definition))
-        for rel in sorted(copied):
-            archive.writestr(f"sounds/{rel}",
-                             open(os.path.join(sounds_dir, rel), "rb").read())
+        for rel in sorted(manifest):
+            archive.writestr(f"sounds/{rel}", payloads[rel])
     return buffer.getvalue(), missing
 
 
@@ -543,18 +546,63 @@ def _rollback_published(published: list[str]) -> None:
             pass
 
 
+def _canonical_member(name: str) -> str | None:
+    """The one canonical identity of a ``sounds/`` member, or None."""
+    if not name.startswith("sounds/"):
+        return None
+    rel = _safe_relpath(name[len("sounds/"):])
+    return None if rel is None else rel.lower()
+
+
+def _preflight_archive(archive: zipfile.ZipFile) -> None:
+    """Bound a pack from its metadata BEFORE any payload is decompressed.
+
+    A tiny highly-compressed archive can declare a huge aggregate; validating
+    after extraction is too late to protect RAM. The budget is therefore read
+    from ``ZipInfo`` and the archive is refused unopened. The duplicate check
+    runs here too, since two entries folding onto one canonical name would
+    silently overwrite each other downstream.
+    """
+    entries = archive.infolist()
+    if len(entries) > MAX_PACK_MEMBERS:
+        raise ValueError("pack contains too many entries")
+    total = 0
+    seen: dict[str, str] = {}
+    for info in entries:
+        declared = max(0, int(info.file_size))
+        total += declared
+        canonical = _canonical_member(info.filename)
+        if canonical is None:
+            continue
+        if canonical in seen:
+            raise ValueError(
+                f"pack contains a duplicate member: {info.filename!r}")
+        seen[canonical] = info.filename
+        if declared > MAX_PACK_MEMBER_BYTES:
+            raise ValueError(f"pack member too large: {info.filename!r}")
+    if total > MAX_PACK_TOTAL_BYTES:
+        raise ValueError(
+            f"pack aggregate of {total} bytes exceeds the budget "
+            f"of {MAX_PACK_TOTAL_BYTES}")
+    if "preset.json" not in archive.namelist():
+        raise ValueError("pack has no preset.json")
+    decl = max(0, int(archive.getinfo("preset.json").file_size))
+    if decl > MAX_PACK_PRESET_BYTES:
+        raise ValueError(
+            f"pack preset.json of {decl} bytes exceeds the budget "
+            f"of {MAX_PACK_PRESET_BYTES}")
+
+
 def open_preset_pack(pack_bytes: bytes) -> tuple[dict, dict[str, bytes]]:
     """Read a ``.fpsoundpack`` ZIP with strict member validation."""
+    if len(pack_bytes) > MAX_PACK_BYTES:
+        raise ValueError("pack is too large to import")
     buffer = io.BytesIO(pack_bytes)
     with zipfile.ZipFile(buffer) as archive:
-        names = archive.namelist()
-        if len(names) > MAX_PACK_MEMBERS:
-            raise ValueError("pack contains too many entries")
-        if "preset.json" not in names:
-            raise ValueError("pack has no preset.json")
+        _preflight_archive(archive)
         definition = json.loads(archive.read("preset.json").decode("utf-8"))
         sounds: dict[str, bytes] = {}
-        for name in names:
+        for name in archive.namelist():
             if name == "preset.json":
                 continue
             if not name.startswith("sounds/"):
@@ -571,6 +619,22 @@ def open_preset_pack(pack_bytes: bytes) -> tuple[dict, dict[str, bytes]]:
             sounds[rel] = data
     _verify_pack_manifest(definition, sounds)
     return definition, sounds
+
+
+def open_preset_pack_path(path: str) -> tuple[dict, dict[str, bytes]]:
+    """Read a pack from disk without ever holding it wholesale in RAM.
+
+    The size check happens BEFORE the read, so an oversized file is refused
+    from its length alone rather than by loading it and then complaining.
+    """
+    size = os.path.getsize(path)
+    if size > MAX_PACK_BYTES:
+        raise ValueError("pack is too large to import")
+    with open(path, "rb") as handle:
+        payload = handle.read(MAX_PACK_BYTES + 1)
+    if len(payload) > MAX_PACK_BYTES:
+        raise ValueError("pack is too large to import")
+    return open_preset_pack(payload)
 
 
 def _verify_pack_manifest(definition: dict, sounds: dict[str, bytes]) -> None:

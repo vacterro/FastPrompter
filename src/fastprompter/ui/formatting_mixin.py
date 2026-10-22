@@ -4,10 +4,8 @@ Extracted from main.py Phase 1 of the modularization plan.
 Provides FormattingMixin class for use as a mixin with FastPrompter QMainWindow.
 """
 
-import html
 import re
 
-import markdown
 from PyQt6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
 
 from fastprompter.core.ctrlw import build_template
@@ -625,110 +623,46 @@ class FormattingMixin:
         self.text_area.setFocus()
         self.mark_dirty()
 
-    def simple_markdown_to_html(self, text):
-        """Convert markdown text to styled HTML with fallback renderer."""
-
-
+    # Reading mode's single render authority (T-1484).  The parser, the
+    # sanitizer and the media discovery all live in fastprompter.core
+    # .rich_preview, which has no Qt dependency; this method only decides
+    # which syntax the user selected, which theme tokens apply and whether
+    # external media may be fetched, then keeps the last RenderedDocument so
+    # the presentation surface can build media blocks without parsing twice.
+    def _preview_syntax(self):
+        combo = getattr(self, "preview_syntax_combo", None)
+        if combo is None:
+            return "Auto"
         try:
-            # html.escape() runs on the prose so raw HTML (e.g. a pasted
-            # <script> tag) can't render as live markup — but code spans and
-            # fences are skipped: markdown does its own <, >, & escaping for
-            # those, and that pass isn't entity-aware, so pre-escaping them
-            # here double-escaped the content ("a < b" came out as the
-            # literal text "a &amp;lt; b").
-            parts = _RE_CODE_SPAN.split(text)
-            escaped = "".join(
-                part if part.startswith("`") else _RE_URL.sub(
-                    lambda m: f'<a href="{m.group(0)}" style="color:#61afef">{m.group(0)}</a>',
-                    html.escape(part),
-                )
-                for part in parts
-            )
-            # Full markdown renderer using standard Python markdown library if
-            # available. Bare URLs are pre-wrapped above (the installed markdown
-            # build has no autolink extension); code spans are left for markdown
-            # so a URL inside backticks renders as code, not a live anchor.
-            body = markdown.markdown(escaped, extensions=["fenced_code", "tables"])
+            return combo.currentData() or combo.currentText() or "Auto"
         except Exception:
-            # Fallback to simple regex renderer if markdown library not available
-            lines = text.split("\n")
-            html_lines = []
-            in_code_block = False
-            for line in lines:
-                if line.startswith("```"):
-                    if in_code_block:
-                        html_lines.append("</pre>")
-                        in_code_block = False
-                    else:
-                        html_lines.append(
-                            "<pre style='background:#1a1a1a;padding:5px;border:1px solid #333'>"
-                        )
-                        in_code_block = True
-                    continue
-                if in_code_block:
-                    html_lines.append(
-                        line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    )
-                    continue
+            return "Auto"
 
-                if line.startswith("### "):
-                    html_lines.append(
-                        f"<h3 style='color:#d4a842;margin:4px 0'>{html.escape(line[4:])}</h3>"
-                    )
-                elif line.startswith("## "):
-                    html_lines.append(
-                        f"<h2 style='color:#e0b856;margin:5px 0'>{html.escape(line[3:])}</h2>"
-                    )
-                elif line.startswith("# "):
-                    html_lines.append(
-                        f"<h1 style='color:#f0cc6a;margin:6px 0'>{html.escape(line[2:])}</h1>"
-                    )
-                elif line.startswith("> "):
-                    html_lines.append(
-                        f"<blockquote style='border-left:3px solid #7f848e;margin:4px 0;padding-left:8px;color:#7f848e'><i>{html.escape(line[2:])}</i></blockquote>"
-                    )
-                elif _RE_HEADER_DASH.match(line):
-                    html_lines.append("<hr style='border:1px solid #5a4a2a;'>")
-                elif _RE_LIST_ITEM.match(line):
-                    content = _RE_LIST_SUB.sub("", line)
-                    content = html.escape(content)
-                    content = _RE_BOLD.sub(r"<b>\1</b>", content)
-                    content = _RE_ITALIC.sub(r"<i>\1</i>", content)
-                    content = _RE_INLINE_CODE.sub(
-                        r'<code style="background:#1a1a1a;padding:0 2px;color:#e06c75">\1</code>',
-                        content,
-                    )
-                    content = _RE_URL.sub(
-                        lambda m: f'<a href="{m.group(0)}" style="color:#61afef">{m.group(0)}</a>',
-                        content,
-                    )
-                    content = _RE_LINK.sub(lambda m: f'<a href="{__import__("html").unescape(m.group(2))}" style="color:#61afef">{m.group(1)}</a>', content)
-                    html_lines.append(f"<li style='margin:1px 0'>{content}</li>")
-                else:
-                    line_text = line
-                    line_text = html.escape(line_text)
-                    line_text = _RE_BOLD.sub(r"<b>\1</b>", line_text)
-                    line_text = _RE_ITALIC.sub(r"<i>\1</i>", line_text)
-                    line_text = _RE_INLINE_CODE.sub(
-                        r'<code style="background:#1a1a1a;padding:0 2px;color:#e06c75">\1</code>',
-                        line_text,
-                    )
-                    line_text = _RE_URL.sub(
-                        lambda m: f'<a href="{m.group(0)}" style="color:#61afef">{m.group(0)}</a>',
-                        line_text,
-                    )
-                    line_text = _RE_LINK.sub(
-                        lambda m: f'<a href="{__import__("html").unescape(m.group(2))}" style="color:#61afef">{m.group(1)}</a>',
-                        line_text,
-                    )
-                    html_lines.append(
-                        f"<p style='margin:1px 0'>{line_text}</p>" if line_text.strip() else "<br>"
-                    )
-            body = "\n".join(html_lines)
+    def _preview_theme_tokens(self):
+        getter = getattr(self, "_preview_tokens", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                return None
+        return None
 
-        return f"<html><body style='color:#c4ba9f;background:#0f0f0f;font-family:Verdana,sans-serif;font-size:11px;padding:6px'>{body}</body></html>"
+    def simple_markdown_to_html(self, text):
+        """Render ``text`` for Reading mode and return its themed HTML.
 
+        Markdown, BBCode and mixed documents all come through here; the result
+        is presentation output only and never touches the document itself.
+        """
+        from fastprompter.core import rich_preview
 
+        doc = rich_preview.render(
+            text or "",
+            syntax=self._preview_syntax(),
+            allow_remote=bool(getattr(self, "_preview_external_media", False)),
+            tokens=self._preview_theme_tokens(),
+        )
+        self._last_rendered_document = doc
+        return doc.html
 
     def clear_formatting(self):
         """Reset text formatting to base font with plain style."""

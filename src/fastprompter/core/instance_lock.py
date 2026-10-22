@@ -144,7 +144,14 @@ def _write_owner_record(record: dict) -> None:
         with open(_owner_record_path(), "w", encoding="utf-8") as f:
             json.dump(record, f)
     except Exception:
-        pass
+        # The record is what _verify_owner_identity reads to prove the live
+        # process really is the mutex owner, so leaving the on-disk copy stale
+        # or absent silently degrades that check to a guess.  Raising would
+        # fail startup over a full disk, which is worse than a stale record;
+        # logging is the middle ground and the only honest one.
+        logger.warning("could not record the writer ownership identity in %s;"
+                       " the on-disk record is now stale or missing",
+                       _owner_record_path(), exc_info=True)
 
 
 def _read_owner_record() -> dict | None:

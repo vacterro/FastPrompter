@@ -45,6 +45,7 @@ from fastprompter.ui.limit_gauges import (  # noqa: E402
     LimitGauges,
     _cluster_windows,
 )
+from tests.test_limit_hover_card import native_tooltip_visible  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -105,8 +106,11 @@ def test_hover_displays_card_on_enter_without_wakeup_delay(qapp):
         assert card is not None
         assert card.isVisible()
         assert card._label.text() == gauge._build_tooltip()
-        # The native tooltip must never compete with the card.
-        assert gauge.toolTip() == ""
+        # The native tooltip must never compete with the card.  The text
+        # stays on the widget (assistive technology still reads it), but the
+        # tooltip EVENT is consumed, so Qt paints no popup beside the card.
+        assert gauge.toolTip() != ""
+        assert not native_tooltip_visible(gauge)
         assert service.auto_calls
     finally:
         gauge.hide_hover_card(immediate=True)

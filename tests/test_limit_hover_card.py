@@ -10,9 +10,29 @@ import time
 
 import pytest
 from PyQt6.QtCore import QEvent, QPoint, QPointF, Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QApplication, QWidget
 
 from fastprompter.ui.limit_hover_card import HIDE_GRACE_MS, LimitHoverCard
+
+
+def native_tooltip_visible(widget) -> bool:
+    """Ask Qt to paint the native tooltip for this widget; report if it did.
+
+    The real delivery path: Qt sends a ``QHelpEvent(ToolTip)`` to the widget
+    under the cursor, and ``QWidget::event()`` paints the popup.  A widget
+    that CONSUMES the event never gets one, so this is the observable proof
+    that a second presentation cannot appear.
+    """
+    from PyQt6.QtGui import QHelpEvent
+    from PyQt6.QtWidgets import QToolTip
+
+    QToolTip.hideText()
+    QApplication.processEvents()
+    pos = widget.mapToGlobal(widget.rect().topLeft())
+    QApplication.sendEvent(
+        widget, QHelpEvent(QEvent.Type.ToolTip, QPoint(pos), QPoint(pos)))
+    return QToolTip.isVisible()
 
 
 @pytest.fixture
@@ -259,3 +279,291 @@ class TestGaugeIntegration:
         finally:
             gauge.hide_hover_card(immediate=True)
             win.deleteLater()
+
+class TestTransactionalOpen:
+    """T-1481: one bounded open transaction, no silent native fallback."""
+
+    def _gauge(self, qapp):
+        return TestGaugeIntegration()._gauge(qapp)
+
+    def test_duplicate_enter_and_tooltip_rebuild_once(self, qapp):
+        win, gauge = self._gauge(qapp)
+        try:
+            calls = []
+            original = gauge._build_tooltip
+
+            def counted(*args, **kwargs):
+                calls.append(1)
+                return original(*args, **kwargs)
+
+            gauge._build_tooltip = counted
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.ToolTip))
+            assert len(calls) == 1, "duplicate Enter/ToolTip rebuilt the card"
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+    def test_tooltip_failure_is_diagnosed_without_native_fallback(
+            self, qapp, monkeypatch):
+        win, gauge = self._gauge(qapp)
+        try:
+            def boom(**kwargs):
+                raise RuntimeError("tooltip boom")
+
+            monkeypatch.setattr(gauge, "_build_tooltip", boom)
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            assert gauge._last_hover_error.startswith("build_tooltip")
+            assert gauge._hover_open_failed is True
+            assert not gauge._hover_card.isVisible()
+            # No native fallback.  The description stays on the widget for
+            # assistive technology, but Qt never paints a popup beside the
+            # card -- the tooltip EVENT is what is consumed.
+            assert gauge.toolTip() != ""
+            assert not native_tooltip_visible(gauge)
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+    def test_schedule_failure_is_diagnosed(self, qapp, monkeypatch):
+        win, gauge = self._gauge(qapp)
+        try:
+            def boom(*args, **kwargs):
+                raise RuntimeError("schedule boom")
+
+            monkeypatch.setattr(gauge._service, "schedule_auto", boom)
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            assert gauge._last_hover_error.startswith("schedule_auto")
+            assert gauge._hover_open_failed is True
+            assert not gauge._hover_card.isVisible()
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+class TestFocusLockSafety:
+    class _Main:
+        def __init__(self):
+            self.count = 0
+
+        def _increment_focus_lock(self):
+            self.count += 1
+
+        def _decrement_focus_lock(self):
+            self.count = max(0, self.count - 1)
+
+    def test_failed_show_releases_focus_lock(self, anchor, monkeypatch):
+        main = self._Main()
+        anchor.main_win = main
+        card = LimitHoverCard(anchor)
+        try:
+            def boom():
+                raise RuntimeError("show boom")
+
+            monkeypatch.setattr(card, "show", boom)
+            with pytest.raises(RuntimeError):
+                card.show_card("x")
+            assert main.count == 0
+            assert card._focus_lock_taken is False
+        finally:
+            card.deleteLater()
+            QApplication.processEvents()
+
+    def test_hide_releases_one_focus_lock_once(self, anchor):
+        main = self._Main()
+        anchor.main_win = main
+        card = LimitHoverCard(anchor)
+        try:
+            card.show_card("x")
+            assert main.count == 1
+            card.hide_now()
+            card.hide_now()
+            assert main.count == 0
+        finally:
+            card.deleteLater()
+            QApplication.processEvents()
+
+class TestGoldenPixelBorder:
+    def test_all_edges_are_golden_and_continuous(self, card):
+        card.show_card("x")
+        QApplication.processEvents()
+        image = card.grab().toImage()
+        golden = QColor("#D9B340")
+        assert image.pixelColor(0, 0) == golden
+        assert image.pixelColor(image.width() - 1, 0) == golden
+        assert image.pixelColor(0, image.height() - 1) == golden
+        assert image.pixelColor(image.width() - 1,
+                                image.height() - 1) == golden
+        for x in range(image.width()):
+            assert image.pixelColor(x, 0) == golden
+            assert image.pixelColor(x, image.height() - 1) == golden
+        for y in range(image.height()):
+            assert image.pixelColor(0, y) == golden
+            assert image.pixelColor(image.width() - 1, y) == golden
+
+    def test_two_pixel_thickness(self, card):
+        card.show_card("x")
+        QApplication.processEvents()
+        image = card.grab().toImage()
+        golden = QColor("#D9B340")
+        assert image.pixelColor(1, 1) == golden
+        assert image.pixelColor(2, 2) != golden
+
+    def test_hide_removes_the_application_filter(self, card):
+        card.show_card("x")
+        assert card._app_filter_installed is True
+        card.hide_now()
+        assert card._app_filter_installed is False
+
+
+class TestTooltipOwnership:
+    """T-1482: one hovered surface, one tooltip owner, one presentation."""
+
+    def _gauge(self, qapp):
+        return TestGaugeIntegration()._gauge(qapp)
+
+    @staticmethod
+    def _visible_cards():
+        return LimitHoverCard.visible_cards()
+
+    def test_the_gauge_hover_shows_exactly_one_card(self, qapp):
+        win, gauge = self._gauge(qapp)
+        try:
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            assert gauge._hover_card.isVisible()
+            assert len(self._visible_cards()) == 1
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+    def test_no_native_tooltip_appears_beside_the_gauge_card(self, qapp):
+        win, gauge = self._gauge(qapp)
+        try:
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            assert gauge._hover_card.isVisible()
+            assert not native_tooltip_visible(gauge)
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+    def test_a_delayed_tooltip_event_paints_no_native_popup(self, qapp):
+        """The event Qt delivers after the hover delay must stay consumed."""
+        win, gauge = self._gauge(qapp)
+        try:
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.ToolTip))
+            assert gauge._hover_card.isVisible()
+            assert len(self._visible_cards()) == 1
+            assert not native_tooltip_visible(gauge)
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+    def test_a_provider_refresh_creates_no_second_popup(self, qapp):
+        win, gauge = self._gauge(qapp)
+        try:
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            gauge._on_data()
+            gauge.refresh_hover_card()
+            assert len(self._visible_cards()) == 1
+            assert gauge._hover_card.isVisible()
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+    def test_the_gauge_description_stays_readable_by_assistive_technology(
+            self, qapp):
+        """The card owns the VISUAL, never the description.
+
+        Pre-fix the gauge cleared its tooltip text to keep the native popup
+        away -- which also erased the accessible description.  The repair
+        keeps the text and consumes the tooltip EVENT instead, so the
+        description must survive the card open AND a data refresh.
+        """
+        win, gauge = self._gauge(qapp)
+        try:
+            assert gauge.toolTip() != ""
+            assert gauge.accessibleDescription() != ""
+            QApplication.sendEvent(gauge, QEvent(QEvent.Type.Enter))
+            assert gauge._hover_card.isVisible()
+            assert gauge.toolTip() != "", \
+                "the card took the hover and took the description with it"
+            assert gauge.accessibleDescription() != ""
+            gauge._on_data()
+            assert gauge.toolTip() != "", \
+                "a data refresh wiped the accessible description"
+            assert gauge.accessibleDescription() != ""
+            assert not native_tooltip_visible(gauge)
+        finally:
+            gauge.hide_hover_card(immediate=True)
+            win.deleteLater()
+
+    def test_an_unrelated_button_tooltip_still_works(self, qapp):
+        """Native tooltips elsewhere in the app are NOT disabled."""
+        from PyQt6.QtWidgets import QPushButton
+
+        button = QPushButton("plain")
+        button.setToolTip("native button hint")
+        button.show()
+        try:
+            assert native_tooltip_visible(button)
+        finally:
+            button.hide()
+            button.deleteLater()
+
+    def test_opening_a_second_card_retires_the_first(self, qapp, anchor):
+        from PyQt6.QtWidgets import QWidget
+
+        other = QWidget()
+        other.resize(100, 20)
+        other.show()
+        first = LimitHoverCard(anchor)
+        second = LimitHoverCard(other)
+        try:
+            first.show_card("a")
+            assert first.isVisible()
+            second.show_card("b")
+            assert second.isVisible()
+            assert not first.isVisible(), \
+                "two cards open at once is the double-presentation defect"
+        finally:
+            first.hide_now()
+            second.hide_now()
+            other.deleteLater()
+
+    def test_retiring_a_card_releases_its_focus_lock(self, qapp, anchor):
+        from PyQt6.QtWidgets import QWidget
+
+        main = TestFocusLockSafety._Main()
+        anchor.main_win = main
+        other = QWidget()
+        other.resize(100, 20)
+        other.show()
+        first = LimitHoverCard(anchor)
+        second = LimitHoverCard(other)
+        try:
+            first.show_card("a")
+            assert main.count == 1
+            second.show_card("b")
+            assert main.count == 0, "a retired card leaked its focus lock"
+        finally:
+            first.hide_now()
+            second.hide_now()
+            other.deleteLater()
+
+    def test_the_hover_sound_fires_once_per_session(self, qapp, anchor,
+                                                    monkeypatch):
+        import fastprompter.ui.appearance_sounds as sounds
+
+        calls = []
+        monkeypatch.setattr(sounds, "emit_hover_card_show",
+                            lambda *a, **kw: calls.append(1))
+        card = LimitHoverCard(anchor)
+        try:
+            card.show_card("x")
+            card.set_html("y")            # per-second content refresh
+            card.show_card("z")           # re-show of an open card
+            assert len(calls) == 1, "the hover sound repeated inside one session"
+        finally:
+            card.hide_now()
+            card.deleteLater()
+            QApplication.processEvents()

@@ -128,6 +128,35 @@ def is_within_resolved(root, candidate):
         return False
 
 
+def recovery_path_owned(root, candidate, subtree=None):
+    """W2-001: is ``candidate`` a path this files root owns enough to rename?
+
+    Crash-recovery journals hold plain physical paths, so a stale, corrupt or
+    hand-edited record must never make startup move a directory that belongs to
+    some other storage context. Ownership is decided AFTER every junction,
+    symlink and reparse point is resolved (``is_within_resolved``), never on a
+    lexical prefix — ``files2`` starts with ``files`` but is not inside it.
+
+    ``subtree`` narrows the demand to one branch of the root (the retirement
+    journal's ``_trash``), so a journal claiming a live top-level folder moved
+    into the workspace itself is refused as well.
+    """
+    if not root or not candidate or not isinstance(candidate, (str, bytes, os.PathLike)):
+        return False
+    base = root if subtree is None else os.path.join(root, subtree)
+    if not base:
+        return False
+    if not is_within_resolved(base, candidate):
+        return False
+    # The root itself is NOT owned content: recovery pairs always name a child.
+    try:
+        cand_real = os.path.normcase(os.path.realpath(candidate))
+        base_real = os.path.normcase(os.path.realpath(base))
+    except (OSError, ValueError, TypeError):
+        return False
+    return cand_real != base_real
+
+
 def capture_resolved_root(root):
     """Canonical root identity captured before asynchronous dispatch."""
     try:

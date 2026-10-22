@@ -366,7 +366,8 @@ class KanbanBoardWidget(QScrollArea):
     changed = pyqtSignal(str)
     
     undoRequested = pyqtSignal()
-    
+    redoRequested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
@@ -384,8 +385,15 @@ class KanbanBoardWidget(QScrollArea):
         
     def keyPressEvent(self, e):
         mods = e.modifiers()
-        if mods == Qt.KeyboardModifier.ControlModifier and e.key() == Qt.Key.Key_Z:
-            self.undoRequested.emit()
+        if mods & Qt.KeyboardModifier.ControlModifier and e.key() == Qt.Key.Key_Z:
+            if mods & Qt.KeyboardModifier.ShiftModifier:
+                self.redoRequested.emit()
+            else:
+                self.undoRequested.emit()
+            e.accept()
+            return
+        if mods & Qt.KeyboardModifier.ControlModifier and e.key() == Qt.Key.Key_Y:
+            self.redoRequested.emit()
             e.accept()
             return
             
@@ -398,7 +406,7 @@ class KanbanBoardWidget(QScrollArea):
         else:
             super().keyPressEvent(e)
         
-    def load_markdown(self, text):
+    def load_markdown(self, text, span=None):
         # A board silo can still have a title, a goal line, a footer. The
         # parser recognises only "## column" and "- [ ] card" and silently
         # drops the rest, and serialize() writes back over the WHOLE silo —
@@ -406,7 +414,8 @@ class KanbanBoardWidget(QScrollArea):
         # every note vanished on the first click. Measured.
         from fastprompter.ui import silo_region
         all_lines = (text or "").split("\n")
-        span = silo_region.board_region(all_lines)
+        if span is None:
+            span = silo_region.board_region(all_lines)
         self._prefix, region, self._suffix = silo_region.split(all_lines, span)
         text = "\n".join(region)
 
@@ -445,6 +454,12 @@ class KanbanBoardWidget(QScrollArea):
         self._schedule_sync()
         cw._enter_edit_mode()
         
+    def discard_pending_sync(self):
+        """Drop a parked card edit WITHOUT writing it. See
+        TableGridWidget.discard_pending_sync — same history-step contract."""
+        if self._sync_timer.isActive():
+            self._sync_timer.stop()
+
     def _schedule_sync(self):
         self._sync_timer.start()
         

@@ -32,13 +32,16 @@ from __future__ import annotations
 import ast
 import copy
 import hashlib
-import importlib.util
+import io
 import json
 import os
 import pprint
 import re
 import sys
 import tempfile
+import tokenize
+import types
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 # Ensure repo root and src/ are in sys.path
@@ -62,6 +65,54 @@ class BakeRefusalError(RuntimeError):
 
 class BakeFrozenError(RuntimeError):
     """A frozen build must never pretend it can mutate repository defaults."""
+
+
+class BakeBusyError(RuntimeError):
+    """Another bake writer holds the target lock beyond the timeout."""
+
+
+class BakeConcurrentModificationError(RuntimeError):
+    """The target file changed under a non-cooperative external writer."""
+
+
+# Lock defaults: a holder that has not finished (or died) blocks contenders
+# for at most this long before they are told to try again later.
+_DEFAULT_LOCK_TIMEOUT = 5.0
+
+
+def canonical_target_path(path) -> str:
+    """The lock identity for a target file: absolute, normalized, case-folded.
+
+    Relative/absolute aliases of one file must serialize against the SAME
+    lock; on Windows the filesystem is case-insensitive, so the case folds
+    too. A target that does not exist yet still resolves deterministically.
+    """
+    abs_p = os.path.abspath(os.path.expanduser(str(path)))
+    norm = os.path.normpath(abs_p)
+    if sys.platform == "win32":
+        norm = norm.lower()
+    return norm
+
+
+def bake_lock_path(target) -> str:
+    """The cross-process lock file guarding one target's bake transaction."""
+    return canonical_target_path(target) + ".bake.lock"
+
+
+@contextmanager
+def bake_transaction_lock(target, timeout: float = _DEFAULT_LOCK_TIMEOUT):
+    """Hold the exclusive bake lock for ``target`` for the duration.
+
+    Cross-process and cross-thread serialization: two bakes on the SAME
+    target (by any path alias) never interleave; different targets never
+    block each other. On timeout raises ``BakeBusyError``.
+    """
+    from tools.write_guard import exclusive_file_lock
+    with exclusive_file_lock(
+            bake_lock_path(target), timeout=timeout,
+            busy_error=BakeBusyError,
+            busy_message="a bake of this target is already in progress"):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +165,7 @@ COPY_KEYS: frozenset[str] = frozenset((
     "hk_save_snippet", "hk_settings", "hk_snap", "hk_timers", "hk_underline",
     "hk_undo",
     "hover_line", "hover_line_color", "hover_line_opacity", "hr_visual_line",
-    "interval_notifs", "language", "last_save_format",
+    "language", "last_save_format",
     "limit_colors", "limit_gauges", "limit_gauges_fill",
     "limit_gauges_hide_unusable_5h", "limit_gauges_hide_zero_usage",
     "limit_gauges_refresh_sec", "limit_gauges_show_labels",
@@ -135,8 +186,10 @@ COPY_KEYS: frozenset[str] = frozenset((
     "silo_2_hotkey", "silo_2_hotkey_alt", "silo_3_hotkey", "silo_3_hotkey_alt",
     "silo_4_hotkey", "silo_4_hotkey_alt",
     "silo_bundle_keep_versions",
-    "silo_chest_slots", "silo_color_box", "silo_gap_height", "silo_home", "silo_pinned_gap",
-    "silo_random_color_on_new", "silo_tabs_mode", "silo_ticks_enabled",
+    "silo_chest_slots", "silo_color_box", "silo_gap_height", "silo_pinned_gap",
+    "silo_random_color_on_new", "silo_remember_scroll",
+    "silo_remember_scroll_migrated",
+    "silo_tabs_mode", "silo_ticks_enabled",
     "snippet_0_hotkey", "snippet_0_hotkey_alt",
     "snippet_1_hotkey", "snippet_1_hotkey_alt",
     "snippet_2_hotkey", "snippet_2_hotkey_alt",
@@ -161,6 +214,8 @@ COPY_KEYS: frozenset[str] = frozenset((
     "typo_check_enabled", "typo_color", "ui_scale", "window_locked",
     "window_presets", "window_presets_enabled", "word_wrap",
     "zebra_lines", "zebra_stripes",
+    # T-1466: user-defined default table layout template
+    "table_default_layout",
 ))
 
 #: Keys that ARE shipped settings but may not carry live/machine state.
@@ -203,12 +258,12 @@ EXCLUDED_KEYS: frozenset[str] = frozenset((
     "archive_silo_folders", "archive_silo_folders_all",
     "archive_temp_presets", "archive_temp_presets_all",
     "category_file_dirs", "cats_order", "categories",
-    "custom_font_ids", "folder_trash_log", "hidden_categories",
+    "custom_font_ids", "custom_font_paths", "folder_trash_log", "hidden_categories",
     "last_geometry", "last_tab_idx", "last_text",
     "limit_settings_geometry", "line_marks_data", "missed_timer_ids",
     "normal_window", "pinned_silos", "pinned_silos_all",
     "recent_files", "recent_replace_terms", "recent_search_terms",
-    "silo_bundle_defaults", "silo_bundle_history",
+    "silo_bundle_defaults", "silo_bundle_history", "silo_bundle_meta_retry",
     "silo_category", "silo_children", "silo_children_all", "silo_collapsed",
     "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_done_marks",
     "silo_folders", "silo_folders_all", "silo_folders_order",
@@ -218,8 +273,8 @@ EXCLUDED_KEYS: frozenset[str] = frozenset((
     "silo_project_paths_all", "silo_row_presence", "silo_selected",
     "silo_selected_all", "silo_session_all", "silo_text", "silo_ticked",
     "silo_ticked_all", "silo_type_all", "silo_types", "silo_view_state_all",
-    "silos", "snippets", "sync_path", "temp_presets", "temp_presets_all",
-    "text", "timers", "trash_text_folder", "watcher_queues",
+    "silos", "silo_pack_coverage", "snippets", "sync_path", "temp_presets", "temp_presets_all",
+    "text", "timers", "trash_consumed", "trash_text_folder", "watcher_queues",
     "watcher_queues_all", "watcher_skill",
     "window_geometry", "window_presets_capture_state", "window_x", "window_y",
     "archive_folders", "archive_folders_all", "archive_silos", "content",
@@ -231,6 +286,9 @@ EXCLUDED_KEYS: frozenset[str] = frozenset((
 #: (test_state.TestDefaultProfile.test_no_user_content_baked_in pins this).
 DROP_KEYS: frozenset[str] = frozenset((
     "aligned_blocks", "centered_blocks", "files_root", "files_root_folder",
+    # obsolete alias: replaced by silo_remember_scroll (T-1459); a profile
+    # still carrying it must fail open at bake time instead of shipping it
+    "silo_home",
     # obsolete alias: the canonical shipped key is sound_ui
     # (tests/test_resync_keys.py::test_sound_enabled_alias_removed_from_defaults)
     "sound_enabled",
@@ -239,6 +297,19 @@ DROP_KEYS: frozenset[str] = frozenset((
 #: Release-level overrides (SRC-029 §11). Exactly one explicit override:
 #: the shipped base language stays EN while every other preference bakes.
 RELEASE_OVERRIDES: dict[str, object] = {"language": "EN"}
+
+#: Source-owned keys: the canonical value comes from the source module, not
+#: from the live profile. An id-matched live customization still passes the
+#: sanitizer and ships (that is what "make the current state the default"
+#: means), but it is written as a literal -- the symbolic form is reserved
+#: for values that still equal the canonical preset (T-1443, T-1457-B).
+SOURCE_OWNED_KEYS: frozenset[str] = frozenset((
+    "interval_notifs",
+))
+
+#: Returned by :func:`_symbol_value_in_source` when the source being rewritten
+#: cannot be executed, so the formatter uses the literal form (T-1457-B).
+_SYMBOL_UNREADABLE = object()
 
 #: Backwards-compatible aliases (existing importers/tests).
 DENYLIST = EXCLUDED_KEYS
@@ -263,6 +334,7 @@ def policy_conflicts() -> list[str]:
         "neutral": set(NEUTRAL_KEYS),
         "excluded": set(EXCLUDED_KEYS),
         "drop": set(DROP_KEYS),
+        "source_owned": set(SOURCE_OWNED_KEYS),
     }
     conflicts = set()
     names = sorted(sets)
@@ -273,7 +345,7 @@ def policy_conflicts() -> list[str]:
 
 
 def classify_key(key: str) -> str:
-    """Return ``"copy" | "neutral" | "excluded" | "drop"`` for a key."""
+    """Return ``"copy" | "neutral" | "excluded" | "drop" | "source_owned"`` for a key."""
     hits = []
     if key in COPY_KEYS:
         hits.append("copy")
@@ -283,11 +355,13 @@ def classify_key(key: str) -> str:
         hits.append("excluded")
     if key in DROP_KEYS:
         hits.append("drop")
+    if key in SOURCE_OWNED_KEYS:
+        hits.append("source_owned")
     if len(hits) > 1:
         raise BakePolicyError(
             f"ambiguous bake policy for {key!r}: {hits} -- a key may belong "
             f"to exactly one of COPY_KEYS / NEUTRAL_KEYS / EXCLUDED_KEYS / "
-            f"DROP_KEYS")
+            f"DROP_KEYS / SOURCE_OWNED_KEYS")
     if hits:
         return hits[0]
     raise BakePolicyError(
@@ -362,10 +436,18 @@ def check_sound_asset(ref, *, builtin_root=None, user_root=None) -> AssetCheck:
     )
 
     namespace, rel = split_ref(bare)
-    if namespace == "user":
+    if namespace in ("user", "addon"):
+        # Both are machine-local: an imported copy or a file the user dropped
+        # into <user-data>/addon/sounds. Neither can ship as a default, so the
+        # bake refuses with the precise reason instead of calling it missing.
         found = contained_path(user_root, rel) if user_root else None
         if found and os.path.isfile(found):
             return AssetCheck(text, MANAGED_ONLY, found)
+        if namespace == "addon":
+            from fastprompter.core.sound_library import addon_root
+            found = contained_path(addon_root(), rel)
+            if found and os.path.isfile(found):
+                return AssetCheck(text, MANAGED_ONLY, found)
         return AssetCheck(text, MISSING, "")
 
     roots = [builtin_root] if builtin_root else []
@@ -482,9 +564,20 @@ def _sanitize_sound_events(value, base_value):
 
 
 def _sanitize_interval_notifs(value, base_value):
-    """Keep intentional rule configuration; neutralize runtime history."""
-    if not isinstance(value, list):
+    """Keep intentional rule configuration; neutralize runtime history.
+
+    Source-owned daypart rules are matched by id against the canonical
+    template: rules whose id exists in the base profile pass through
+    sanitized; a live-only rule set that cannot be matched at all (e.g. a
+    foreign or hacked list) is rejected wholesale and the canonical rules
+    ship instead -- a conflicting live value can never replace them.
+    """
+    if not isinstance(value, list) or not isinstance(base_value, list):
         return copy.deepcopy(base_value)
+    canonical_ids = {
+        (rule.get("id") if isinstance(rule, dict) else None)
+        for rule in base_value
+    }
     rules = []
     for rule in value:
         if not isinstance(rule, dict):
@@ -493,7 +586,11 @@ def _sanitize_interval_notifs(value, base_value):
         clean["last_fired"] = 0.0
         clean["last_fired_minute"] = ""
         rules.append(clean)
-    return rules
+    if not rules:
+        return copy.deepcopy(base_value)
+    if not canonical_ids or any(rule.get("id") in canonical_ids for rule in rules):
+        return rules
+    return copy.deepcopy(base_value)
 
 
 def _strip_runtime_fields(payload: dict) -> dict:
@@ -696,6 +793,19 @@ def build_bake_plan(source_data: dict, base_defaults: dict | None = None,
             plan.profile[key] = copy.deepcopy(NEUTRAL_KEYS[key])
             continue
 
+        if policy == "source_owned":
+            # Shippable, but the live value only passes through the canonical
+            # sanitizer (id-matched daypart rules); anything foreign is
+            # rejected and the canonical source-owned value ships instead.
+            plan.copied += 1
+            sanitize = SANITIZERS.get(key)
+            if sanitize is not None:
+                plan.profile[key] = copy.deepcopy(
+                    sanitize(source_data.get(key), base_defaults.get(key)))
+            elif key in base_defaults:
+                plan.profile[key] = copy.deepcopy(base_defaults[key])
+            continue
+
         # copy
         plan.copied += 1
         if key in source_data:
@@ -805,15 +915,58 @@ def snapshot_defaults_from_window(window, data=None) -> dict:
 # Formatting / writing / roundtrip verification
 # ---------------------------------------------------------------------------
 
-def format_default_profile_py(new_profile: dict, original_source: str) -> str:
-    """Format the default_profile.py module while preserving the docstring."""
-    docstring_match = re.search(
-        r'^(?:"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')', original_source)
-    docstring = docstring_match.group(0) if docstring_match else \
-        '"""Shipped defaults -- the baked "current configuration"."""'
+def _symbol_value_in_source(source: str, symbol: str):
+    """Value ``symbol`` denotes when the source being rewritten executes.
 
-    lines = [docstring, "", "DEFAULT_PROFILE = {"]
+    The symbolic write is lossless only while the baked value still equals
+    what the symbol evaluates to. Returns :data:`_SYMBOL_UNREADABLE` when the
+    source cannot be executed at all, so the caller falls back to the literal
+    form rather than guessing (T-1457-B).
+    """
+    module = types.ModuleType("fastprompter_bake_symbol_probe")
+    module.__file__ = _TARGET_FILE
+    try:
+        exec(compile(source, _TARGET_FILE, "exec"), module.__dict__)
+    except BaseException:
+        return _SYMBOL_UNREADABLE
+    return getattr(module, symbol, _SYMBOL_UNREADABLE)
+
+
+def format_default_profile_py(new_profile: dict, original_source: str) -> str:
+    """Rebuild only the DEFAULT_PROFILE dict body; everything else is
+    preserved byte-identically (T-1443 prefix/suffix contract).
+
+    Source-owned keys (interval_notifs) keep their symbolic form while the
+    baked value is still the canonical preset:
+    `from fastprompter.core.interval_presets import DAYPART_CHIME_RULES`
+    `_INTERVAL_NOTIFS_DEFAULT = copy.deepcopy(DAYPART_CHIME_RULES)`
+    `"interval_notifs": _INTERVAL_NOTIFS_DEFAULT,`
+
+    A source-owned key whose baked value DIVERGED from that preset (the
+    sanitizer deliberately passes an id-matched live customization through)
+    is written as a literal instead: the symbol would silently ship the
+    canonical preset and the round-trip check would reject the file, so the
+    literal is the only lossless encoding of a baked customization
+    (T-1457-B).
+    """
+    source_owned_symbols = {}
+    for key in SOURCE_OWNED_KEYS:
+        match = re.search(
+            rf'["\']{re.escape(key)}["\']\s*:\s*([A-Za-z_][A-Za-z0-9_]*)',
+            original_source)
+        if match:
+            source_owned_symbols[key] = match.group(1)
+
+    prefix, interior, suffix = _split_profile_assignment(original_source)
+    body_lines = []
     for key in sorted(new_profile.keys()):
+        symbol = source_owned_symbols.get(key)
+        if symbol is not None:
+            denoted = _symbol_value_in_source(original_source, symbol)
+            if denoted is not _SYMBOL_UNREADABLE \
+                    and denoted == new_profile[key]:
+                body_lines.append(f'    "{key}": {symbol},')
+                continue
         val = new_profile[key]
         formatted_val = pprint.pformat(val, indent=4, width=100)
         if "\n" in formatted_val:
@@ -821,29 +974,131 @@ def format_default_profile_py(new_profile: dict, original_source: str) -> str:
             formatted_val = "\n".join(
                 [indented_lines[0]] + ["    " + line
                                        for line in indented_lines[1:]])
-        lines.append(f'    "{key}": {formatted_val},')
-    lines.append("}")
-    lines.append("")
+        body_lines.append(f'    "{key}": {formatted_val},')
 
-    new_content = "\n".join(lines)
-    ast.parse(new_content)  # syntax gate before any write
+    new_content = (prefix + "\n" + "\n".join(body_lines) + "\n" + suffix)
+    try:
+        ast.parse(new_content)
+    except SyntaxError as exc:
+        raise BakePolicyError(
+            f"candidate default_profile is not valid Python: {exc}") from exc
     return new_content
 
 
+def _split_profile_assignment(source: str):
+    """Split ``source`` at the ``DEFAULT_PROFILE = {...}`` dict literal.
+
+    Returns ``(prefix, interior, suffix)`` where ``prefix`` ends with the
+    opening ``{``, ``suffix`` starts with the closing ``}`` and ``interior``
+    is everything between them. Brace matching is token-based so braces
+    inside string values never confuse it.
+    """
+    lines = source.splitlines(keepends=True)
+    line_start = [0]
+    for line in lines:
+        line_start.append(line_start[-1] + len(line))
+
+    def _abs(pos):
+        # tokenize columns are zero-based (PEP 626); rows are 1-based.
+        return line_start[pos[0] - 1] + pos[1]
+
+    open_end = close_start = None
+    depth = 0
+    seen_name = False
+    try:
+        tokens = list(tokenize.generate_tokens(
+            io.StringIO(source).readline))
+    except (AttributeError, tokenize.TokenError) as exc:
+        raise BakePolicyError(
+            f"candidate default_profile is not tokenizable: {exc}") from exc
+    for tok in tokens:
+        if not seen_name:
+            if tok.type == tokenize.NAME and tok.string == "DEFAULT_PROFILE":
+                seen_name = True
+            continue
+        if open_end is None:
+            if tok.type == tokenize.OP and tok.string == "{":
+                open_end = _abs(tok.end)
+                depth = 1
+            continue
+        if tok.type == tokenize.OP:
+            if tok.string == "{":
+                depth += 1
+            elif tok.string == "}":
+                depth -= 1
+                if depth == 0:
+                    close_start = _abs(tok.start)
+                    break
+    if open_end is None or close_start is None:
+        raise BakePolicyError(
+            "candidate default_profile has no DEFAULT_PROFILE = {...} dict")
+    return source[:open_end], source[open_end:close_start], source[close_start:]
+
+
 def _reload_written_module(path: str) -> dict:
-    """Import the written file independently and return its DEFAULT_PROFILE."""
-    spec = importlib.util.spec_from_file_location(
-        "fastprompter_bake_roundtrip_check", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load written profile: {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    """Independently compile the written file and return its DEFAULT_PROFILE.
+
+    A loader with bytecode caching must never be used here: two bakes whose
+    profile renders to the same byte size and filesystem timestamp granularity
+    collide, and the stale ``__pycache__`` wins (measured: a round-trip that
+    returned the PREVIOUS profile). Compiling the source directly makes every
+    read genuinely independent of import machinery and pyc caches.
+    """
+    with open(path, "rb") as f:
+        raw = f.read()
+    try:
+        source = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise SyntaxError(f"written profile is not UTF-8: {path}")
+    module = types.ModuleType("fastprompter_bake_roundtrip_check")
+    module.__file__ = path
+    exec(compile(source, path, "exec"), module.__dict__)
     return module.DEFAULT_PROFILE
 
 
+def _target_sha256(path: str) -> str:
+    """SHA256 of the target's current bytes (the external-edit sentinel)."""
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _restore_original(target: str, original_raw: bytes) -> None:
+    """Put the pre-bake bytes back after a failed round-trip check.
+
+    The candidate already replaced the target by the time the independent
+    reload runs, so a semantic mismatch must roll the exact original bytes
+    back -- leaving the verified-wrong target on disk would silently change
+    the shipped profile of every future build. The raw bytes are restored
+    verbatim: re-encoding the read text would normalize line endings and
+    fail the byte-identical contract.
+    """
+    directory = os.path.dirname(target) or "."
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=".default_profile_restore_", suffix=".py", dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(original_raw)
+        os.replace(tmp_path, target)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def apply_bake_plan(plan: BakePlan, *, target_file: str | None = None,
-                    dry_run: bool = False) -> dict:
-    """Atomically write a vetted plan and prove the written module round-trips."""
+                    dry_run: bool = False, timeout: float = _DEFAULT_LOCK_TIMEOUT) -> dict:
+    """Atomically write a vetted plan and prove the written module round-trips.
+
+    The write is a transaction: the target lock serializes every writer (any
+    path alias) for the duration, the candidate temp file is removed on any
+    failure, and an external non-cooperative edit of the target during the
+    bake is detected by SHA and reported instead of being silently clobbered.
+    """
     target = target_file or _TARGET_FILE
     if plan.refused:
         detail = ", ".join(f"{a.ref} [{a.status}]" for a in plan.refused)
@@ -854,16 +1109,38 @@ def apply_bake_plan(plan: BakePlan, *, target_file: str | None = None,
             "build has no durable semantics for it. Source development builds "
             "only.")
 
-    with open(target, encoding="utf-8") as f:
-        original_source = f.read()
-    new_source = format_default_profile_py(plan.profile, original_source)
+    if dry_run:
+        return {
+            "keys_count": len(plan.profile),
+            "target_file": target,
+            "dry_run": True,
+            "profile": plan.profile,
+            "summary": plan.summary(),
+            "written_sha256": None,
+            "roundtrip_equal": None,
+        }
 
-    written_sha = hashlib.sha256(new_source.encode("utf-8")).hexdigest()
-    roundtrip_ok = None
-    if not dry_run:
+    with bake_transaction_lock(target, timeout=timeout):
+        with open(target, "rb") as f:
+            original_raw = f.read()
+        try:
+            original_source = original_raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise BakePolicyError(
+                f"candidate default_profile is not valid UTF-8: {exc}") from exc
+        sha_before = _target_sha256(target)
+        new_source = format_default_profile_py(plan.profile, original_source)
+        sha_after_format = _target_sha256(target)
+        if sha_after_format != sha_before:
+            raise BakeConcurrentModificationError(
+                "target was modified concurrently during bake; refusing to "
+                "clobber an external edit")
+
+        written_sha = hashlib.sha256(new_source.encode("utf-8")).hexdigest()
+        roundtrip_ok = None
         directory = os.path.dirname(target) or "."
         fd, tmp_path = tempfile.mkstemp(
-            prefix=".default_profile_", suffix=".py", dir=directory)
+            prefix=".default_profile_candidate_", suffix=".py", dir=directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
                 f.write(new_source)
@@ -875,13 +1152,38 @@ def apply_bake_plan(plan: BakePlan, *, target_file: str | None = None,
                 pass
             raise
         # SRC-029 §13: never trust AST parsing alone -- build a fresh module
-        # from ONLY the written file and compare every shippable key.
-        reloaded = _reload_written_module(target)
-        roundtrip_ok = reloaded == plan.profile
-        if not roundtrip_ok:
+        # from ONLY the written file and compare every shippable key. The
+        # bytes-on-disk check runs FIRST: an external edit swapped in while
+        # we held the lock is reported, never evaluated as a round-trip
+        # failure (and never clobbered).
+        sha_after_replace = _target_sha256(target)
+        if sha_after_replace != written_sha:
+            raise BakeConcurrentModificationError(
+                "target was modified concurrently during bake; the bytes on "
+                "disk do not match the candidate that was written")
+        try:
+            reloaded = _reload_written_module(target)
+        except BaseException:
+            # A concurrent external edit may have landed while the reload
+            # was in flight (inside the loader itself). Verify the bytes
+            # still match the candidate before attributing the failure to
+            # the round-trip check, and never clobber an external writer.
+            if _target_sha256(target) != sha_after_replace:
+                raise BakeConcurrentModificationError(
+                    "target was modified concurrently during bake; the "
+                    "bytes on disk do not match the candidate that was "
+                    "written") from None
+            raise
+        if _target_sha256(target) != sha_after_replace:
+            raise BakeConcurrentModificationError(
+                "target was modified concurrently during bake; the bytes on "
+                "disk do not match the candidate that was written")
+        if reloaded != plan.profile:
+            _restore_original(target, original_raw)
             raise RuntimeError(
                 "written DEFAULT_PROFILE does not round-trip equal to the "
                 "sanitized snapshot")
+        roundtrip_ok = True
 
     return {
         "keys_count": len(plan.profile),

@@ -10,6 +10,7 @@ import sys
 import time
 
 import pytest
+from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import QApplication
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -30,6 +31,8 @@ from fastprompter.core.usage_limits.model import (
     soonest_reset,
 )
 from fastprompter.main import FastPrompter
+from fastprompter.ui.limit_hover_card import LimitHoverCard
+from tests.test_limit_hover_card import native_tooltip_visible
 
 
 def _snap(provider="claude", stable="s1", name="Claude", status=OK,
@@ -203,8 +206,11 @@ def _queue_html(win) -> str:
 
 def _install_snapshots(w, snaps):
     from fastprompter.core.usage_limits.service import ServiceState
+    # The gauge reads the ACCOUNT list, not the snapshot list: a snapshot
+    # carries no ``key`` of its own.
+    accounts = [s.account for s in snaps.values()]
     w.limit_service._state = ServiceState(
-        accounts=list(snaps.values()), snapshots=dict(snaps))
+        accounts=accounts, snapshots=dict(snaps))
 
 
 def test_tooltip_lists_every_candidate_in_order(win):
@@ -285,7 +291,7 @@ def test_tooltip_rows_colored_per_vendor(win):
     from fastprompter.core.usage_limits.model import PROVIDER_RESET_COLORS
     from fastprompter.ui.limit_colors import reset_color
     snaps = {
-        "claude:s1": _snap("claude", "s1", windows=[_win(epoch=_fresh(60))]),
+        "claude:s1": _snap("claude", "s1", "Claude", windows=[_win(epoch=_fresh(60))]),
         "codex:s1": _snap("codex", "s1", "Codex", windows=[_win(epoch=_fresh(120))]),
     }
     _install_snapshots(win, snaps)
@@ -295,3 +301,125 @@ def test_tooltip_rows_colored_per_vendor(win):
     codex_color = reset_color(win, "codex") or PROVIDER_RESET_COLORS["codex"]
     assert f"color:{claude_color}" in tip and "Claude" in tip
     assert f"color:{codex_color}" in tip and "Codex" in tip
+
+
+# ---------------------------------------------------------------------------
+# tooltip ownership (T-1482: one hovered surface, ONE presentation)
+# ---------------------------------------------------------------------------
+
+def _one_candidate():
+    return {"claude:s1": _snap("claude", "s1", "Claude",
+                               windows=[_win(epoch=_fresh(42))])}
+
+
+def _visible_cards():
+    return LimitHoverCard.visible_cards()
+
+
+class TestTooltipOwnership:
+    """The reset timer shows the CARD -- never a native popup beside it."""
+
+    def _hover(self, win):
+        """Make the window real and hover the reset label for real."""
+        win.show()
+        QApplication.processEvents()
+        lbl = win.lbl_limit_timer
+        assert lbl.isVisible(), "the reset countdown must be on screen"
+        QApplication.sendEvent(lbl, QEvent(QEvent.Type.Enter))
+        QApplication.processEvents()
+        return lbl
+
+    def test_hovering_the_reset_timer_shows_one_custom_card(self, win):
+        _install_snapshots(win, _one_candidate())
+        win._update_limit_timer_label()
+        self._hover(win)
+        card = win._reset_hover_card
+        assert card is not None and card.isVisible()
+        assert len(_visible_cards()) == 1
+
+    def test_no_native_tooltip_appears_beside_the_reset_card(self, win):
+        _install_snapshots(win, _one_candidate())
+        win._update_limit_timer_label()
+        lbl = self._hover(win)
+        assert win._reset_hover_card.isVisible()
+        assert not native_tooltip_visible(lbl)
+
+    def test_duplicate_enter_and_tooltip_events_are_idempotent(self, win,
+                                                                monkeypatch):
+        import fastprompter.ui.appearance_sounds as sounds
+
+        calls = []
+        monkeypatch.setattr(sounds, "emit_hover_card_show",
+                            lambda *a, **kw: calls.append(1))
+        _install_snapshots(win, _one_candidate())
+        win._update_limit_timer_label()
+        lbl = self._hover(win)
+        card = win._reset_hover_card
+        QApplication.sendEvent(lbl, QEvent(QEvent.Type.Enter))
+        QApplication.sendEvent(lbl, QEvent(QEvent.Type.ToolTip))
+        QApplication.processEvents()
+        assert win._reset_hover_card is card, "the card was rebuilt"
+        assert card.isVisible()
+        assert len(_visible_cards()) == 1
+        assert len(calls) == 1, "the hover sound repeated inside one session"
+
+    def test_a_countdown_refresh_does_not_reactivate_the_native_tooltip(self,
+                                                                        win):
+        _install_snapshots(win, _one_candidate())
+        win._update_limit_timer_label()
+        lbl = self._hover(win)
+        for _ in range(3):
+            win._update_limit_timer_label()
+            QApplication.processEvents()
+        assert win._reset_hover_card.isVisible()
+        assert not native_tooltip_visible(lbl)
+        assert len(_visible_cards()) == 1
+
+    def test_a_provider_refresh_creates_no_second_popup(self, win):
+        _install_snapshots(win, _one_candidate())
+        win._update_limit_timer_label()
+        self._hover(win)
+        win.limit_gauges._on_data()
+        win._update_limit_timer_label()
+        QApplication.processEvents()
+        assert len(_visible_cards()) == 1
+        assert win._reset_hover_card.isVisible()
+
+    def test_rapid_hover_across_the_gauge_and_the_timer_keeps_one_card(self,
+                                                                        win):
+        _install_snapshots(win, _one_candidate())
+        win._update_limit_timer_label()
+        lbl = self._hover(win)
+        QApplication.sendEvent(win.limit_gauges, QEvent(QEvent.Type.Enter))
+        QApplication.processEvents()
+        assert len(_visible_cards()) == 1, \
+            "two cards open at once is the double-presentation defect"
+        QApplication.sendEvent(lbl, QEvent(QEvent.Type.Enter))
+        QApplication.processEvents()
+        assert len(_visible_cards()) == 1
+
+    def test_the_empty_queue_leaves_the_native_tooltip_as_the_owner(self, win):
+        _install_snapshots(win, {
+            "claude:s1": _snap("claude", "s1", "Claude",
+                               windows=[_win(FIVE_HOUR, epoch=None)])})
+        win._update_limit_timer_label()
+        lbl = win.lbl_limit_timer
+        assert lbl.toolTip() == "No upcoming AI limit resets"
+        assert lbl._card_owns_hover is False
+        win.show()
+        lbl.setVisible(True)
+        QApplication.processEvents()
+        QApplication.sendEvent(lbl, QEvent(QEvent.Type.Enter))
+        QApplication.processEvents()
+        assert win._reset_hover_card is None or \
+            not win._reset_hover_card.isVisible()
+        assert native_tooltip_visible(lbl), \
+            "with no card to show, the native tooltip owns the hover"
+
+    def test_the_description_stays_readable_without_a_duplicate_visual(self,
+                                                                       win):
+        _install_snapshots(win, _one_candidate())
+        win._update_limit_timer_label()
+        lbl = self._hover(win)
+        assert lbl.accessibleDescription() == lbl.toolTip() != ""
+        assert not native_tooltip_visible(lbl)

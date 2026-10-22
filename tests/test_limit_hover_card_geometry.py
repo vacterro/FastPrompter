@@ -11,10 +11,13 @@ card horizontally and never shrink it; only a real window move re-anchors.
 
 from __future__ import annotations
 
+import time
+
 import pytest
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtWidgets import QApplication, QWidget
 
-from fastprompter.ui.limit_hover_card import LimitHoverCard
+from fastprompter.ui.limit_hover_card import HIDE_GRACE_MS, LimitHoverCard
 
 
 @pytest.fixture
@@ -106,3 +109,63 @@ class TestSessionGeometry:
         card.set_html("<b>" + "w" * 400 + "</b>")
         assert card.x() >= screen.left()
         assert card.x() + card.width() <= screen.right() + 1
+
+
+class TestHoverTransitions:
+    """T-1482: the hover session survives every transition -- with ONE
+    presentation visible at a time."""
+
+    @staticmethod
+    def _pump(ms):
+        end = time.monotonic() + ms / 1000.0
+        while time.monotonic() < end:
+            QApplication.processEvents()
+            time.sleep(0.005)
+
+    def test_the_card_is_a_window_the_pointer_can_enter(self, card):
+        assert card.isWindow(), "a QToolTip cannot be entered by the pointer"
+        assert card.windowFlags() & Qt.WindowType.Tool
+        card.show_card("x")
+        QApplication.sendEvent(card, QEvent(QEvent.Type.Enter))
+        assert card.isVisible()
+
+    def test_travelling_from_the_anchor_onto_the_card_keeps_it_open(self, card,
+                                                                   anchor):
+        card.show_card("x")
+        QApplication.sendEvent(anchor, QEvent(QEvent.Type.Leave))
+        QApplication.sendEvent(card, QEvent(QEvent.Type.Enter))
+        self._pump(HIDE_GRACE_MS + 150)
+        assert card.isVisible(), "the trip from the gauge to the card closed it"
+
+    def test_hiding_the_hover_target_closes_the_card(self, card, anchor):
+        card.show_card("x")
+        anchor.hide()
+        QApplication.processEvents()
+        assert not card.isVisible(), "a card anchored to nothing is stale"
+
+    def test_the_card_dismisses_a_pending_native_tooltip(self, card,
+                                                          monkeypatch):
+        """A native popup left on screen would sit ON TOP of the card."""
+        from PyQt6.QtWidgets import QToolTip
+
+        calls = []
+        original = QToolTip.hideText
+
+        def spy():
+            calls.append(1)
+            original()
+
+        monkeypatch.setattr(QToolTip, "hideText", spy)
+        card.show_card("x")
+        assert calls, "the card must dismiss a native popup that could overlap"
+
+    def test_rapid_enter_and_leave_never_produce_a_second_card(self, card,
+                                                                anchor):
+        card.show_card("x")
+        cards = {id(card)}
+        for _ in range(8):
+            QApplication.sendEvent(anchor, QEvent(QEvent.Type.Enter))
+            QApplication.sendEvent(card, QEvent(QEvent.Type.Leave))
+            cards.add(id(card))
+        assert len(cards) == 1
+        assert card.isVisible()

@@ -506,14 +506,15 @@ def test_l2_apply_preview_is_explicit(monkeypatch):
 def _rows():
     return [
         {"n": 1, "account": "Claude Work Account Long", "pool": "Claude and GPT models",
-         "window": "Weekly", "left": "3d 4h 2m", "color": "#d9932f"},
+         "window": "Weekly", "left": "3d 4h 2m", "resets": "Tue 14:05",
+         "color": "#d9932f"},
         {"n": 2, "account": "Codex Personal", "pool": "",
-         "window": "5h", "left": "42m", "color": "#4bc0ff"},
+         "window": "5h", "left": "42m", "resets": "14:47", "color": "#4bc0ff"},
     ]
 
 
 _LABELS = {"Account": "Account", "Pool": "Pool", "Window": "Window",
-           "Left": "Left"}
+           "Left": "Left", "Resets": "Resets"}
 
 
 def test_o_narrow_card_keeps_essential_columns_readable():
@@ -537,12 +538,19 @@ def test_o_narrow_card_keeps_essential_columns_readable():
     assert "Claude and GPT mode" in html
     assert "Weekly" in html and "3d 4h 2m" in html
     assert "42m" in html
+    # T-1457-A: the narrow composition still carries the absolute instant, so
+    # shrinking the popup never silently drops a column of information.
+    assert "Tue 14:05" in html and "14:47" in html
     # wide composition would need more than the popup can give
     assert wide_required > narrow_available
 
 
-def test_o2_wide_card_keeps_the_five_column_composition():
-    from fastprompter.ui.reset_queue_card import render_table, required_width
+def test_o2_wide_card_keeps_the_six_column_composition():
+    from fastprompter.ui.reset_queue_card import (
+        COLUMNS,
+        render_table,
+        required_width,
+    )
 
     rows = _rows()
 
@@ -554,3 +562,157 @@ def test_o2_wide_card_keeps_the_five_column_composition():
                         available_width=wide_required + 40, measure=measure)
     assert "Account / Pool" not in html
     assert html.count("<tr>") == 3          # header + two rows
+    # Six columns wide: header row + two body rows, every cell present.
+    assert len(COLUMNS) == 6
+    assert html.count("<td") == len(COLUMNS) * 3
+    for column in COLUMNS:
+        assert f">{column}</td>" in html
+
+
+# ---------------------------------------------------------------------------
+# P -- source-owned round-trip (T-1457-B)
+#
+# The symbolic form ("interval_notifs": _INTERVAL_NOTIFS_DEFAULT) can only
+# encode the CANONICAL preset, but the source-owned sanitizer deliberately
+# passes an id-matched live customization through. Writing the symbol for a
+# diverged value made the independent reload equal the preset instead of the
+# plan, so every real bake raised
+# "written DEFAULT_PROFILE does not round-trip equal to the sanitized snapshot".
+# ---------------------------------------------------------------------------
+
+def _real_source_target(tmp_path):
+    """A byte copy of the REAL shipped default_profile.py (symbolic form)."""
+    import shutil
+    target = tmp_path / "default_profile.py"
+    shutil.copyfile(_REPO / "src" / "fastprompter" / "core" /
+                    "default_profile.py", target)
+    return target
+
+
+def _diverged_live_profile():
+    """Live profile whose daypart sound differs from the canonical preset."""
+    import copy as _copy
+
+    from fastprompter.core.default_profile import DEFAULT_PROFILE
+
+    live = _copy.deepcopy(DEFAULT_PROFILE)
+    for rule in live["interval_notifs"]:
+        if rule.get("sound") == "file:newday.wav":
+            # A live value the canonical preset must override: the sanitizer
+            # keeps source-owned daypart rules on their shipped sound.
+            rule["sound"] = "file:menu2.wav"
+            break
+    else:                                       # pragma: no cover - guard
+        raise AssertionError("canonical preset lost its newday rule")
+    live["sound_volume"] = "0.42"
+    return live
+
+
+def test_p1_diverged_source_owned_value_round_trips_exactly(tmp_path):
+    plan = bake.build_bake_plan(_diverged_live_profile(), check_assets=False)
+    target = _real_source_target(tmp_path)
+    result = bake.apply_bake_plan(plan, target_file=str(target))
+    assert result["roundtrip_equal"] is True
+    reloaded = bake._reload_written_module(str(target))
+    assert reloaded == plan.profile
+    # The customization survived; the canonical preset did NOT replace it.
+    sounds = [r["sound"] for r in reloaded["interval_notifs"]]
+    assert "file:newday.wav" in sounds
+    assert reloaded["sound_volume"] == "0.42"
+
+
+def test_p2_unchanged_source_owned_value_keeps_the_symbolic_form(tmp_path):
+    """The T-1443 anti-drift contract still holds for the un-diverged case."""
+    from fastprompter.core.default_profile import DEFAULT_PROFILE
+    plan = bake.build_bake_plan(dict(DEFAULT_PROFILE), check_assets=False)
+    target = _real_source_target(tmp_path)
+    result = bake.apply_bake_plan(plan, target_file=str(target))
+    assert result["roundtrip_equal"] is True
+    written = target.read_text(encoding="utf-8")
+    assert '"interval_notifs": _INTERVAL_NOTIFS_DEFAULT,' in written
+    assert "_INTERVAL_NOTIFS_DEFAULT = copy.deepcopy(DAYPART_CHIME_RULES)" \
+        in written
+
+
+def test_p3_diverged_bake_is_deterministic_and_idempotent(tmp_path):
+    plan = bake.build_bake_plan(_diverged_live_profile(), check_assets=False)
+    target = _real_source_target(tmp_path)
+    first = bake.apply_bake_plan(plan, target_file=str(target))
+    bytes_once = target.read_bytes()
+    second = bake.apply_bake_plan(plan, target_file=str(target))
+    assert second["written_sha256"] == first["written_sha256"]
+    assert target.read_bytes() == bytes_once
+
+
+def test_p4_foreign_source_owned_list_still_ships_the_canonical_preset(
+        tmp_path):
+    """A hacked list is rejected wholesale, so the symbol stays lossless."""
+    source = _live_custom_profile()
+    source["interval_notifs"] = [{
+        "id": "hacked_chime", "name": "Hacked", "minutes": 1,
+        "enabled": True, "sound": "file:tick_on.wav",
+        "last_fired": 0.0, "last_fired_minute": "",
+    }]
+    plan = bake.build_bake_plan(source, check_assets=False)
+    target = _real_source_target(tmp_path)
+    result = bake.apply_bake_plan(plan, target_file=str(target))
+    assert result["roundtrip_equal"] is True
+    written = target.read_text(encoding="utf-8")
+    assert "hacked_chime" not in written
+    assert '"interval_notifs": _INTERVAL_NOTIFS_DEFAULT,' in written
+
+
+def test_p5_a_bake_that_cannot_round_trip_restores_the_original_bytes(
+        tmp_path, monkeypatch):
+    """The equality assertion is NOT weakened: a real mismatch still rolls
+    the exact pre-bake bytes back and raises."""
+    plan = bake.build_bake_plan(_live_custom_profile(), check_assets=False)
+    target = _real_source_target(tmp_path)
+    before = target.read_bytes()
+
+    real_format = bake.format_default_profile_py
+
+    def _corrupt(profile, original_source):
+        return real_format(dict(profile, sound_volume="CORRUPTED"), original_source)
+
+    monkeypatch.setattr(bake, "format_default_profile_py", _corrupt)
+    with pytest.raises(RuntimeError, match="does not round-trip equal"):
+        bake.apply_bake_plan(plan, target_file=str(target))
+    assert target.read_bytes() == before
+
+
+def _reload_source(source: str) -> dict:
+    import pathlib as _pathlib
+    import tempfile as _tempfile
+    with _tempfile.TemporaryDirectory() as tmp:
+        path = _pathlib.Path(tmp) / "written.py"
+        path.write_text(source, encoding="utf-8")
+        return bake._reload_written_module(str(path))
+
+
+def test_p6_a_symbol_bound_to_a_different_value_is_written_literally():
+    """The symbolic form is chosen by VALUE, never by the mere presence of a
+    symbol name: a source whose symbol denotes something else must not
+    silently ship that other value."""
+    plan = bake.build_bake_plan(_diverged_live_profile(), check_assets=False)
+    source = (
+        "_INTERVAL_NOTIFS_DEFAULT = ['not', 'the', 'plan', 'value']\n"
+        'DEFAULT_PROFILE = {"interval_notifs": _INTERVAL_NOTIFS_DEFAULT}\n'
+    )
+    written = bake.format_default_profile_py(plan.profile, source)
+    assert '"interval_notifs": _INTERVAL_NOTIFS_DEFAULT,' not in written
+    assert "'file:newday.wav'" in written
+    assert _reload_source(written) == plan.profile
+
+
+def test_p7_an_unexecutable_source_is_reported_as_unreadable():
+    """No guessing: when the source cannot be executed at all, the probe says
+    so and the caller writes the literal form."""
+    assert bake._symbol_value_in_source(
+        "raise RuntimeError('boom')\n", "_INTERVAL_NOTIFS_DEFAULT"
+    ) is bake._SYMBOL_UNREADABLE
+    assert bake._symbol_value_in_source(
+        "_INTERVAL_NOTIFS_DEFAULT = 7\n", "_INTERVAL_NOTIFS_DEFAULT") == 7
+    assert bake._symbol_value_in_source(
+        "_OTHER = 7\n", "_INTERVAL_NOTIFS_DEFAULT"
+    ) is bake._SYMBOL_UNREADABLE

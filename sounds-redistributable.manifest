@@ -5,6 +5,7 @@
 # addon folder (<user-data>/addon/sounds) or the managed library.
 CaseOpen.wav
 Click.wav
+ambient_loop.wav
 problip/blip01.wav
 blip_b.wav
 problip/blip_bonk.wav

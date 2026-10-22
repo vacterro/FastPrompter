@@ -262,7 +262,7 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 - Morning (07:00–11:00) — every 60 min, newday.wav
 - Noon (12:00) — every 60 min, success_levelup.wav
 - Day & Evening (13:00–21:00) — every 60 min, newday.wav
-- Night (22:00–06:00) — every 60 min, alert_owl2.wav
+- Night (22:00–06:00) — every 60 min, menu1.wav
 
 **Sound Quick Bar:** 10 favorite sound slots shown as buttons below the sound picker. Click to select and preview; right-click to store the current sound into that slot.
 

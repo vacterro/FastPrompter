@@ -126,7 +126,9 @@ def test_set_align_survives_a_render_round_trip():
 
 def test_new_table_leaves_the_body_empty():
     t = st.new_table(2, 3)
-    assert t.rows[0] == ["Column 1", "Column 2", "Column 3"]
+    # the header row is empty too: the grid paints A/B/C as column identifiers,
+    # so no label may be written into the document's first row (T-1466)
+    assert t.rows[0] == ["", "", ""]
     assert t.rows[1:] == [["", "", ""], ["", "", ""]]
     lines = st.render(t)
     assert len(lines) == 4                       # header + separator + 2 rows

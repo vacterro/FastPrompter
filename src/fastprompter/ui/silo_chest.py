@@ -43,6 +43,13 @@ DEFAULT_CHEST_SLOTS = "dynamic"
 PLACEHOLDER_ROLE = Qt.ItemDataRole.UserRole + 7
 BADGE_ROLE = Qt.ItemDataRole.UserRole + 8
 
+# drag feedback classes, painted by the delegate from the list's
+# _drag_hover_item/_drag_hover_kind -- the highlight must name the pending
+# OPERATION, not merely "a valid drop"
+DRAG_FEEDBACK_EMPTY = "empty"     # free destination slot
+DRAG_FEEDBACK_SWAP = "swap"       # occupied slot: swap/place (a real inventory op)
+DRAG_FEEDBACK_INVALID = "invalid"  # no-op target (the drag's own selection)
+
 # Minecraft GUI palette
 PANEL_BG = QColor("#C6C6C6")
 SLOT_BG = QColor("#8B8B8B")
@@ -50,6 +57,10 @@ SLOT_DARK = QColor("#373737")
 SLOT_LIGHT = QColor("#FFFFFF")
 HOVER_WASH = QColor(255, 255, 255, 128)
 SELECT_FRAME = QColor("#FFFFA0")
+# the selection has to read instantly, so it gets a bright inner frame and a
+# translucent wash rather than the frame colour alone
+SELECT_FRAME_BRIGHT = QColor("#FFFFFF")
+SELECT_WASH = QColor(255, 255, 160, 110)
 BADGE_FG = QColor("#FFFFFF")
 BADGE_SHADOW = QColor("#3F3F3F")
 
@@ -64,6 +75,8 @@ def chest_palette(main_win=None):
             "slot_light": SLOT_LIGHT,
             "hover_wash": HOVER_WASH,
             "select_frame": SELECT_FRAME,
+            "select_frame_bright": SELECT_FRAME_BRIGHT,
+            "select_wash": SELECT_WASH,
             "badge_fg": BADGE_FG,
             "badge_shadow": BADGE_SHADOW,
         }
@@ -80,6 +93,8 @@ def chest_palette(main_win=None):
             "slot_light": SLOT_LIGHT,
             "hover_wash": HOVER_WASH,
             "select_frame": SELECT_FRAME,
+            "select_frame_bright": SELECT_FRAME_BRIGHT,
+            "select_wash": SELECT_WASH,
             "badge_fg": BADGE_FG,
             "badge_shadow": BADGE_SHADOW,
         }
@@ -91,6 +106,15 @@ def chest_palette(main_win=None):
     text_main = QColor(raw.get("text_main", "#FFFFFF"))
 
     hover = QColor(accent.red(), accent.green(), accent.blue(), 60) if accent.isValid() else HOVER_WASH
+    if accent.isValid():
+        frame = accent
+        wash = QColor(accent.red(), accent.green(), accent.blue(), 110)
+    else:
+        frame = SELECT_FRAME
+        wash = SELECT_WASH
+    # the bright inner frame stays white in every theme: it is the contrast
+    # edge that keeps the frame readable over a wash of the same hue
+    bright = SELECT_FRAME_BRIGHT if frame.lightness() < 200 else QColor("#000000")
 
     return {
         "panel_bg": panel_bg,
@@ -98,7 +122,9 @@ def chest_palette(main_win=None):
         "slot_dark": slot_dark,
         "slot_light": slot_light,
         "hover_wash": hover,
-        "select_frame": accent if accent.isValid() else SELECT_FRAME,
+        "select_frame": frame,
+        "select_frame_bright": bright,
+        "select_wash": wash,
         "badge_fg": text_main if text_main.isValid() else BADGE_FG,
         "badge_shadow": slot_dark if slot_dark.isValid() else BADGE_SHADOW,
     }
@@ -164,6 +190,94 @@ def slot_total(file_count, capacity, columns=8):
     return ((file_count + columns - 1) // columns) * columns
 
 
+# ---- sparse slot placement model -------------------------------------------
+# A chest slot layout is a plain mapping: file name -> slot index. Slots are
+# STABLE: moving A from slot 0 to slot 20 leaves B and C at 1 and 2, not
+# renumbered toward 0. The persisted map therefore stores POSITIONS, never a
+# compacted name list, and a refresh/restart rebuilds the same sparse grid.
+#
+# Legacy profiles stored a compact ordered name list ("the cursor order").
+# migrate_slot_map reads it as initial positions (rank = slot), so upgrading
+# never re-drops anything the user had placed.
+
+CHEST_SLOT_MAX = 4096   # bounded slot index: a corrupt profile invents no geometry
+
+
+def migrate_slot_map(saved):
+    """Legacy [name, ...] compact order or {name: slot} -> {name: slot}.
+
+    Out-of-range/non-integer entries drop out: an item whose saved position
+    cannot be trusted is re-placed by the append rule instead of materialised
+    at an impossible slot. The legacy list migrates by rank (index = slot),
+    which reproduces the compact layout it described."""
+    out = {}
+    if isinstance(saved, list):
+        for i, name in enumerate(saved[:CHEST_SLOT_MAX + 1]):
+            if isinstance(name, str):
+                out[name] = i
+    elif isinstance(saved, dict):
+        for name, slot in saved.items():
+            if not isinstance(name, str):
+                continue
+            try:
+                value = int(slot)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= value <= CHEST_SLOT_MAX:
+                out[name] = value
+    return out
+
+
+def append_slot(slots):
+    """The slot a NEW file takes: directly after the highest placed one.
+
+    A newly discovered file never overwrites a saved placement and never
+    compacts the grid toward slot 0 -- it appends above everything placed."""
+    return max(slots.values()) + 1 if slots else 0
+
+
+def next_free_at_or_after(slots, start, reserved=()):
+    """Smallest free slot >= start, skipping occupants and reserved range."""
+    used = set(slots.values()) | set(reserved)
+    slot = max(0, int(start))
+    while slot in used:
+        slot += 1
+    return slot
+
+
+def swap_slots(slots, a, b):
+    """Classic Minecraft two-slot exchange: identities trade positions."""
+    slots[a], slots[b] = slots[b], slots[a]
+    return slots
+
+
+def place_group(slots, names, first_slot):
+    """Deterministic group placement inside one slot map.
+
+    The group lands at first_slot..first_slot+len-1 in the given order. An
+    item displaced from that range is relocated to the next free slot AT OR
+    AFTER the group's end (insert-before semantics), cascading upward until
+    everything fits. Items outside the target range keep their slots: no
+    compaction, no discard. Returns the map (mutated)."""
+    dragged = [n for n in names if n in slots]
+    if not dragged:
+        return slots
+    for name in dragged:
+        del slots[name]
+    target = max(0, int(first_slot))
+    reserved = set(range(target, target + len(dragged)))
+    for offset, name in enumerate(dragged):
+        want = target + offset
+        occupant = next((k for k, v in slots.items() if v == want), None)
+        if occupant is not None:
+            del slots[occupant]
+        slots[name] = want
+        if occupant is not None:
+            slots[occupant] = next_free_at_or_after(
+                slots, target + len(dragged), reserved)
+    return slots
+
+
 def paint_slot(p: QPainter, r: QRect, pal: dict | None = None):
     """One recessed inventory slot: dark top-left, white bottom-right."""
     slot_bg = pal["slot_bg"] if pal else SLOT_BG
@@ -197,6 +311,11 @@ class ChestSlotDelegate(QStyledItemDelegate):
         p.save()
         paint_slot(p, r, pal)
         inner = r.adjusted(2, 2, -2, -2)
+        # a plain hover wash goes UNDER the item and the selection frame: a
+        # translucent wash painted last diluted the selected-slot outline the
+        # selection feedback depends on
+        if option.state & QStyle.StateFlag.State_MouseOver:
+            p.fillRect(inner, pal["hover_wash"])
         if not index.data(PLACEHOLDER_ROLE):
             icon = index.data(Qt.ItemDataRole.DecorationRole)
             if icon is not None and not icon.isNull():
@@ -217,16 +336,39 @@ class ChestSlotDelegate(QStyledItemDelegate):
                 p.setPen(pal["badge_fg"])
                 p.drawText(text_rect, align, str(badge))
             if option.state & QStyle.StateFlag.State_Selected:
+                # A selected slot must be obvious at a glance, so it is a
+                # WASH over the slot plus a bright frame, not the 1px pale
+                # rectangle a selected item used to get -- which was the
+                # same width and tone as the slot's own bevel and vanished
+                # against it.
+                p.fillRect(inner, pal["select_wash"])
                 p.setPen(pal["select_frame"])
                 p.drawRect(inner.adjusted(0, 0, -1, -1))
+                p.setPen(pal["select_frame_bright"])
                 p.drawRect(inner.adjusted(1, 1, -2, -2))
-        is_drag_hover = False
+        # drag feedback names the pending operation, so a plain hover (handled
+        # above) is not reused for a drop target
         lw = self.parent()
-        if hasattr(lw, "_drag_hover_item") and lw._drag_hover_item is not None:
-            if hasattr(lw, "itemFromIndex"):
-                is_drag_hover = (lw.itemFromIndex(index) is lw._drag_hover_item)
-        if (option.state & QStyle.StateFlag.State_MouseOver) or is_drag_hover:
-            p.fillRect(inner, pal["hover_wash"])
+        if (getattr(lw, "_drag_hover_item", None) is not None
+                and hasattr(lw, "itemFromIndex")
+                and lw.itemFromIndex(index) is lw._drag_hover_item):
+            kind = getattr(lw, "_drag_hover_kind", None)
+            if kind == DRAG_FEEDBACK_EMPTY:
+                # a usable destination: destination wash + frame
+                p.fillRect(inner, pal["select_wash"])
+                p.setPen(pal["select_frame"])
+                p.drawRect(inner.adjusted(0, 0, -1, -1))
+                p.setPen(pal["select_frame_bright"])
+                p.drawRect(inner.adjusted(1, 1, -2, -2))
+            elif kind == DRAG_FEEDBACK_SWAP:
+                # an occupied slot: frame only, the icon stays readable
+                p.setPen(pal["select_frame"])
+                p.drawRect(inner.adjusted(0, 0, -1, -1))
+                p.setPen(pal["select_frame_bright"])
+                p.drawRect(inner.adjusted(1, 1, -2, -2))
+            else:
+                # invalid / folder-move-style no-op target: inert hover wash
+                p.fillRect(inner, pal["hover_wash"])
         p.restore()
 
 

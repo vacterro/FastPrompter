@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+#: Per-document retention window for selection-interaction records: the
+#: OLDEST records fall off on push (one named limit, not a scattered literal).
+INTERACTION_HISTORY_LIMIT = 512
+
 
 @dataclass(frozen=True)
 class CursorSelectionState:
@@ -68,15 +72,23 @@ def is_meaningful_selection_transition(
 
 
 class DocumentInteractionHistory:
-    def __init__(self, doc_id: int, generation: int = 0):
+    def __init__(self, doc_id: int, generation: int = 0,
+                 undo_limit: int = INTERACTION_HISTORY_LIMIT):
         self.doc_id = doc_id
         self.generation = generation
+        self.undo_limit = undo_limit
         self.undo_stack: list[SelectionInteractionRecord] = []
         self.redo_stack: list[SelectionInteractionRecord] = []
+
+    def _trim_oldest(self, stack: list[SelectionInteractionRecord]) -> None:
+        # undo_limit is read dynamically: consumers may retune it after init.
+        while len(stack) > self.undo_limit:
+            del stack[0]
 
     def push(self, record: SelectionInteractionRecord) -> None:
         self.undo_stack.append(record)
         self.redo_stack.clear()
+        self._trim_oldest(self.undo_stack)
 
     def update_top_after(self, new_after: CursorSelectionState) -> bool:
         if not self.undo_stack:
@@ -117,6 +129,7 @@ class DocumentInteractionHistory:
 
     def push_redo(self, record: SelectionInteractionRecord) -> None:
         self.redo_stack.append(record)
+        self._trim_oldest(self.redo_stack)
 
     def clear_redo(self) -> None:
         self.redo_stack.clear()

@@ -2445,7 +2445,10 @@ class AudioHub:
         try:
             self._transport.set_volume(handle, max(0.0, min(1.0, float(volume))))
         except Exception:
-            pass
+            # The engine's fade and reconcile paths read this as "applied",
+            # so a refusal is logged rather than swallowed silently.
+            logger.warning("channel %s refused volume %s", handle, volume,
+                           exc_info=True)
 
     def stop_channel_handle(self, handle: str) -> None:
         """Physically stop exactly one channel by its transport handle."""

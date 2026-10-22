@@ -163,8 +163,10 @@ class AmbienceController(QObject):
     def start_if_remembered(self) -> bool:
         """Restore the remembered ON state at application start.
 
-        Returns True when ambience was actually started. A fresh install has
-        nothing remembered and therefore stays silent.
+        Returns True when ambience was actually started. No recorded
+        decision still reads False; a fresh install is seeded ON by
+        ``ensure_default_rules`` before this runs (T-1455), so the first
+        launch starts the shipped ambient loop default.
         """
         if self._closed or not self.desired_enabled():
             return False

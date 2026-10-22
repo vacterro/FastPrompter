@@ -465,7 +465,7 @@ class TestTransformSeedsStructure:
             assert w._seed_silo_structure(0, "table", "", False) is True
             lines = w.data["temp_presets"][0].split("\n")
             table = st.parse(lines, 0)
-            assert table is not None and table.columns == 3
+            assert table is not None and table.columns == w._default_table_layout()["columns"]
         finally:
             w.close()
 

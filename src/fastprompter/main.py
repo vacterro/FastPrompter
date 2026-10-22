@@ -102,10 +102,12 @@ from fastprompter.ui.hotkey_mixin import HotkeyMixin
 from fastprompter.ui.interaction_undo import (
     get_document_interaction_history,
 )
+from fastprompter.ui.limit_hover_card import HoverCardLabel
 from fastprompter.ui.markdown_highlighter import MarkdownHighlighter
 from fastprompter.ui.pie_menu import QuickListWidget
 from fastprompter.ui.qt_lifetime import drain_qt_threadpool, weak_qt_callback
 from fastprompter.ui.resizers import EdgeResizer
+from fastprompter.ui.rich_preview_view import RichPreviewView
 from fastprompter.ui.scaling_mixin import ScalingMixin
 from fastprompter.ui.search_mixin import SearchMixin
 from fastprompter.ui.send_selection_mixin import SendSelectionMixin
@@ -515,6 +517,7 @@ def _sync_mechanical_write(snapshot, lock_timeout_s=None):
                 continue
             if not _sync_snapshot_is_latest(snapshot, dest):
                 continue
+            tmp = None
             try:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 from fastprompter.utils.path_safety import unique_temp_path
@@ -541,6 +544,18 @@ def _sync_mechanical_write(snapshot, lock_timeout_s=None):
                 written.append(dest)
             except OSError as exc:
                 errors.append((dest, str(exc)))
+            finally:
+                # W2-010: a write owns exactly the temp it allocated. Every
+                # unsuccessful exit -- a failed write, a failed replace, a
+                # superseded generation -- removes that one path and nothing
+                # else, so no `.sync-<uuid>.tmp` orphan is ever left behind in
+                # a user-addressable directory.
+                if tmp is not None:
+                    if os.path.exists(tmp):
+                        try:
+                            os.remove(tmp)
+                        except OSError:
+                            pass
     finally:
         _SYNC_WRITE_LOCK.release()
     return written, errors
@@ -626,6 +641,25 @@ class _TypoScanWorker(QObject):
         self.scanned.emit(request_id, spans)
 
 
+def _bundle_image_dimensions(path):
+    """PERF-005: read an image's header size without touching any widget.
+
+    ``QImageReader`` is a plain header read, so this runs on the bundle WORKER
+    thread as well as on the GUI one. A file the plugins cannot decode (or a
+    path that is not there) yields ``None`` — no dimension, never an error.
+    """
+    try:
+        from PyQt6.QtGui import QImageReader
+        if not path or not os.path.isfile(path):
+            return None
+        size = QImageReader(path).size()
+        if not size.isValid() or size.width() <= 0 or size.height() <= 0:
+            return None
+        return {"width": int(size.width()), "height": int(size.height())}
+    except Exception:
+        return None
+
+
 def _bundle_worker_has_nothing(plan):
     """Does this plan carry a single thing worth putting in an archive?
 
@@ -657,12 +691,15 @@ class _BundleWorker(QObject):
     def _run(self, cap):
         from fastprompter.core import silo_bundle as sb
         cancel = cap["cancel"]
+        # PERF-001: the planner is part of the frozen capture, so Fast Pack's
+        # selection plan and the full-silo plan reach the same writer.
+        plan_factory = cap.get("plan_factory") or sb.plan_bundle
 
         def report(done, total, member):
             self.progress.emit(int(done), int(total), str(member))
 
         try:
-            plan = sb.plan_bundle(**cap["plan_kwargs"])
+            plan = plan_factory(**cap["plan_kwargs"])
             # T-1410: emptiness is a PAYLOAD verdict, not an admission one.
             # Only here is the real silo listing known, so this is the first
             # honest place to say a bundle would carry nothing at all.
@@ -677,15 +714,23 @@ class _BundleWorker(QObject):
             # Preflight smart reuse check (when not forcing a repack)
             if not force_repack and history_candidates:
                 report(0, 1, "Checking bundle…")
-                hashes, updated_cache = sb.resolve_plan_hashes(
-                    plan, source_cache, cancel=cancel)
+                hashes, updated_cache, signatures = (
+                    sb.resolve_plan_hashes_stable(plan, source_cache,
+                                                  cancel=cancel))
                 fp = sb.compute_content_fingerprint(plan, hashes)
+                # W2-006: a hash captured before a source mutated is not a fact
+                # about that source any more, so a reuse hit is honoured only
+                # when nothing moved since the fingerprint was taken.
+                if not sb.sources_still_stable(signatures, cancel=cancel):
+                    self.finished.emit(("error", "sources changed"))
+                    return
                 # Search retained candidates newest-first (T-1411 § 56)
                 for cand in history_candidates:
                     if cand.get("content_fingerprint") == fp:
                         cand_path = cand.get("path")
                         if sb.verify_reuse_candidate(
-                                cand_path, fp, cand.get("archive_size")):
+                                cand_path, fp, cand.get("archive_size"),
+                                cand.get("archive_mtime_ns")):
                             # Reuse hit!
                             self.finished.emit(("reuse", {
                                 "zip_path": cand_path,
@@ -699,6 +744,11 @@ class _BundleWorker(QObject):
                             return
 
             result = sb.write_bundle(plan, progress=report, cancel=cancel)
+        except sb.BundleCancelled:
+            # W2-009: cancellation is ONE public outcome whichever phase it
+            # landed in, never a leaked private class in the error channel.
+            self.finished.emit(("cancel", None))
+            return
         except Exception as exc:
             # The progress dialog is closed by the GUI-side finished handler
             # alone, so anything escaping here would hang it forever.
@@ -727,7 +777,7 @@ class _BundleOp:
     the worker and the bridge.
     """
 
-    __slots__ = ("capture", "dialog", "bridge", "worker", "thread")
+    __slots__ = ("capture", "dialog", "bridge", "worker", "thread", "profile_id")
 
     def __init__(self, capture, dialog):
         self.capture = capture
@@ -735,6 +785,10 @@ class _BundleOp:
         self.bridge = None
         self.worker = None
         self.thread = None
+        # The profile the cap was frozen under. A completion from a profile
+        # that is no longer active must not mutate the live one's history,
+        # coverage, clipboard or UI (T-1432 CORE-001).
+        self.profile_id = None
 
 
 class _BundleProgressBridge(QObject):
@@ -957,7 +1011,7 @@ class _SyncPushWorker(QObject):
                     # W2-003: do not mutate the filesystem with stale RAM.
                     results.append((key, path, text, "stale", None))
                     continue
-                cur = ps.read_text_file(path, max_bytes)
+                cur = ps.read_text_file_with_identity(path, max_bytes)
                 if cur is None:
                     if os.path.exists(path):
                         # binary or unreadable: never overwrite blindly
@@ -983,13 +1037,24 @@ class _SyncPushWorker(QObject):
                             results.append(
                                 (key, path, text, "stale", None))
                             continue
-                        written = ps.write_text_file(
-                            path, text, eol, write_bom=had_bom)
+                        # W2-001: the destination was accepted as ABSENT, so
+                        # "still absent" is part of the precondition. A writer
+                        # that created it in the window refuses the publish.
+                        written, conflict_id = ps.compare_and_publish_text(
+                            path, text, ps.MISSING_ON_DISK, eol,
+                            write_bom=had_bom)
+                        if written is None and conflict_id is not None:
+                            # W2-001: hand the conflict resolution the content
+                            # that actually defeated the gate.
+                            observed = ps.read_text_file(path, max_bytes)
+                            results.append(
+                                (key, path, text, "conflict", observed))
+                            continue
                     results.append(
                         (key, path, text,
                          "ok" if written is not None else "error", written))
                     continue
-                dtxt, deol, dbom = cur
+                dtxt, deol, dbom, disk_id = cur
                 if dtxt == text:
                     # CORE-004: equality reports the CURRENT disk BOM too —
                     # a BOM-only metadata change must not go unnoticed.
@@ -1016,8 +1081,16 @@ class _SyncPushWorker(QObject):
                     if leases.get(key, 0) != (lease or 0):
                         results.append((key, path, text, "stale", None))
                         continue
-                    written = ps.write_text_file(
-                        path, text, eol, write_bom=had_bom)
+                    # W2-001: the published bytes are revalidated against the
+                    # identity accepted at the read above. An external save
+                    # landing in between reads back as a conflict.
+                    written, conflict_id = ps.compare_and_publish_text(
+                        path, text, disk_id, eol, write_bom=had_bom)
+                    if written is None and conflict_id is not None:
+                        observed = ps.read_text_file(path, max_bytes)
+                        results.append(
+                            (key, path, text, "conflict", observed))
+                        continue
                 results.append(
                     (key, path, text,
                      "ok" if written is not None else "error", written))
@@ -1414,6 +1487,16 @@ class FastPrompter(
         self._undo_save_quit = False
         self._load_undo_state()
         self.sound_manager = SoundManager(self, self.data)
+        # T-1457-C: first run creates the user's own drop-in sound folder
+        # (<user-data>/addon/sounds) with its instructions file. Idempotent,
+        # and a failure (read-only or missing user-data root) must never stop
+        # the app: it only means no addon sounds are found.
+        try:
+            from fastprompter.core import sound_library as _sound_library
+
+            _sound_library.ensure_addon_root()
+        except Exception:
+            pass
         # T-1330: the image-viewer router reads image_viewer_mode off this
         # window's data. Nothing ever bound it, so viewer_preference() always
         # answered ("internal", "") and the Settings toggle was decoration —
@@ -1456,6 +1539,16 @@ class FastPrompter(
 
             _logger.debug("Voice controller unavailable", exc_info=True)
         try:
+            # T-1455: a virgin audio.db (no rules, no recorded start/stop
+            # decision) ships the operator-requested default -- one ambience
+            # loop enabled at 0.01 -- and the wish to run it, so the
+            # first launch already plays.  An existing decision row never
+            # gets overwritten, so a user who turned ambience off keeps it
+            # off.  A database seeded by a pre-T-1501 build is repaired in
+            # place by the same call.
+            from fastprompter.core.ambience_store import AmbienceStore
+
+            AmbienceStore().ensure_default_rules()
             from fastprompter.ui.ambience_controller import AmbienceController
 
             self.ambience_controller = AmbienceController(
@@ -1476,6 +1569,8 @@ class FastPrompter(
         # heals overrides that point at a file the library no longer has.
         from fastprompter.core.sound_manager import migrate_sound_settings
         migrate_sound_settings(self.data, self.sound_manager._sounds_dir)
+        from fastprompter.core.default_profile import migrate_silo_scroll_settings
+        migrate_silo_scroll_settings(self.data)
 
         # Subtle wheel feedback in long panels. Filter is a no-op while UI
         # sounds are off (the sound manager respects sound_ui on its own).
@@ -1952,6 +2047,38 @@ class FastPrompter(
 
         self._apply_date_alert_style()
         self._update_timer_label()
+        self._reconcile_topbar_visibility()
+
+    @staticmethod
+    def _topbar_reconcile_key(effective, rid, requested, semantic):
+        """Immutable signature of everything a policy pass consumes.
+
+        Two passes whose key is identical would produce byte-identical
+        visibility, so the second is a pure no-op the 1 Hz tick must skip
+        (T-1449). Width covers geometry; ``rid`` covers breakpoint moves;
+        ``requested`` covers config + semantic membership; ``semantic`` covers
+        availability the requested map alone cannot see. A density/theme flip
+        clears the stored key because it changes font metrics, not these five.
+        """
+        return (round(float(effective), 3), rid,
+                frozenset(requested.items()), frozenset(semantic.items()))
+
+    def _reconcile_topbar_visibility(self, force=False):
+        """Run the responsive policy once per unique consumed state."""
+        if not force:
+            header = getattr(self, "header_widget", None)
+            if (header is None or sip.isdeleted(header)
+                    or getattr(self, "_topbar_applying", False)):
+                return
+            config = self._topbar_visibility_config()
+            semantic = self._topbar_semantic_state()
+            from fastprompter.core.topbar_visibility import requested_tokens
+            effective = self._topbar_effective_width()
+            rid, requested = requested_tokens(config, effective, semantic)
+            key = self._topbar_reconcile_key(
+                effective, rid, requested, semantic)
+            if getattr(self, "_topbar_reconcile_key_state", None) == key:
+                return
         self._apply_topbar_visibility()
 
     def _apply_limit_hint_style(self, label, padding="0 4px"):
@@ -2062,7 +2189,9 @@ class FastPrompter(
         gauges = getattr(self, "limit_gauges", None)
         if (svc is None or gauges is None
                 or self.data.get("limit_gauges", "False") != "True"):
-            lbl.setToolTip("")
+            lbl._description_key = ""
+            lbl.set_hover_description("")
+            lbl.set_card_owns_hover(False)
             self._set_topbar_semantic("lbl_limit_timer", False)
             return
         snap = svc.state_copy
@@ -2077,9 +2206,14 @@ class FastPrompter(
             (candidates[0].provider_id, candidates[0].resets_at_epoch)
             if candidates else (None, None))
         if soonest is None:
-            lbl.setToolTip(tr("No upcoming AI limit resets", self._current_lang))
+            # No queue means no card, so the native tooltip owns this hover:
+            # the one place a native tooltip is allowed.
+            lbl._description_key = "No upcoming AI limit resets"
+            lbl.set_hover_description(
+                tr("No upcoming AI limit resets", self._current_lang))
+            lbl.set_card_owns_hover(False)
             self._reset_queue_html = ""
-            self._refresh_reset_hover_card()
+            self._close_reset_hover_card()
             self._set_topbar_semantic("lbl_limit_timer", False)
             return
         import datetime
@@ -2116,10 +2250,13 @@ class FastPrompter(
                          for c in candidates})
         # Canonical column labels go through tr(); the renderer stays a pure
         # content builder (no UI language state import), and "#" is
-        # language-independent.
+        # language-independent. T-1457-A: the sixth column ("Resets") carries
+        # the ABSOLUTE reset instant beside the relative countdown, so a reader
+        # can tell "14:05 today" from "06:00 tomorrow" — the one question a
+        # countdown alone structurally cannot answer.
         column_labels = {
             name: tr(name, self._current_lang)
-            for name in ("Account", "Pool", "Window", "Left")
+            for name in ("Account", "Pool", "Window", "Left", "Resets")
         }
         # T-1298: decide the composition from the REAL width the card may
         # occupy (font metrics for the text + the screen it will open on),
@@ -2143,11 +2280,31 @@ class FastPrompter(
             available_width=available_width,
             measure=(lambda text: metrics.horizontalAdvance(text))
             if available_width is not None else None)
-        # The native tooltip stays a short summary: the full queue lives in
-        # the card, and a native tooltip cannot be entered by the pointer.
-        lbl.setToolTip(tr(self.lbl_limit_timer._en_tooltip, self._current_lang))
+        # The card owns this hover: the label consumes the tooltip event, so
+        # no small native popup appears beside the big card.  The description
+        # is published once, not re-armed on every countdown refresh.
+        lbl._description_key = lbl._en_tooltip
+        lbl.set_hover_description(
+            tr(self.lbl_limit_timer._en_tooltip, self._current_lang))
+        lbl.set_card_owns_hover(True)
         self._set_topbar_semantic("lbl_limit_timer", True)
         self._refresh_reset_hover_card()
+        # The pointer may already have been resting on the label when the
+        # queue appeared; a card that opens only on Enter would then never
+        # show.  Open it now -- but only if the pointer is really there AND
+        # no card is open yet: re-showing an open card on every countdown
+        # tick is the flicker this repair must not introduce.
+        if lbl.isVisible() and lbl.pointer_over():
+            card = getattr(self, "_reset_hover_card", None)
+            if card is None or not self._widget_alive(card) \
+                    or not card.isVisible():
+                self._show_reset_hover_card()
+
+    def _open_limit_settings_from_reset_label(self) -> None:
+        """The reset countdown is a shortcut into the AI-limit settings."""
+        opener = getattr(self, "open_limit_settings_dialog", None)
+        if callable(opener):
+            opener()
 
     def _show_reset_hover_card(self):
         """Open the reset-queue card (existing LimitHoverCard, no new system)."""
@@ -2163,8 +2320,19 @@ class FastPrompter(
             self._reset_hover_card = card
         try:
             card.show_card(self._reset_queue_html)
-        except Exception:
-            pass
+        except Exception as exc:
+            # A failed open must not leave a second presentation behind, and
+            # it must not be swallowed silently either.
+            try:
+                card.hide_now()
+            except Exception:
+                pass
+            logger = getattr(self, "_log", None)
+            if callable(logger):
+                try:
+                    logger(f"reset hover card failed: {exc}")
+                except Exception:
+                    pass
 
     def _refresh_reset_hover_card(self):
         """Re-render an OPEN card; a closed one is left alone."""
@@ -2181,6 +2349,16 @@ class FastPrompter(
         if card is None or not self._widget_alive(card):
             return
         card.schedule_hide()
+
+    def _close_reset_hover_card(self):
+        """Drop an open reset card at once (the queue emptied under it)."""
+        card = getattr(self, "_reset_hover_card", None)
+        if card is None or not self._widget_alive(card):
+            return
+        try:
+            card.hide_now()
+        except Exception:
+            pass
 
     @staticmethod
     def _widget_alive(widget) -> bool:
@@ -2250,8 +2428,21 @@ class FastPrompter(
     def open_limit_settings_dialog(self):
         from fastprompter.ui.limit_settings_dialog import LimitSettingsDialog
 
-        dialog = LimitSettingsDialog(self)
-        dialog.exec()
+        dialog = None
+        try:
+            dialog = LimitSettingsDialog(self)
+            dialog.exec()
+        finally:
+            if dialog is not None:
+                dialog.deleteLater()
+            else:
+                # construction raised after super().__init__(): retire the orphan
+                for child in list(self.children()):
+                    try:
+                        if isinstance(child, LimitSettingsDialog):
+                            child.deleteLater()
+                    except RuntimeError:
+                        pass
         self.limit_gauges.refresh_view()
         self._update_limit_status()
 
@@ -2457,27 +2648,32 @@ class FastPrompter(
             return
         pad = "1px" if getattr(self, "_header_dense", False) else "4px"
         missed = self._missed_attention()
+        base = tr("Current date and time\nClick to manage timers and limit resets\n"
+                  "Shift+Click: add Temp Timer time\n"
+                  "Ctrl+Shift+Click: remove Temp Timer",
+                  getattr(self, "_current_lang", "EN"))
         if missed:
             color = self.data.get("passed_event_color", "#e05555") or "#e05555"
-            lbl.setStyleSheet(
-                f"padding: 0 {pad}; color: {color}; font-weight: bold;")
-            tip = tr("Current date and time\nClick to manage timers and limit resets\n"
-                     "Shift+Click: add Temp Timer time\n"
-                     "Ctrl+Shift+Click: remove Temp Timer",
-                     getattr(self, "_current_lang", "EN"))
-            n = len(missed)
-            tip += "\n" + tr("⚠ {0} passed event(s) not acknowledged — click to manage, right-click to clear",
-                             getattr(self, "_current_lang", "EN")).format(n)
-            if lbl.toolTip() != tip:
-                lbl.setToolTip(tip)
+            style = f"padding: 0 {pad}; color: {color}; font-weight: bold;"
+            tip = base + "\n" + tr(
+                "⚠ {0} passed event(s) not acknowledged — click to manage, "
+                "right-click to clear",
+                getattr(self, "_current_lang", "EN")).format(len(missed))
         else:
-            lbl.setStyleSheet(f"padding: 0 {pad};")
-            base = tr("Current date and time\nClick to manage timers and limit resets\n"
-                      "Shift+Click: add Temp Timer time\n"
-                      "Ctrl+Shift+Click: remove Temp Timer",
-                      getattr(self, "_current_lang", "EN"))
-            if lbl.toolTip() != base:
-                lbl.setToolTip(base)
+            style = f"padding: 0 {pad};"
+            tip = base
+        # T-1449: the 1 Hz tick calls this every second; the presentation is
+        # guarded here so an unchanged alert state never re-assigns the
+        # stylesheet (a full-widget restyle) or the tooltip.
+        cache = getattr(self, "_date_alert_cache", None)
+        if cache is None:
+            cache = self._date_alert_cache = {}
+        if cache.get("style") != style:
+            cache["style"] = style
+            lbl.setStyleSheet(style)
+        if cache.get("tip") != tip:
+            cache["tip"] = tip
+            lbl.setToolTip(tip)
 
     def _date_label_menu(self, pos):
         """Right-click on the date label: manage timers / clear the alert."""
@@ -2489,7 +2685,10 @@ class FastPrompter(
             menu.addSeparator()
             menu.addAction(tr("✓ Clear passed-event alert", lang),
                            self._clear_missed_alert)
-        menu.exec(self.lbl_date.mapToGlobal(pos))
+        try:
+            menu.exec(self.lbl_date.mapToGlobal(pos))
+        finally:
+            menu.deleteLater()
 
     def _clock_label_clicked(self, event):
         """Route clock clicks to timer management or Temp Timer actions."""
@@ -2762,6 +2961,10 @@ class FastPrompter(
         from fastprompter.core.timers import _heal_volume
 
         current = self.temp_timer_template()
+        # the template as it stands before this dialog's edits — the stored
+        # value may hold only part of the canonical key set, so the raw dict
+        # cannot be the baseline
+        previous = dict(current)
         current.update(settings or {})
         try:
             current["increment_minutes"] = max(
@@ -2790,6 +2993,12 @@ class FastPrompter(
                 if key in current:
                     setattr(temp, key, current[key])
             self.save_timers_to_data()
+            # save_timers_to_data's guard only speaks about the timer list:
+            # keys it does not copy onto the live timer (the increment, for
+            # one) live in the template alone, so an unchanged list would
+            # otherwise leave the template dirt-free and unpersisted.
+            if previous != current:
+                self.mark_dirty("settings")
         else:
             self.mark_dirty("settings")
 
@@ -2896,6 +3105,10 @@ class FastPrompter(
         flipped = getattr(self, "_header_dense", None) != dense
         if flipped:
             self._header_dense = dense
+            # T-1449: a density flip changes font metrics and fixed widths
+            # without touching width/config/semantic, so the reconcile key
+            # would still match; clear it so the next tick re-fits once.
+            self._topbar_reconcile_key_state = None
             # Zero: the bar is tinted lighter than the widgets on it, so any
             # spacing showed as a 1px line of tint in EVERY gap - 31 of them,
             # measured. Buttons carry their own borders, so flush is the
@@ -3098,7 +3311,7 @@ class FastPrompter(
         state = {item.token: True for item in TOPBAR_ITEMS}
         state.update(getattr(self, "_topbar_semantic", {}))
         dynamic = getattr(self, "_topbar_semantic", {})
-        for token in ("btn_project_folder", "btn_project_run",
+        for token in ("btn_project_folder", "btn_code_run", "btn_project_run",
                       "lbl_timer", "lbl_limit_timer"):
             state[token] = bool(dynamic.get(token, False))
         numbox = self.data.get("numbox_tabs", "False") == "True"
@@ -3161,8 +3374,12 @@ class FastPrompter(
         try:
             config = self._topbar_visibility_config()
             semantic = self._topbar_semantic_state()
-            rid, requested = requested_tokens(
-                config, self._topbar_effective_width(), semantic)
+            effective = self._topbar_effective_width()
+            rid, requested = requested_tokens(config, effective, semantic)
+            # T-1449: record the consumed state so the next 1 Hz tick with no
+            # real change can skip this whole pass (see _reconcile_topbar_visibility).
+            self._topbar_reconcile_key_state = self._topbar_reconcile_key(
+                effective, rid, requested, semantic)
             if not ({"lbl_line_count", "lbl_token_count"} & requested.keys()):
                 requested.pop("_counter_sep", None)
             self._topbar_active_range = rid
@@ -3235,9 +3452,54 @@ class FastPrompter(
     def open_topbar_visibility_dialog(self):
         from fastprompter.ui.topbar_visibility_dialog import TopbarVisibilityDialog
 
-        TopbarVisibilityDialog(self).exec()
+        # T-1446/1447 lifecycle: retire the modal after its event loop so its
+        # preview timer and child widgets never outlive the dialog.
+        dialog = None
+        try:
+            dialog = TopbarVisibilityDialog(self)
+            dialog.exec()
+        finally:
+            if dialog is not None:
+                dialog.deleteLater()
 
     # ---- per-silo view state (cursor, selection, scroll, margin marks) ----
+    def _saved_table_presentation(self):
+        """The presentation saved for the current silo, or None."""
+        cat, key = self._silo_state_key()
+        entry = (self._silo_state_map().get(cat) or {}).get(key, {})
+        layout = entry.get("table_presentation")
+        if isinstance(layout, dict):
+            return layout
+        return None
+
+    def _default_table_layout(self):
+        """The user's global table template for NEW tables, or None (T-1466 / T-1468).
+
+        Reads ``table_default_layout`` from settings and normalises it into the
+        layout dict ``apply_presentation()`` consumes, keeping the template's
+        own keys (``columns``, ``visible_rows``, ``word_wrap``) alongside them
+        so the SAME dict also feeds ``silo_table.default_table()``. Returns
+        None when the setting is missing or unusable, in which case a new table
+        gets the factory shape from ``template_shape``.
+        """
+        from fastprompter.ui import silo_table as st
+
+        return st.parse_default_layout(self.data.get("table_default_layout"))
+
+    def _active_table_widget_for_capture(self):
+        """The table widget to read presentation from, or None.
+
+        Only the ACTIVE pane owns presentation worth saving — a stale widget
+        rebuilt out of the tree carries the layout of a document that is no
+        longer in front.
+        """
+        if self.silo_view.currentIndex() != 2:
+            return None
+        tw = getattr(self, "table_widget", None)
+        if tw is None or sip.isdeleted(tw):
+            return None
+        return tw
+
     def _silo_state_key(self, slot=None, is_archive=None):
         cat = self.get_current_category() or ""
         if slot is None:
@@ -3282,6 +3544,18 @@ class FastPrompter(
             entry["heat"] = {str(k): v for k, v in heat.items()}
         if folded:
             entry["folded"] = folded
+
+        # T-1462 Stage 5: table presentation lives apart from the Markdown.
+        # The silo text owns CONTENT; the column widths and row heights the
+        # user dragged are layout they expect to survive a reload, so they are
+        # captured into the same per-slot record and verified against the
+        # table's shape when they come back.
+        try:
+            tw = self._active_table_widget_for_capture()
+            if tw is not None:
+                entry["table_presentation"] = tw.capture_presentation()
+        except Exception:
+            pass
             
         # Fingerprint the text this cursor belongs to: the saved offsets are
         # only meaningful against the EXACT text they were captured from.
@@ -3391,9 +3665,11 @@ class FastPrompter(
             pos = max(0, min(int(entry.get("pos", 0)), doc_len))
         except (TypeError, ValueError):
             return False
-        if pos == 0 and anchor == 0:
-            # marks and heat are already restored above; only the cursor is
-            # unset, so let the caller apply its own Start/End rule
+        # A fingerprint-matched entry is authoritative even at offset 0 — the
+        # user may simply have been at the top (T-1459). Only a legacy entry
+        # with no fingerprint AND no saved offsets is truly unset, so let the
+        # caller apply its own Start/End rule for that one case.
+        if pos == 0 and anchor == 0 and "text_len" not in entry:
             return False
 
         cur = ta.textCursor()
@@ -3691,9 +3967,21 @@ class FastPrompter(
     def open_hashtag_dialog(self, tag=None):
         from fastprompter.ui.hashtag_dialog import HashtagDialog
         self._increment_focus_lock()
+        dialog = None
         try:
-            HashtagDialog(self, tag).exec()
+            dialog = HashtagDialog(self, tag)
+            dialog.exec()
         finally:
+            if dialog is not None:
+                dialog.deleteLater()
+            else:
+                # construction raised after super().__init__(): retire the orphan
+                for child in list(self.children()):
+                    try:
+                        if isinstance(child, HashtagDialog):
+                            child.deleteLater()
+                    except RuntimeError:
+                        pass
             QTimer.singleShot(300, weak_qt_callback(
                 self, lambda w: w._decrement_focus_lock()))
 
@@ -3717,9 +4005,22 @@ class FastPrompter(
         from fastprompter.ui.timer_dialog import TimerDialog
         self._clear_missed_alert()
         self._increment_focus_lock()
+        dialog = None
         try:
-            TimerDialog(self, initial_tab=initial_tab).exec()
+            dialog = TimerDialog(self, initial_tab=initial_tab)
+            dialog.exec()
         finally:
+            if dialog is not None:
+                if hasattr(dialog, "deleteLater"):
+                    dialog.deleteLater()
+            else:
+                # construction raised after super().__init__(): retire the orphan
+                for child in list(self.children()):
+                    try:
+                        if isinstance(child, TimerDialog):
+                            child.deleteLater()
+                    except RuntimeError:
+                        pass
             QTimer.singleShot(300, weak_qt_callback(
                 self, lambda w: w._decrement_focus_lock()))
         self.save_timers_to_data()
@@ -4414,6 +4715,7 @@ class FastPrompter(
         ("btn_toggle_search", "Search"),
         ("btn_files", "Files"),
         ("btn_project_folder", "Project folder"),
+        ("btn_code_run", "Run code"),
         ("btn_project_run", "Run project"),
         (None, None),
         ("btn_toggle_snippets", "Show snippets"),
@@ -4459,8 +4761,11 @@ class FastPrompter(
             act.triggered.connect(btn.click)
         if not menu.actions():
             return
-        menu.exec(self.btn_overflow.mapToGlobal(
-            self.btn_overflow.rect().bottomLeft()))
+        try:
+            menu.exec(self.btn_overflow.mapToGlobal(
+                self.btn_overflow.rect().bottomLeft()))
+        finally:
+            menu.deleteLater()
 
     def _enforce_header_priority_fit(self):
         """Compatibility entry point for callers predating the coordinator."""
@@ -5290,10 +5595,7 @@ class FastPrompter(
                 row[key] = now
                 changed = True
         if changed:
-            try:
-                self.save_data_to_db()
-            except Exception:
-                pass
+            self._silo_save_settings()
 
     def _silo_bundle_defaults(self, silo_id):
         """Remembered Pack-with-options defaults for one silo, or {}."""
@@ -5317,10 +5619,7 @@ class FastPrompter(
             store = self.data["silo_bundle_defaults"] = {}
         store[str(silo_id)] = {k: v for k, v in values.items()
                                if k != "selected"}
-        try:
-            self.save_data_to_db()
-        except Exception:
-            pass
+        self._silo_save_settings()
 
     def apply_shortcut_tooltips(self):
         """The ONE place a hoverable control's shortcut reaches its tooltip.
@@ -5488,6 +5787,23 @@ class FastPrompter(
 
         return effective
 
+    def _silo_save_settings(self, report=False):
+        """The ONE persisted bundle-settings writer (CORE-002).
+
+        Marks the settings domain dirty, then saves. A mutation under a clean
+        generation silently drops through the partial/``ui_settings`` path
+        unless the settings domain is marked, so every bundle-settings writer
+        routes through here instead of calling ``save_data_to_db`` directly.
+        Returns True only when the settings actually committed.
+        """
+        self.mark_dirty("settings")
+        try:
+            return self.save_data_to_db() is True
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.exception("_silo_save_settings: save failed")
+            return False
+
     def _silo_bundle_history(self, silo_id, clean_missing=True):
         """Persistent bundle history for one silo: {"records": [...], "source_cache": {...}} (T-1411 § 7)."""
         store = self.data.get("silo_bundle_history")
@@ -5508,10 +5824,7 @@ class FastPrompter(
             if len(valid_recs) != len(entry["records"]):
                 entry["records"] = valid_recs
                 store[str(silo_id)] = entry
-                try:
-                    self.save_data_to_db()
-                except Exception:
-                    pass
+                self._silo_save_settings()
         return entry
 
     def _silo_bundle_history_candidates(self, silo_id, target_dir):
@@ -5564,7 +5877,7 @@ class FastPrompter(
         hist = self._silo_bundle_history(silo_id, clean_missing=False)
         records = list(hist.get("records", []))
         source_cache = dict(hist.get("source_cache", {}))
-        if signatures:
+        if signatures is not None:
             source_cache.update(signatures)
 
         new_rec = {
@@ -5590,31 +5903,59 @@ class FastPrompter(
             target_dir if bundle_kind == "selection_bundle"
             else (os.path.join(silo_dir, "exports") if silo_dir else target_dir)
         )
+
+        # Phase 1 -- commit the new record BEFORE retention can delete
+        # anything. A failure here leaves the archive published but unlogged:
+        # journal it so the next save retries it, and never run retention.
+        store[str(silo_id)] = {
+            "records": records,
+            "source_cache": source_cache,
+        }
+        if not self._silo_save_settings():
+            self._note_bundle_meta_failure(silo_id, "new bundle record")
+            return False
+        # The record is durable; retention may now run. W2-007: the archive
+        # this operation just published occupies the newest slot -- retention
+        # must never delete the file the caller is about to hand over.
         pruned_records, _pruned_paths = sb.prune_silo_history(
             records, canonical_exports_dir=exports_dir,
             keep_versions=keep_versions, prune_custom=False,
-            bundle_kind=bundle_kind)
+            bundle_kind=bundle_kind, protect=zip_path)
 
+        # Phase 2 -- commit the pruned history. The deletion itself already
+        # happened, so a failure here must report uncommitted deletions.
         store[str(silo_id)] = {
             "records": pruned_records,
             "source_cache": source_cache,
         }
-        try:
-            self.save_data_to_db()
-        except Exception:
-            pass
+        if not self._silo_save_settings(report=True):
+            self._note_bundle_meta_failure(
+                silo_id, "retention commit",
+                pending_records=pruned_records)
+            return True
+        self._clear_bundle_meta_failure(silo_id)
+        return True
 
-    def _silo_bundle_apply_retention(self, silo_id, silo_dir, keep_versions=5, bundle_kind=None):
-        """Apply retention on existing history (e.g. after reuse hit with changed retention)."""
+    def _silo_bundle_apply_retention(self, silo_id, silo_dir, keep_versions=5,
+                                     bundle_kind=None, protect=None):
+        """Apply retention on existing history (e.g. after reuse hit with changed retention).
+
+        The retention-only half of the two-phase contract: True only when the
+        pruned history committed, False when it could not (journaled), and
+        None when there is nothing to do -- no history is not a failure.
+
+        ``protect`` is W2-007: the live archive of this operation (the reused
+        one on a content-identical hit), which must survive whatever its age.
+        """
         if not silo_id:
-            return
+            return None
         store = self.data.get("silo_bundle_history")
         if not isinstance(store, dict):
-            return
+            return None
         hist = self._silo_bundle_history(silo_id, clean_missing=True)
         records = list(hist.get("records", []))
         if not records:
-            return
+            return None
         from fastprompter.core import silo_bundle as sb
         exports_dir = (
             os.path.join(silo_dir, "exports", "fast")
@@ -5624,13 +5965,47 @@ class FastPrompter(
         pruned_records, _pruned_paths = sb.prune_silo_history(
             records, canonical_exports_dir=exports_dir,
             keep_versions=keep_versions, prune_custom=False,
-            bundle_kind=bundle_kind)
+            bundle_kind=bundle_kind, protect=protect)
         hist["records"] = pruned_records
         store[str(silo_id)] = hist
-        try:
-            self.save_data_to_db()
-        except Exception:
-            pass
+        if not self._silo_save_settings(report=True):
+            self._note_bundle_meta_failure(
+                silo_id, "retention-only commit",
+                pending_records=pruned_records)
+            return False
+        self._clear_bundle_meta_failure(silo_id)
+        return True
+
+    def _note_bundle_meta_failure(self, silo_id, stage, **extra):
+        """Journal a commit failure for the next settings save (T-1436 W2-005).
+
+        The published archive is never deleted because metadata lagged; the
+        unfinished half of the transaction is recorded per silo so a later
+        save can complete it. The retry record must be registered in
+        ``silo_bundle_meta_retry`` with a JSON codec or it would not survive
+        the very restart it exists to outlive.
+        """
+        if not silo_id:
+            return None
+        journal = self.data.get("silo_bundle_meta_retry")
+        if not isinstance(journal, dict):
+            journal = self.data["silo_bundle_meta_retry"] = {}
+        row = {"stage": stage,
+               "at": datetime.datetime.now().isoformat(timespec="seconds")}
+        row.update(extra)
+        journal[str(silo_id)] = row
+        self.mark_dirty("settings")
+        return row
+
+    def _clear_bundle_meta_failure(self, silo_id):
+        """Drop a silo's retry journal entry after both phases committed."""
+        if not silo_id:
+            return
+        journal = self.data.get("silo_bundle_meta_retry")
+        if not isinstance(journal, dict):
+            return
+        if journal.pop(str(silo_id), None) is not None:
+            self.mark_dirty("settings")
 
     def _get_coverage_store(self):
         """Lazy-load the CoverageStore from persistent profile data (T-1415 § 19)."""
@@ -5649,26 +6024,42 @@ class FastPrompter(
         selected_text=None,
         media_files=(),
         clipboard_success=True,
+        selected_span=None,
     ):
         """Record a successful bundle coverage event and update live editor overlay (T-1415 §§ 9, 10, 16)."""
         if not silo_id or not document_text:
             return
         from fastprompter.core import silo_coverage as sc
         store = self._get_coverage_store()
+        span = None
+        if (isinstance(selected_span, (tuple, list))
+                and len(selected_span) == 2):
+            # The caller's Python-index span, validated once. Without it the
+            # ledger resolves ``find(selected_text)`` -- always the FIRST
+            # occurrence -- so the second of two byte-identical lines would be
+            # credited to the first (T-1435 CORE-006).
+            try:
+                start, end = int(selected_span[0]), int(selected_span[1])
+            except (TypeError, ValueError):
+                start = end = None
+            if (start is not None and end is not None and 0 <= start <= end
+                    <= len(document_text)):
+                span = (start, end)
         event = sc.create_bundle_coverage_event(
             silo_id=str(silo_id),
             bundle_kind=str(bundle_kind),
             archive_name=str(archive_name),
             markdown_text=str(document_text),
             selected_text=str(selected_text) if selected_text is not None else None,
+            selected_span=(span if span is not None else None),
             clipboard_success=bool(clipboard_success),
         )
         store.record_event(event)
         self.data["silo_pack_coverage"] = store.to_dict()
-        try:
-            self.save_data_to_db()
-        except Exception:
-            pass
+        self.mark_dirty("settings")
+        if not FastPrompter._silo_save_settings(self):
+            from fastprompter.core.logging import logger
+            logger.exception("pack coverage persist failed")
         text_edit = getattr(self, "text_edit", None) or getattr(self, "text_area", None)
         if text_edit and hasattr(text_edit, "trigger_pack_coverage_event"):
             text_edit.trigger_pack_coverage_event()
@@ -5682,10 +6073,7 @@ class FastPrompter(
         store.clear_silo(str(silo_id))
         self.data["silo_pack_coverage"] = store.to_dict()
         self.mark_dirty("settings")
-        try:
-            self.save_data_to_db()
-        except Exception:
-            pass
+        FastPrompter._silo_save_settings(self)
         text_edit = getattr(self, "text_edit", None) or getattr(self, "text_area", None)
         if text_edit and hasattr(text_edit, "refresh_pack_coverage"):
             text_edit.refresh_pack_coverage()
@@ -5734,29 +6122,6 @@ class FastPrompter(
         hist = self._silo_bundle_history(silo_id, clean_missing=True)
         cands = self._silo_bundle_history_candidates(silo_id, target_dir)
 
-        dimensions = {}
-        try:
-            from PyQt6.QtGui import QImageReader
-
-            from fastprompter.core import silo_bundle as sb
-            refs = sb.find_local_refs(text, silo_dir)
-            candidate_paths = [r.path for r in refs if r.path and sb.classify_media(r.path) == "image"]
-            if eff_opts.get("include_silo_media", True) and silo_dir:
-                for f in sb.list_silo_files(silo_dir, include_attachments=eff_opts.get("include_attachments", False)):
-                    if sb.classify_media(f) == "image":
-                        candidate_paths.append(f)
-            for p in candidate_paths:
-                if not p:
-                    continue
-                c = sb._canonical(p)
-                if c not in dimensions and os.path.isfile(p):
-                    reader = QImageReader(p)
-                    sz = reader.size()
-                    if sz.isValid() and sz.width() > 0 and sz.height() > 0:
-                        dimensions[c] = {"width": int(sz.width()), "height": int(sz.height())}
-        except Exception:
-            pass
-
         plan_kwargs = dict(
             text=text,
             title=title,
@@ -5769,7 +6134,9 @@ class FastPrompter(
             include_attachments=eff_opts.get("include_attachments", False),
             hide_local_paths=eff_opts.get("hide_local_paths", True),
             media_only=bool(eff_opts.get("media_only", False)),
-            dimensions=dimensions,
+            # PERF-005: the capture names the probe; the worker that already
+            # walks the silo for its canonical inventory does the measuring.
+            dimension_probe=_bundle_image_dimensions,
         )
         if "excluded" in eff_opts:
             plan_kwargs["excluded"] = eff_opts["excluded"]
@@ -5794,10 +6161,29 @@ class FastPrompter(
         Takes ONLY selected text and its referenced local media, generates
         structured sidecars, builds a compact ZIP in <silo>/exports/fast/,
         and places the ZIP path onto the Windows clipboard.
+
+        PERF-001 (SRC-097): it plans and writes on the OWNED bundle worker,
+        like every other silo bundle, and completes through the shared
+        completion half. The GUI thread only reads one frozen snapshot, makes
+        the admission decision and dispatches.
         """
         lang = getattr(self, "_current_lang", "EN")
-        editor = getattr(self, "text_area", None) or getattr(self, "text_edit", None)
-        if not editor:
+        from fastprompter.core import silo_bundle as sb
+
+        # CORE-005: the SAME admission decision full silo packing makes, taken
+        # BEFORE a single byte of selection is read and before any side effect
+        # (no target directory, no ZIP, no history, no coverage, no clipboard).
+        reason, context = self._active_silo_bundle_context()
+        if reason is not None:
+            self._silo_bundle_report_unavailable(reason)
+            return None
+
+        # Only the editor whose binding was just validated: a fallback to a
+        # different widget could rebind the read to a document that is not
+        # this silo's.
+        editor = getattr(self, "text_area", None)
+        if editor is None:
+            self._silo_bundle_report_unavailable()
             return None
         cursor = editor.textCursor()
         if not cursor.hasSelection():
@@ -5809,11 +6195,15 @@ class FastPrompter(
             )
             return None
 
-        doc_text = editor.toPlainText()
-        sel_start = cursor.selectionStart()
-        sel_end = cursor.selectionEnd()
-
-        from fastprompter.core import silo_bundle as sb
+        # ONE frozen snapshot feeds the conversion and the payload slice.
+        doc_text = self._editor_text_snapshot()
+        # QTextCursor positions are UTF-16 code units and doc_text is Python
+        # code points: one astral character before the selection would shift
+        # every later index, and the payload, its line numbers AND its coverage
+        # attribution would all follow the shift (T-1436 CORE-006).
+        from fastprompter.ui.qt_text_coords import qt_to_py
+        sel_start = qt_to_py(doc_text, cursor.selectionStart())
+        sel_end = qt_to_py(doc_text, cursor.selectionEnd())
         exp_start, exp_end = sb.expand_selection_token_boundaries(
             doc_text, sel_start, sel_end
         )
@@ -5827,10 +6217,13 @@ class FastPrompter(
             )
             return None
 
-        # Guard in-flight
+        silo_id = context["silo_id"]
+        silo_dir = context["silo_dir"]
+        category = context["category"]
+
+        # Guard in-flight for THIS silo only.
         with _BUNDLE_OP_LOCK:
             registry = getattr(self, "_bundle_ops", None) or {}
-            silo_id = self._active_silo_id()
             for running in registry.values():
                 if running.capture.get("silo_id") == silo_id:
                     self._show_in_app_toast(
@@ -5840,17 +6233,6 @@ class FastPrompter(
                         duration_ms=4000,
                     )
                     return None
-
-        try:
-            slot = int(self.active_temp_slot)
-            is_archive = bool(getattr(self, "active_is_archive", False))
-        except Exception:
-            slot, is_archive = 0, False
-
-        silo_dir = self._silo_folder_dir(slot, is_archive)
-        if not silo_dir:
-            self._silo_bundle_report_unavailable()
-            return None
 
         target_dir = os.path.join(silo_dir, "exports", "fast")
         try:
@@ -5866,138 +6248,175 @@ class FastPrompter(
 
         line_start = doc_text[:exp_start].count("\n") + 1
         line_end = line_start + selected_text.count("\n")
-        title = (
-            self.active_silo_title()
-            if hasattr(self, "active_silo_title")
-            else self._silo_bundle_title(doc_text, fallback="Selection")
-        ) or "Selection"
-        category = (
-            (self.get_current_category() if hasattr(self, "get_current_category") else "")
-            or getattr(self, "active_project", "")
-            or ""
-        )
-        app_version = getattr(self, "VERSION", "0.8.72")
+        try:
+            title = (self.active_silo_title() or "").strip()
+        except Exception:
+            title = ""
+        if not title:
+            title = self._silo_bundle_title(doc_text, fallback="Selection")
+        title = title or "Selection"
 
-        plan = sb.plan_selection_bundle(
-            selected_text=selected_text,
-            title=title,
-            target_dir=target_dir,
-            silo_dir=silo_dir,
-            category=category,
-            app_version=app_version,
-            line_start=line_start,
-            line_end=line_end,
-        )
+        try:
+            candidates = self._silo_bundle_candidates_for_target(silo_id,
+                                                                 target_dir)
+        except Exception:
+            candidates = []
 
-        # Smart reuse check
-        cands = self._silo_bundle_candidates_for_target(silo_id, target_dir)
-        eff_opts = {"keep_versions": 5}
-        for cand in cands:
-            if cand.get("bundle_kind") != "selection_bundle":
-                continue
-            cand_fp = cand.get("content_fingerprint")
-            if not cand_fp or cand_fp != plan.manifest.get("content_fingerprint"):
-                continue
-            cand_path = cand.get("path")
-            if not cand_path or not os.path.isfile(cand_path):
-                continue
-            if sb.verify_reuse_candidate(
-                cand_path,
-                cand_fp,
-                cand.get("archive_size"),
-                cand.get("archive_mtime_ns"),
-            ):
-                self._last_bundle_path = cand_path
-                self._silo_bundle_apply_retention(
-                    silo_id, silo_dir, keep_versions=5, bundle_kind="selection_bundle"
-                )
-                from fastprompter.ui.image_viewer import copy_files_to_clipboard
-                copied = copy_files_to_clipboard([cand_path])
-                if hasattr(self, "_record_bundle_coverage"):
-                    self._record_bundle_coverage(
-                        silo_id=silo_id,
-                        bundle_kind="selection_bundle",
-                        archive_name=os.path.basename(cand_path),
-                        document_text=doc_text,
-                        selected_text=selected_text,
-                        clipboard_success=bool(copied),
-                    )
-                status = (
-                    tr("Existing archive copied to clipboard", lang)
-                    if copied
-                    else tr("Clipboard unavailable", lang)
-                )
-                self._show_in_app_toast(
-                    tr("Bundle unchanged", lang),
-                    f"{os.path.basename(cand_path)}",
-                    header=tr("Fast Pack", lang),
-                    status=status,
-                    duration_ms=5000,
-                    actions=[(tr("Open folder", lang), lambda: self._reveal_path(target_dir))],
-                )
-                return cand_path
+        cap = {
+            "bundle_kind": "selection_bundle",
+            "silo_id": silo_id,
+            "title": title,
+            "silo_dir": silo_dir,
+            "target_dir": target_dir,
+            "effective_options": {"keep_versions": 5},
+            "history_candidates": candidates,
+            "source_cache": {},
+            "doc_text": doc_text,
+            "selected_text": selected_text,
+            # The converted span leaves with the capture: the completion half
+            # records coverage against exactly these indexes, so the SECOND of
+            # two byte-identical lines is attributed to the second (T-1435).
+            "selected_span": (exp_start, exp_end),
+            "plan_factory": sb.plan_selection_bundle,
+            "plan_kwargs": {
+                "selected_text": selected_text,
+                "title": title,
+                "target_dir": target_dir,
+                "silo_dir": silo_dir,
+                "category": category,
+                "app_version": getattr(self, "VERSION", "0.8.72"),
+                "line_start": line_start,
+                "line_end": line_end,
+            },
+        }
+        return self._silo_bundle_dispatch(cap)
 
-        # Write fresh bundle
-        result = sb.write_bundle(plan)
-        if result.error or not result.zip_path:
+    def _fast_pack_complete(self, op, kind, result):
+        """GUI thread: the Fast Pack half of a completed bundle operation.
+
+        Runs only for a ``selection_bundle`` capture, AFTER publication (or a
+        reuse) already committed, and records coverage against the exact
+        selected span the entry point froze. Both outcomes -- a fresh publish
+        and a reuse -- share ONE coverage call site, so the two paths can never
+        drift apart in what they attribute.
+        """
+        cap = op.capture if isinstance(getattr(op, "capture", None), dict) else {}
+        lang = getattr(self, "_current_lang", "EN")
+        target_dir = cap.get("target_dir", "")
+        silo_id = cap.get("silo_id")
+        silo_dir = cap.get("silo_dir")
+
+        if kind == "cancel":
+            return
+        if kind == "empty":
             self._show_in_app_toast(
-                tr("Nothing was written and the clipboard was left alone.", lang),
-                "",
+                tr("Nothing to pack", lang),
+                tr("This bundle has no selected text, media or attachments.",
+                   lang),
                 header=tr("Fast Pack", lang),
-                status=tr("Could not publish the archive: ", lang) + str(result.error)[:160],
-                duration_ms=7000,
+                duration_ms=7000)
+            return
+        if kind == "error":
+            self._show_in_app_toast(
+                tr("Silo not packed", lang),
+                tr("Nothing was written and the clipboard was left alone.",
+                   lang),
+                header=tr("Fast Pack", lang),
+                status=tr("Could not publish the archive: ", lang)
+                + str(result)[:160],
+                duration_ms=9000)
+            return
+
+        if kind == "reuse":
+            zip_path = result.get("zip_path")
+            if not zip_path:
+                self._show_in_app_toast(
+                    tr("Silo not packed", lang),
+                    tr("Nothing was written and the clipboard was left alone.",
+                       lang),
+                    header=tr("Fast Pack", lang))
+                return
+            # A re-used archive adds no history record: retention runs on the
+            # record that is already there, and W2-007 protects the very file
+            # this toast calls "Bundle unchanged".
+            self._silo_bundle_apply_retention(silo_id, silo_dir, keep_versions=5,
+                                              bundle_kind="selection_bundle",
+                                              protect=zip_path)
+            credit_coverage = True
+            head = tr("Bundle unchanged", lang)
+            body = f"{os.path.basename(zip_path)}"
+        else:
+            zip_path = getattr(result, "zip_path", None)
+            if not zip_path:
+                self._show_in_app_toast(
+                    tr("Silo not packed", lang),
+                    tr("Nothing was written and the clipboard was left alone.",
+                       lang),
+                    header=tr("Fast Pack", lang))
+                return
+            meta_ok = self._silo_bundle_record_success(
+                silo_id=silo_id,
+                zip_path=zip_path,
+                display_title=f"Fast: {cap.get('title', '')}",
+                fingerprint=getattr(result, "fingerprint", ""),
+                target_dir=target_dir,
+                options_sig=cap.get("effective_options", {}),
+                archive_size=getattr(result, "archive_size", 0),
+                archive_mtime_ns=getattr(result, "archive_mtime_ns", 0),
+                signatures=getattr(result, "signatures", {}),
+                silo_dir=silo_dir,
+                keep_versions=5,
+                bundle_kind="selection_bundle",
             )
-            return None
+            # Coverage of an archive nothing remembers would point the overlay
+            # at a file retention may already have removed.
+            credit_coverage = meta_ok is not False
+            item_count = len(getattr(result, "items", ()) or ())
+            head = f"{os.path.basename(zip_path)}\n" + tr("%n item(s) packed", lang).replace("%n", str(item_count))
+            body = ""
+            detail = tr("Copied to clipboard", lang) if not getattr(
+                result, "index_status", "full") == "full" else ""
+            if getattr(result, "index_status", "full") == "degraded":
+                detail = tr("Structured index degraded", lang)
+            elif getattr(result, "index_status", "full") == "unavailable":
+                detail = tr("Structured index unavailable", lang)
+            head_status = detail or None
 
-        zip_path = result.zip_path
         self._last_bundle_path = zip_path
-        self._silo_bundle_record_success(
-            silo_id=silo_id,
-            zip_path=zip_path,
-            display_title=f"Fast: {title}",
-            fingerprint=result.fingerprint,
-            target_dir=target_dir,
-            options_sig=eff_opts,
-            archive_size=result.archive_size,
-            archive_mtime_ns=result.archive_mtime_ns,
-            signatures=result.signatures,
-            silo_dir=silo_dir,
-            keep_versions=5,
-            bundle_kind="selection_bundle",
-        )
-
         from fastprompter.ui.image_viewer import copy_files_to_clipboard
         copied = copy_files_to_clipboard([zip_path])
-        if hasattr(self, "_record_bundle_coverage"):
+
+        if credit_coverage and hasattr(self, "_record_bundle_coverage"):
             self._record_bundle_coverage(
                 silo_id=silo_id,
                 bundle_kind="selection_bundle",
                 archive_name=os.path.basename(zip_path),
-                document_text=doc_text,
-                selected_text=selected_text,
+                document_text=cap.get("doc_text", ""),
+                selected_text=cap.get("selected_text"),
+                # Exactly what the entry point froze: the second of two
+                # byte-identical lines is attributed to the second (T-1435).
+                selected_span=cap.get("selected_span"),
                 clipboard_success=bool(copied),
             )
-        idx_status = getattr(result, "index_status", "full")
-        status = (
-            tr("Copied to clipboard", lang)
-            if copied
-            else tr("Clipboard unavailable", lang)
-        )
-        if idx_status == "degraded":
-            status += " · " + tr("Structured index degraded", lang)
-        elif idx_status == "unavailable":
-            status += " · " + tr("Structured index unavailable", lang)
-        item_count = len(result.items)
-        detail = tr("%n item(s) packed", lang).replace("%n", str(item_count))
+
+        if kind == "reuse":
+            status = (tr("Existing archive copied to clipboard", lang) if copied
+                      else tr("Clipboard unavailable", lang))
+        else:
+            status = (tr("Copied to clipboard", lang) if copied
+                      else tr("Clipboard unavailable", lang))
+            if head_status:
+                status += " · " + head_status
+
         self._show_in_app_toast(
-            f"{os.path.basename(zip_path)}\n{detail}",
-            "",
+            head,
+            body,
             header=tr("Fast Pack", lang),
             status=status,
-            duration_ms=6000,
-            actions=[(tr("Open folder", lang), lambda: self._reveal_path(target_dir))],
+            duration_ms=6000 if kind != "reuse" else 5000,
+            actions=[(tr("Open folder", lang),
+                      lambda: self._reveal_path(target_dir))],
         )
-        return zip_path
 
     def silo_bundle_quick_pack(self):
         """Left click on the Pack control: smart quick pack with defaults."""
@@ -6084,6 +6503,107 @@ class FastPrompter(
         )
 
     # --- the operation ------------------------------------------------
+    def _bundle_ops_retire(self, timeout_s: float = 2.0) -> bool:
+        """Physically retire every in-flight bundle op, bounded, truthfully.
+
+        A dedicated bundle ``QThread`` is NOT a member of the global Qt thread
+        pool, so no pool barrier owns it: it must be signalled and joined here,
+        before the profile switch rebinds ``self.data`` and before shutdown
+        retires SQLite and the window.
+
+        Returns False while any op is still running after the bound. The op
+        stays in the registry in that case, so ownership is never silently
+        abandoned and a completion that arrives later still has an owner.
+        """
+        with _BUNDLE_OP_LOCK:
+            registry = getattr(self, "_bundle_ops", None) or {}
+            pending = [(op_id, op) for op_id, op in registry.items()]
+        if not pending:
+            return True
+
+        for _op_id, op in pending:
+            cancel = (op.capture.get("cancel")
+                      if isinstance(getattr(op, "capture", None), dict) else None)
+            if cancel is not None and hasattr(cancel, "set"):
+                cancel.set()
+
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        retired: list[int] = []
+        while pending:
+            still_running = []
+            for op_id, op in pending:
+                waiter = getattr(getattr(op, "thread", None), "wait", None)
+                stopped = bool(waiter(50)) if callable(waiter) else True
+                if stopped:
+                    retired.append(op_id)
+                else:
+                    still_running.append((op_id, op))
+            pending = still_running
+            if not pending:
+                break
+            if time.monotonic() >= deadline:
+                from fastprompter.core.logging import logger as _log
+                _log.warning(
+                    "silo bundle worker retirement TIMED_OUT: %d operation(s) "
+                    "still running after %.2fs", len(pending), timeout_s)
+                return False
+
+        with _BUNDLE_OP_LOCK:
+            registry = getattr(self, "_bundle_ops", None) or {}
+            for op_id in retired:
+                registry.pop(op_id, None)
+            self._bundle_ops = registry
+        return True
+
+    def _silo_bundle_dispatch(self, cap):
+        """Turn one frozen capture into a running worker operation.
+
+        Shared by full silo packing and Fast Pack Selection (PERF-001): both
+        publish on the same owned ``QThread`` and complete through the same
+        GUI-side half, which is what makes an in-flight bundle immune to a
+        silo switch, a project switch or an edit.
+        """
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QProgressDialog, QWidget
+
+        lang = getattr(self, "_current_lang", "EN")
+        cancel = threading.Event()
+        cap["cancel"] = cancel
+
+        # minimumDuration keeps a small pack from flashing a dialog at all.
+        # The parent is the window when there is one; a host that is not a
+        # widget (a test harness driving the same code path) gets a top-level
+        # dialog instead of a type error.
+        parent = self if isinstance(self, QWidget) else None
+        dialog = QProgressDialog(
+            tr("Packing silo…", lang), tr("Cancel", lang), 0, 0, parent)
+        dialog.setWindowTitle(tr("Pack Silo", lang))
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(300)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.canceled.connect(cancel.set)
+
+        op = _BundleOp(cap, dialog)
+        op.profile_id = getattr(getattr(self, "state", None), "profile_id", 1)
+        op.bridge = _BundleProgressBridge(dialog, cancel)
+        op.worker = _BundleWorker()
+        op.thread = QThread()
+        op.worker.moveToThread(op.thread)
+        op.worker.dispatch.connect(op.worker._run)
+        op.worker.progress.connect(op.bridge.on_tick)
+        op.worker.finished.connect(op.worker.deleteLater)
+        op.worker.finished.connect(op.thread.quit)
+        op.thread.finished.connect(op.thread.deleteLater)
+        op.worker.finished.connect(
+            lambda payload: self._bundle_on_finished(op, payload))
+        with _BUNDLE_OP_LOCK:
+            self._bundle_ops = getattr(self, "_bundle_ops", None) or {}
+            self._bundle_ops[id(op)] = op
+        op.thread.start()
+        op.worker.dispatch.emit(cap)
+        return op
+
     def _silo_bundle_request(self, options=None, capture=None):
         """Start one bundle. GUI thread: capture, show progress, dispatch.
 
@@ -6091,9 +6611,6 @@ class FastPrompter(
         it previewed: a Shift+click is the click time, so an edit made while
         the dialog was open must not silently change what gets packed.
         """
-        from PyQt6.QtCore import Qt
-        from PyQt6.QtWidgets import QProgressDialog
-
         lang = getattr(self, "_current_lang", "EN")
         if capture is not None:
             cap = capture
@@ -6126,37 +6643,7 @@ class FastPrompter(
                             duration_ms=4000)
                         return None
 
-        cancel = threading.Event()
-        cap["cancel"] = cancel
-
-        # minimumDuration keeps a small pack from flashing a dialog at all.
-        dialog = QProgressDialog(
-            tr("Packing silo…", lang), tr("Cancel", lang), 0, 0, self)
-        dialog.setWindowTitle(tr("Pack Silo", lang))
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.setMinimumDuration(300)
-        dialog.setAutoClose(False)
-        dialog.setAutoReset(False)
-        dialog.canceled.connect(cancel.set)
-
-        op = _BundleOp(cap, dialog)
-        op.bridge = _BundleProgressBridge(dialog, cancel)
-        op.worker = _BundleWorker()
-        op.thread = QThread()
-        op.worker.moveToThread(op.thread)
-        op.worker.dispatch.connect(op.worker._run)
-        op.worker.progress.connect(op.bridge.on_tick)
-        op.worker.finished.connect(op.worker.deleteLater)
-        op.worker.finished.connect(op.thread.quit)
-        op.thread.finished.connect(op.thread.deleteLater)
-        op.worker.finished.connect(
-            lambda payload: self._bundle_on_finished(op, payload))
-        with _BUNDLE_OP_LOCK:
-            self._bundle_ops = getattr(self, "_bundle_ops", None) or {}
-            self._bundle_ops[id(op)] = op
-        op.thread.start()
-        op.worker.dispatch.emit(cap)
-        return op
+        return self._silo_bundle_dispatch(cap)
 
     def _bundle_on_finished(self, op, payload):
         """GUI thread: close progress, report honestly, set the clipboard."""
@@ -6169,8 +6656,23 @@ class FastPrompter(
             op.dialog.close()
         except RuntimeError:
             pass
+
+        # T-1432 CORE-001: a completion for a profile that is no longer active
+        # must not mutate the live profile's history, coverage, clipboard or
+        # UI. The registry pop above is what makes the op's late signal still
+        # land on an owner; from here on it is only remembered that it arrived.
+        live_profile = getattr(getattr(self, "state", None), "profile_id", None)
+        op_profile = getattr(op, "profile_id", None)
+        if (op_profile is not None and live_profile is not None
+                and op_profile != live_profile):
+            return
+
         lang = getattr(self, "_current_lang", "EN")
-        label = op.capture["title"]
+        cap = op.capture if isinstance(getattr(op, "capture", None), dict) else {}
+        if cap.get("bundle_kind") == "selection_bundle":
+            self._fast_pack_complete(op, kind, result)
+            return
+        label = cap["title"]
 
         if kind == "cancel":
             return
@@ -6197,7 +6699,8 @@ class FastPrompter(
             self._last_bundle_path = zip_path
             silo_id = op.capture.get("silo_id")
             keep_versions = op.capture.get("effective_options", {}).get("keep_versions", 5)
-            self._silo_bundle_apply_retention(silo_id, op.capture.get("silo_dir"), keep_versions)
+            self._silo_bundle_apply_retention(silo_id, op.capture.get("silo_dir"),
+                                              keep_versions, protect=zip_path)
 
             from fastprompter.ui.image_viewer import copy_files_to_clipboard
             copied = copy_files_to_clipboard([zip_path])
@@ -6649,6 +7152,7 @@ class FastPrompter(
         # the main window is concerned — without the lock, Hide on Click-Out
         # hid everything behind the dialog and closing it left the user
         # staring at a desktop where nothing reacted any more.
+        dialog = None
         self._increment_focus_lock()
         try:
             try:
@@ -6683,6 +7187,8 @@ class FastPrompter(
                 (time.perf_counter() - t0) * 1000.0)
             dialog.exec()
         finally:
+            if dialog is not None:
+                dialog.deleteLater()
             QTimer.singleShot(300, weak_qt_callback(
                 self, lambda w: w._decrement_focus_lock()))
         # Force sync: ensure sound_manager sees updated data
@@ -6859,6 +7365,160 @@ class FastPrompter(
         except OSError as e:
             logger.error(f"Failed to launch executable: {e}")
 
+    # -- Smart Code Runner (T-1456) ------------------------------------------
+    #
+    # The pipeline is: debounced detection on text changes -> candidates ->
+    # explicit review dialog -> QProcess execution with visible results.
+    # Nothing executes on paste, hover, load, or toolbar visibility change.
+
+    def _code_run_working_dir(self):
+        """Working-directory policy: configured project folder when valid,
+        otherwise an explicit safe fallback shown before execution."""
+        folder = None
+        store = self.data.get("silo_project_paths", {})
+        if isinstance(store, dict):
+            entry = store.get(str(getattr(self, "active_temp_slot", -1)), {})
+            if isinstance(entry, dict):
+                folder = entry.get("folder")
+        if folder and os.path.isdir(folder):
+            return folder
+        from fastprompter.core.code_runners import _default_project_dir
+        return _default_project_dir()
+
+    def _refresh_code_run_button(self):
+        """Debounced detection over the current document."""
+        from fastprompter.core.code_detection import language_display
+        if getattr(self, "_code_run_inflight", False):
+            return
+        text = self._editor_text_snapshot()
+        caret = self.text_area.textCursor().position()
+        cursor = self.text_area.textCursor()
+        has_sel = cursor.hasSelection()
+        sel_start = cursor.selectionStart() if has_sel else None
+        sel_end = cursor.selectionEnd() if has_sel else None
+        try:
+            from fastprompter.core.code_detection import detect_all
+            doc_rev = getattr(self.text_area.document(), "revision", lambda: 0)()
+            candidates = detect_all(
+                text, caret_pos=caret,
+                sel_start=sel_start, sel_end=sel_end,
+                document_id=str(getattr(self, "active_temp_slot", "")),
+                revision=doc_rev,
+            )
+        except Exception:
+            candidates = []
+        self._code_candidates = candidates
+        if not candidates:
+            self._set_topbar_semantic("btn_code_run", False)
+            if hasattr(self, "btn_code_run"):
+                self.btn_code_run.setToolTip(
+                    tr("Run Code", getattr(self, "_current_lang", "EN")))
+            return
+        self._set_topbar_semantic("btn_code_run", True)
+        if hasattr(self, "btn_code_run"):
+            best = candidates[0]
+            display = language_display(best.language)
+            more = f" (+{len(candidates) - 1} more)" if len(candidates) > 1 else ""
+            self.btn_code_run.setToolTip(
+                tr("Run Code", getattr(self, "_current_lang", "EN"))
+                + f" — {display}{more}")
+
+    def selection_has_runnable_code(self):
+        """True when the current selection yields a runnable candidate."""
+        cursor = self.text_area.textCursor()
+        if not cursor.hasSelection():
+            return False
+        try:
+            from fastprompter.core.code_detection import detect_all
+            text = self._editor_text_snapshot()
+            candidates = detect_all(
+                text,
+                sel_start=cursor.selectionStart(),
+                sel_end=cursor.selectionEnd(),
+            )
+        except Exception:
+            return False
+        if hasattr(self, "_sel_code_candidates"):
+            self._sel_code_candidates = candidates
+        return bool(candidates)
+
+    def run_selection_code(self):
+        """Context-menu entry: run the selection through explicit approval.
+
+        Reuses the same review dialog and the same single execution path as
+        the toolbar button — never executes directly.
+        """
+        cursor = self.text_area.textCursor()
+        if not cursor.hasSelection():
+            return
+        from fastprompter.core.code_detection import detect_all
+        text = self._editor_text_snapshot()
+        candidates = detect_all(
+            text,
+            sel_start=cursor.selectionStart(),
+            sel_end=cursor.selectionEnd(),
+        )
+        if not candidates:
+            return
+        self._code_candidates = candidates
+        self._on_code_run_clicked()
+
+    def _on_code_run_clicked(self):
+        """Open the explicit review dialog. This is the ONLY execution path."""
+        if not getattr(self, "_code_candidates", None):
+            from fastprompter.core.code_detection import detect_all
+            text = self._editor_text_snapshot()
+            cursor = self.text_area.textCursor()
+            has_sel = cursor.hasSelection()
+            candidates = detect_all(
+                text, caret_pos=cursor.position(),
+                sel_start=cursor.selectionStart() if has_sel else None,
+                sel_end=cursor.selectionEnd() if has_sel else None,
+            )
+            self._code_candidates = candidates
+        from fastprompter.ui.code_run_dialog import CodeRunReviewDialog
+        dialog = CodeRunReviewDialog(
+            self, self._code_candidates,
+            working_dir=self._code_run_working_dir(), parent=self)
+        try:
+            accepted = dialog.exec() == CodeRunReviewDialog.DialogCode.Accepted
+        finally:
+            if dialog is not None:
+                dialog.deleteLater()
+        if not accepted:
+            return
+        chosen = dialog.chosen
+        if chosen is None:
+            return
+        from fastprompter.core.code_detection import interpreter_key
+        adapter_key = interpreter_key(chosen.language)
+        from fastprompter.core.code_runners import REGISTRY
+        adapter = REGISTRY.get(adapter_key)
+        if adapter is None:
+            return
+        resolved = REGISTRY.resolve(adapter_key)
+        if resolved is None:
+            reason = getattr(adapter, "unavailable_reason", None) or (
+                f"{adapter.exe_name} not found")
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, tr("Run Code", getattr(self, "_current_lang", "EN")),
+                tr("Interpreter not available", getattr(self, "_current_lang", "EN"))
+                + f": {adapter.exe_name} — {reason}")
+            return
+        exe, args_template = resolved
+        self._code_run_inflight = True
+        from fastprompter.ui.code_run_dialog import CodeRunOutputDialog
+        out = CodeRunOutputDialog(
+            self, chosen, exe, args_template,
+            self._code_run_working_dir(), chosen.source, parent=self)
+        try:
+            out.exec()
+        finally:
+            if out is not None:
+                out.deleteLater()
+            self._code_run_inflight = False
+
     def _open_silo_project_folder(self, is_archive=None):
         import os
 
@@ -6883,11 +7543,22 @@ class FastPrompter(
         if is_archive is None:
             is_archive = getattr(self, "active_is_archive", False)
         from fastprompter.ui.silo_settings_dialog import SiloSettingsDialog
-        dlg = SiloSettingsDialog(self, global_idx, is_archive)
         self._increment_focus_lock()
+        dlg = None
         try:
+            dlg = SiloSettingsDialog(self, global_idx, is_archive)
             accepted = dlg.exec()
         finally:
+            if dlg is not None:
+                dlg.deleteLater()
+            else:
+                # construction raised after super().__init__(): retire the orphan
+                for child in list(self.children()):
+                    try:
+                        if isinstance(child, SiloSettingsDialog):
+                            child.deleteLater()
+                    except RuntimeError:
+                        pass
             QTimer.singleShot(300, weak_qt_callback(
                 self, lambda w: w._decrement_focus_lock()))
         if accepted:
@@ -6930,9 +7601,9 @@ class FastPrompter(
             sizes = self.splitter.sizes()
             freed = sizes[idx] if 0 <= idx < len(sizes) else 0
             if freed >= 60:
-                self.data["files_dock_width"] = str(freed)
+                self.set_setting("files_dock_width", str(freed))
             dock.setVisible(False)
-            self.data["files_dock_open"] = "False"
+            self.set_setting("files_dock_open", "False")
             if freed and 0 <= centre < len(sizes):
                 # Hand the width back to the CENTRE pane. Left to itself Qt
                 # gives a hidden child's space to whoever has stretch, which
@@ -6948,7 +7619,7 @@ class FastPrompter(
                 self.sound_manager.play("chest_close")
             return
         dock.setVisible(True)
-        self.data["files_dock_open"] = "True"
+        self.set_setting("files_dock_open", "True")
         sizes = self.splitter.sizes()
         if 0 <= idx < len(sizes) and sizes[idx] < 60:
             try:
@@ -7363,6 +8034,28 @@ class FastPrompter(
         else:
             return f"silo:{self.active_temp_slot}"
 
+    def set_setting(self, key, value):
+        """Assign one persisted settings key and declare the owning domain.
+
+        The optimised save rescans the settings domain only when its
+        generation moved past the saved one, so a caller that writes
+        ``self.data[key]`` directly keeps the value in memory while a normal
+        durable save reports success and drops it.  Assigning through here is
+        what makes ``_show_files_dock`` and ``save_silo_to_file`` persist.
+
+        A no-op assignment stays silent: the generation is the domain's
+        change counter, not a "who touched it" counter, and republishing
+        unchanged numbers would buy nothing but write amplification.
+        """
+        current = self.data.get(key, None)
+        self.data[key] = value
+        if value == current and key in self.data:
+            return False
+        state = getattr(self, "state", None)
+        if state is not None:
+            state.mark_dirty("settings")
+        return True
+
     def save_data_to_db(self, force=False, durable=False):
         # PERF-003: acquire ONE authoritative whole-document snapshot and
         # thread the SAME string through silo-state fingerprinting and the
@@ -7430,7 +8123,11 @@ class FastPrompter(
         # whose content changed since the last authoritative commit. The
         # state layer drains the queue INSIDE the save transaction, so a
         # content overwrite can never land without its recovery predecessor.
-        self._queue_silo_text_history()
+        # PERF-008: the diff bridges per-silo identity across both spaces and
+        # every slot, so it runs only when this save can contain a transition.
+        st0 = getattr(self, "state", None)
+        if st0 is None or getattr(st0, "conn", None) is None or                 st0.history_needed(force=force):
+            self._queue_silo_text_history()
 
         self.data["window_locked"] = "True" if getattr(self, "is_locked", False) else "False"
 
@@ -7445,6 +8142,7 @@ class FastPrompter(
             "preview_mode": (self.preview_combo.currentData() or self.preview_combo.currentText())
             if hasattr(self, "preview_combo")
             else self.data.get("preview_mode", "None"),
+            "preview_syntax": self.data.get("preview_syntax", "Auto"),
             "paste_mode": self.data.get("paste_mode", "Plain"),
             "tray_visible": str(self.cb_tray.isChecked())
             if getattr(self, "cb_tray", None) is not None
@@ -7642,12 +8340,15 @@ class FastPrompter(
                 return
             worker = self._ensure_typo_worker()
             worker.scan.emit(request_id, text, dictionary)
-            # remember what this in-flight scan was taken against
-            self._typo_inflight = (request_id, ident, doc_rev)
+            # remember what this in-flight scan was taken against, including
+            # the exact text the worker is scanning: the completion converts
+            # its spans against THIS snapshot, never against a live document
+            # that may have moved since.
+            self._typo_inflight = (request_id, ident, doc_rev, text)
         except Exception:
             self._typo_apply_spans([])
 
-    def _typo_apply_spans(self, spans):
+    def _typo_apply_spans(self, spans, source_text=None):
         """Paint spans onto the live editor (GUI thread).
 
         T-1269 SPAN CONTRACT -- this is the single Python/Qt boundary for
@@ -7659,6 +8360,12 @@ class FastPrompter(
         against the text the scan was accepted for (``_on_typo_scanned``
         proves the document revision has not moved). ``editor._typo_spans``
         holds QT offsets thereafter and every consumer is Qt-native.
+
+        ``source_text`` is that accepted snapshot. It matters twice: the
+        conversion must not run against text that has since moved, and the
+        result path must not re-materialize the live document at all. A
+        caller with no snapshot (a clear, a feature-off path) still reads the
+        live document.
         """
         editor = getattr(self, "text_area", None)
         if editor is not None and not sip.isdeleted(editor):
@@ -7666,7 +8373,9 @@ class FastPrompter(
                 from fastprompter.ui.qt_text_coords import (
                     convert_spans_py_to_qt,
                 )
-                spans = convert_spans_py_to_qt(editor.toPlainText(), spans)
+                if source_text is None:
+                    source_text = editor.toPlainText()
+                spans = convert_spans_py_to_qt(source_text, spans)
             editor._typo_spans = spans
             editor._typo_color = self.data.get("typo_color", "#e05555")
             try:
@@ -7700,7 +8409,7 @@ class FastPrompter(
         if self.data.get("typo_check_enabled", "False") != "True":
             return
         _rid, _text, _dict, _ident, _rev = pending
-        self._typo_inflight = (_rid, _ident, _rev)
+        self._typo_inflight = (_rid, _ident, _rev, _text)
         worker = self._ensure_typo_worker()
         worker.scan.emit(_rid, _text, _dict)
 
@@ -7717,7 +8426,7 @@ class FastPrompter(
         inflight = getattr(self, "_typo_inflight", None)
         if inflight is None or inflight[0] != request_id:
             return  # superseded by a newer scan
-        _rid, ident, doc_rev = inflight
+        _rid, ident, doc_rev, snap_text = inflight
         self._typo_inflight = None
         # PERF-003: the in-flight scan is done — launch the single queued
         # snapshot (if any) before evaluating this result, so the newest
@@ -7738,7 +8447,7 @@ class FastPrompter(
                 return  # typed again since the snapshot — next tick owns it
         except Exception:
             return
-        self._typo_apply_spans(spans)
+        self._typo_apply_spans(spans, source_text=snap_text)
 
     def typo_worker_shutdown(self, timeout_s=2.0):
         """Bounded stop of the typo-scan thread at exit."""
@@ -7920,9 +8629,11 @@ class FastPrompter(
         """Project context menu: typecheck EVERY silo of this project."""
         from fastprompter.ui.typo_check_dialog import TypoCheckDialog
         self.ignore_focus_loss = True
+        dialog = TypoCheckDialog(self)
         try:
-            TypoCheckDialog(self).exec()
+            dialog.exec()
         finally:
+            dialog.deleteLater()
             self.ignore_focus_loss = False
         self.activateWindow()
 
@@ -8448,8 +9159,8 @@ class FastPrompter(
                     # happens once per binding, not per keystroke.
                     eol = "\n"
                     had_bom = False
-                    approved_digest = None
-                    read = ps.read_text_file(path, max_bytes)
+                    approved_id = None
+                    read = ps.read_text_file_with_identity(path, max_bytes)
                     if read is not None:
                         # CORE-001: a previously-flagged unsafe target is now
                         # safe text again; clear the flag so it participates
@@ -8479,8 +9190,8 @@ class FastPrompter(
                                 continue  # skipped for now — leave both sides
                             # "app": the user approved overwriting the file AS
                             # IT WAS when the dialog opened. Remember the exact
-                            # approved baseline to re-validate at mutation time.
-                            approved_digest = self._sync_side_digest(read[0])
+                            # accepted identity to re-validate at mutation time.
+                            approved_id = read[3]
                         else:
                             # PERF-003: fresh revalidation found the file
                             # ALREADY equal to the silo. Establish the
@@ -8506,35 +9217,29 @@ class FastPrompter(
                             self._sync_flag_unsafe_binding(key, path)
                             continue
                         # Genuinely missing destination: approve recreation.
-                        # approved_digest stays None (file absent) so the
-                        # mutation-time revalidation refuses if another process
-                        # creates it first.
+                        # The accepted identity is MISSING_ON_DISK (file
+                        # absent), so the publish refuses if another writer
+                        # creates it in the window.
+                        approved_id = ps.MISSING_ON_DISK
 
-                    # CORE-005: mutation-time revalidation. The approval (or the
-                    # missing-file decision) was made against the file state
-                    # read ABOVE. Re-read the destination immediately before the
-                    # write; if it changed from the approved baseline — a newer
-                    # external edit, or a file that appeared where none was —
-                    # REFUSE to clobber it and re-evaluate on the next round.
-                    _reval = ps.read_text_file(path, max_bytes)
-                    if _reval is not None:
-                        _cur_d = self._sync_side_digest(_reval[0])
-                    else:
-                        _cur_d = None if not os.path.exists(path) else "<unsafe>"
-                    if _cur_d != approved_digest:
-                        self._sync_leases.setdefault(key, 0)
-                        if _reval is not None or os.path.exists(path):
-                            self._sync_flag_unsafe_binding(key, path)
-                        continue
-                    # baseline still matches the approval: safe to publish.
+                    # W2-001: mutation-time publication through the SAME
+                    # compare-before-publish primitive the worker uses. The
+                    # approval above was made against the exact bytes whose
+                    # identity ``approved_id`` names; anything landing in the
+                    # window since then is reported, never clobbered.
                     self._sync_leases.setdefault(key, 0)
+                    written, conflict_id = ps.compare_and_publish_text(
+                        path, text, approved_id, eol, write_bom=had_bom)
+                    if written is None:
+                        # The destination moved: refuse, keep no baseline that
+                        # would legitimise an overwrite, and flag it so the next
+                        # round re-evaluates instead of guessing.
+                        self._sync_flag_unsafe_binding(key, path)
+                        continue
                     lease = self._sync_lease(key)
-                    written = ps.write_text_file(
-                        path, text, eol, write_bom=had_bom)
-                    if written is not None:
-                        self._sync_leases[key] = lease + 1
-                        self._sync_last_applied[key] = \
-                            self._sync_side_digest(written)
+                    self._sync_leases[key] = lease + 1
+                    self._sync_last_applied[key] = \
+                        self._sync_side_digest(written)
                 else:
                     # Established binding whose app side changed: use the EOL
                     # learned when this file was last read/applied. The job
@@ -8773,13 +9478,46 @@ class FastPrompter(
         retires the wrappers into the process-lifetime leak list first.
         """
         if self._push_thread is None or not self._push_thread.isRunning():
-            if self._push_worker is not None:
-                _RETIRED_WORKERS.append(self._push_worker)
-            if self._push_thread is not None:
-                _RETIRED_WORKERS.append(self._push_thread)
-            self._push_worker = None
-            self._push_thread = None
-            return True
+            if (self._push_jobs_pending and not self._push_inflight
+                    and not getattr(self, "_restore_stale_memory", False)):
+                # W2-004: pending AUTHORIZED work with no live thread. The
+                # dead wrappers can never run it, so a "clean" report here
+                # would silently drop the newest silo text at exit. Retire
+                # the dead references and start ONE fresh worker: the clean
+                # report below still requires the physical write.
+                if self._push_worker is not None:
+                    _RETIRED_WORKERS.append(self._push_worker)
+                if self._push_thread is not None:
+                    _RETIRED_WORKERS.append(self._push_thread)
+                self._push_worker = None
+                self._push_thread = None
+                self._dispatch_push_jobs()
+            elif getattr(self, "_restore_stale_memory", False) \
+                    and self._push_jobs_pending:
+                # W2-003: a restored DB is authoritative; the pre-restore
+                # memory must not be published. Drop any queued stale jobs,
+                # then retire — nothing outside the thread needs draining.
+                self._push_jobs_pending = {}
+                if self._push_worker is not None:
+                    _RETIRED_WORKERS.append(self._push_worker)
+                if self._push_thread is not None:
+                    _RETIRED_WORKERS.append(self._push_thread)
+                self._push_worker = None
+                self._push_thread = None
+                return True
+            elif self._push_jobs_pending or self._push_inflight:
+                # A stopped thread is NOT proof of logical completion: the
+                # in-flight batch may or may not have physically landed, so
+                # refuse and RETAIN the live worker/thread references.
+                return False
+            else:
+                if self._push_worker is not None:
+                    _RETIRED_WORKERS.append(self._push_worker)
+                if self._push_thread is not None:
+                    _RETIRED_WORKERS.append(self._push_thread)
+                self._push_worker = None
+                self._push_thread = None
+                return True
         try:
             if getattr(self, "_restore_stale_memory", False):
                 # W2-003: a restored DB is authoritative; the pre-restore
@@ -10578,6 +11316,20 @@ class FastPrompter(
         self.btn_project_folder.clicked.connect(self._open_silo_project_folder)
         self.btn_project_folder.hide()
 
+        # T-1456: Smart Code Runner. Separate token from the project executable
+        # launcher above -- it runs the DETECTED code in the editor, not the
+        # silo's project executable. Hidden until runnable code is detected.
+        self.btn_code_run = QPushButton("⚡")
+        self.btn_code_run.setToolTip(tr("Run Code", getattr(self, "_current_lang", "EN")))
+        self.apply_button_size(self.btn_code_run, 20)
+        self.btn_code_run.clicked.connect(self._on_code_run_clicked)
+        self.btn_code_run.hide()
+        self._code_candidates = []
+        self._code_run_debounce = QTimer(self)
+        self._code_run_debounce.setSingleShot(True)
+        self._code_run_debounce.setInterval(300)
+        self._code_run_debounce.timeout.connect(self._refresh_code_run_button)
+
         self.btn_trash = QPushButton("🗑️")
         self.apply_button_size(self.btn_trash, 20, 20)
         self.btn_trash.setToolTip(tr("Open Trash", getattr(self, "_current_lang", "EN")))
@@ -10699,30 +11451,31 @@ class FastPrompter(
             _qapp.aboutToQuit.connect(
                 lambda service=self.limit_service: service.shutdown())
         self.limit_gauges = LimitGauges(self, self.limit_service)
-        self.limit_gauges.setToolTip(tr(
+        self.limit_gauges.set_hover_description(tr(
             "AI usage limits (remaining quota per window)\nClick to refresh",
             getattr(self, "_current_lang", "EN")))
         self.header_layout.addWidget(self.limit_gauges)
 
         # Minutes until the soonest quota reset, right beside the gauges.
         # Hidden until gauges are enabled and a reset time is known.
-        self.lbl_limit_timer = QLabel("")
+        self.lbl_limit_timer = HoverCardLabel("")
         self.lbl_limit_timer.setStyleSheet("padding: 0 4px; font-weight: bold;")
         self.lbl_limit_timer.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lbl_limit_timer.mousePressEvent = lambda _e: (
-            hasattr(self, "open_limit_settings_dialog") and self.open_limit_settings_dialog())
         self.lbl_limit_timer._en_tooltip = "Soonest AI limit reset"
-        self.lbl_limit_timer.setToolTip(tr(
+        self.lbl_limit_timer._description_key = self.lbl_limit_timer._en_tooltip
+        self.lbl_limit_timer.set_hover_description(tr(
             self.lbl_limit_timer._en_tooltip, self._current_lang))
         # T-1279: the queue opens in the EXISTING LimitHoverCard, not a
         # native tooltip and not a second hover system. The card is created
-        # lazily on first hover so the header build stays cheap.
+        # lazily on first hover so the header build stays cheap. The label
+        # OWNS the tooltip event, so no native popup appears beside the
+        # card while the card owns the hover.
         self._reset_hover_card = None
         self._reset_queue_html = ""
-        self.lbl_limit_timer.enterEvent = (
-            lambda _e: self._show_reset_hover_card())
-        self.lbl_limit_timer.leaveEvent = (
-            lambda _e: self._hide_reset_hover_card())
+        self.lbl_limit_timer.set_hover_owner(
+            opener=self._show_reset_hover_card,
+            closer=self._hide_reset_hover_card,
+            press=self._open_limit_settings_from_reset_label)
         self.lbl_limit_timer.setVisible(False)
         self.header_layout.addWidget(self.lbl_limit_timer)
 
@@ -10810,6 +11563,11 @@ class FastPrompter(
                 "Courier New",
             ]
         )
+        # Restore custom fonts BEFORE looking up the saved font_family
+        # so the saved selection can find a custom family that was loaded
+        # in a previous session.
+        self.restore_custom_fonts()
+
         saved_font = self.data.get("font_family", "Verdana")
         idx = self.font_combo.findText(saved_font)
         if idx >= 0:
@@ -10848,6 +11606,23 @@ class FastPrompter(
             idx = 1  # default to Live Preview
         self.preview_combo.setCurrentIndex(idx)
         self.preview_combo.currentIndexChanged.connect(self.change_preview_mode)
+
+        # T-1484: which language the SOURCE is written in.  A separate axis
+        # from the View mode above -- the view decides how a document is
+        # presented, this decides how its source is interpreted.  itemData
+        # stays English (the lookup key) and the visible label is translated
+        # per language, exactly like the View combo.
+        self.preview_syntax_combo = QComboBox()
+        for _syntax in ("Auto", "Markdown", "BBCode"):
+            self.preview_syntax_combo.addItem(_syntax, _syntax)
+        self._retranslate_preview_syntax_combo(
+            getattr(self, "_current_lang", "EN"))
+        self.preview_syntax_combo.setToolTip("Auto / Markdown / BBCode")
+        _saved_syntax = self.data.get("preview_syntax", "Auto")
+        _syntax_idx = self.preview_syntax_combo.findData(_saved_syntax)
+        self.preview_syntax_combo.setCurrentIndex(max(0, _syntax_idx))
+        self.preview_syntax_combo.currentIndexChanged.connect(
+            self._on_preview_syntax_changed)
 
         self.cb_theme = QComboBox()
         self.cb_theme.addItems(
@@ -10906,6 +11681,15 @@ class FastPrompter(
         self.btn_button_scale = make_action_checkbox(
             f"{current_scale_pct}%", self.cycle_button_scale, fixed_w=44
         )
+        # T-1484: remote images stay unloaded until this is switched on.
+        self.btn_preview_media = make_action_checkbox(
+            "IMG+" if self._preview_external_media else "IMG",
+            self._toggle_preview_external_media, fixed_w=34)
+        # Deliberately NOT tr()-wrapped: this cluster is the window's
+        # untranslated shorthand idiom (Keys / RGB / BkUp / Rstr), and a new
+        # translatable key would have to ship real translations in all 32
+        # packs rather than a byte-identical English placeholder.
+        self.btn_preview_media.setToolTip("Load External Images")
         self.btn_button_scale.setToolTip(tr(
             "Scale the whole program: 50 / 75 / 100 / 125 / 150%\n"
             "(fine-tune with Ctrl+Plus / Ctrl+Minus)", getattr(self, "_current_lang", "EN"))
@@ -11026,7 +11810,8 @@ class FastPrompter(
         _lbl_view._en_text = "View:"
         _lbl_view.setFixedWidth(_lbl_view.fontMetrics().horizontalAdvance(_lbl_view.text()) + 4)
         cluster_view = _make_cluster([
-            _lbl_view, self.preview_combo, self.btn_button_scale
+            _lbl_view, self.preview_combo, self.preview_syntax_combo,
+            self.btn_button_scale
         ])
 
         cluster_system = _make_cluster([
@@ -11384,10 +12169,16 @@ class FastPrompter(
 
         self.text_area_layout.addWidget(self.text_area, 1)
 
-        self.preview_area = _PreviewTextEdit()
+        # Reading mode renders through the block surface (T-1484): one
+        # QTextBrowser per formatted run plus a real widget per image, which is
+        # the only way an animated GIF can actually animate.  The old flat
+        # _PreviewTextEdit is kept above for the tests and callers that build a
+        # preview without a window.
+        self.preview_area = RichPreviewView()
         self.preview_area.setReadOnly(True)
         self.preview_area.setVisible(False)
         self.preview_area.setFont(font)
+        self.preview_area.linkActivated.connect(self._open_preview_link)
         self.text_area_layout.addWidget(self.preview_area, 1)
 
         self.silo_view.addWidget(self.text_area_wrapper) # page 0
@@ -11536,6 +12327,25 @@ class FastPrompter(
                 "within the bound; old profile kept active")
             # W2-001: resume the paused watcher — the switch was refused, so
             # profile A and its exact watcher run must remain active.
+            if getattr(self, "_watcher_quiesced_for_switch", False):
+                try:
+                    self._watcher_rollback_quiesce()
+                except Exception:
+                    pass
+                self._watcher_quiesced_for_switch = False
+            return
+
+        # T-1432 CORE-001: a dedicated bundle QThread is not a member of the
+        # global Qt thread pool, so nothing else retires it. Bound-retire it
+        # BEFORE ``self.data`` is rebound: a completion that arrives from a
+        # profile that is no longer active must not mutate the live profile's
+        # history, coverage, clipboard or UI. A refused retirement keeps
+        # profile A fully active -- the switch does not happen.
+        if not self._bundle_ops_retire(timeout_s=5.0):
+            from fastprompter.core.logging import logger as _blog
+            _blog.error(
+                "profile switch aborted: a silo bundle worker did not retire "
+                "within the bound; old profile kept active")
             if getattr(self, "_watcher_quiesced_for_switch", False):
                 try:
                     self._watcher_rollback_quiesce()
@@ -11704,6 +12514,8 @@ class FastPrompter(
         self.sound_manager.invalidate_cache()
         from fastprompter.core.sound_manager import migrate_sound_settings
         migrate_sound_settings(data, self.sound_manager._sounds_dir)
+        from fastprompter.core.default_profile import migrate_silo_scroll_settings
+        migrate_silo_scroll_settings(data)
         # The global Overlay/Stack/Replace setting is profile state, so the
         # new profile's value must reach the hub here.  Problip itself is
         # APPLICATION-global and is deliberately NOT rebound: switching
@@ -11814,7 +12626,7 @@ class FastPrompter(
             ("cb_files_dock", "file_panel_docked", "False"),
             ("cb_toolbar_bottom", "toolbar_position", "top"),
             ("cb_fast_zones", "fancyzones_fast", "False"),
-            ("cb_silo_home", "silo_home", "False"),
+            ("cb_silo_remember_scroll", "silo_remember_scroll", "True"),
             ("cb_portable_backup", "portable_backup_enabled", "True"),
             ("cb_wrap", "word_wrap", "True"),
             ("cb_line_heat", "line_heat", "False"),
@@ -11894,6 +12706,14 @@ class FastPrompter(
             self.preview_combo.blockSignals(True)
             self.preview_combo.setCurrentIndex(idx)
             self.preview_combo.blockSignals(False)
+        if (hasattr(self, "preview_syntax_combo")
+                and not sip.isdeleted(self.preview_syntax_combo)):
+            _syntax_idx = self.preview_syntax_combo.findData(
+                data.get("preview_syntax", "Auto"))
+            if _syntax_idx >= 0:
+                self.preview_syntax_combo.blockSignals(True)
+                self.preview_syntax_combo.setCurrentIndex(_syntax_idx)
+                self.preview_syntax_combo.blockSignals(False)
         if hasattr(self, "cb_theme") and not sip.isdeleted(self.cb_theme):
             idx = self.cb_theme.findText(data.get("theme", "Default"))
             if idx >= 0:
@@ -11915,7 +12735,8 @@ class FastPrompter(
         self.apply_toolbar_position(data.get("toolbar_position", "top") == "bottom")
         self._on_files_dock_toggled(data.get("file_panel_docked", "False") == "True")
         self.on_lock_cursor_toggled(data.get("lock_to_cursor", "False") == "True")
-        self.on_silo_home_toggled(data.get("silo_home", "False") == "True")
+        self.on_silo_remember_scroll_toggled(
+            data.get("silo_remember_scroll", "True") == "True")
         self.on_customize_toolbar_toggled(
             data.get("customize_toolbar", "False") == "True")
         # Custom cursors: apply SILENTLY (the toggle handler can pop a modal
@@ -11943,9 +12764,11 @@ class FastPrompter(
         from fastprompter.ui.header_format_dialog import HeaderFormatDialog
         prev = getattr(self, "ignore_focus_loss", False)
         self.ignore_focus_loss = True
+        dialog = HeaderFormatDialog(self)
         try:
-            HeaderFormatDialog(self).exec()
+            dialog.exec()
         finally:
+            dialog.deleteLater()
             self.ignore_focus_loss = prev
 
     def open_ctrlw_settings(self, upward=False):
@@ -11957,10 +12780,12 @@ class FastPrompter(
         from fastprompter.ui.ctrlw_settings import CtrlWSettingsDialog
         prev = getattr(self, "ignore_focus_loss", False)
         self.ignore_focus_loss = True
+        dialog = CtrlWSettingsDialog(
+            self, prefix="altw" if upward else "ctrlw", upward=upward)
         try:
-            CtrlWSettingsDialog(
-                self, prefix="altw" if upward else "ctrlw", upward=upward).exec()
+            dialog.exec()
         finally:
+            dialog.deleteLater()
             self.ignore_focus_loss = prev
 
     def open_altw_settings(self):
@@ -12307,6 +13132,61 @@ class FastPrompter(
             combo.setItemText(i, tr(base, lang))
         combo.blockSignals(False)
 
+    def _retranslate_preview_syntax_combo(self, lang):
+        """Localise the syntax combo's labels from their English itemData."""
+        combo = getattr(self, "preview_syntax_combo", None)
+        if combo is None or sip.isdeleted(combo):
+            return
+        combo.blockSignals(True)
+        for i in range(combo.count()):
+            base = combo.itemData(i) or combo.itemText(i)
+            combo.setItemText(i, tr(base, lang))
+        combo.blockSignals(False)
+
+    def _on_preview_syntax_changed(self, _index=None):
+        """Remember the source syntax; the document itself is not touched."""
+        try:
+            value = (self.preview_syntax_combo.currentData()
+                     or self.preview_syntax_combo.currentText() or "Auto")
+        except Exception:
+            value = "Auto"
+        if self.data.get("preview_syntax") == value:
+            return
+        self.data["preview_syntax"] = value
+        self.mark_dirty("settings")
+        self.update_preview()
+
+    def _toggle_preview_external_media(self):
+        """Explicit opt-in for remote images in Reading mode."""
+        enabled = str(self.data.get("preview_load_external_images",
+                                    "False")) != "True"
+        self.data["preview_load_external_images"] = "True" if enabled else "False"
+        button = getattr(self, "btn_preview_media", None)
+        if button is not None and not sip.isdeleted(button):
+            button.setText("IMG+" if enabled else "IMG")
+        self.mark_dirty("settings")
+        self.update_preview()
+
+    def _open_preview_link(self, href):
+        """Route a Reading-mode link through the ONE safe activation boundary.
+
+        Nothing in the preview knows how to open anything: the raw href comes
+        here, is re-validated by ``_safe_link_url`` (so a renderer bug cannot
+        smuggle a dangerous scheme through) and only then reaches
+        ``authorize_and_open_url``.
+        """
+        from PyQt6.QtCore import QUrl
+
+        from fastprompter.ui.editor import VaultTextEdit
+
+        if not href:
+            return False
+        url = VaultTextEdit._safe_link_url(QUrl(href))
+        if url is None:
+            return False
+        return VaultTextEdit.authorize_and_open_url(
+            url, self.preview_area, getattr(self, "_current_lang", "EN"))
+
     def _on_language_changed(self, lang):
         """Handle language combo change: persist and refresh UI text."""
         if lang == self._current_lang:
@@ -12455,6 +13335,9 @@ class FastPrompter(
 
         # Translate preview combo items from their English base (itemData),
         # never from the current — possibly already-translated — display text.
+        if hasattr(self, "preview_syntax_combo") and not sip.isdeleted(
+                self.preview_syntax_combo):
+            self._retranslate_preview_syntax_combo(lang)
         if hasattr(self, "preview_combo") and not sip.isdeleted(self.preview_combo):
             self._retranslate_preview_combo(lang)
             self.preview_combo.setToolTip(
@@ -12472,8 +13355,10 @@ class FastPrompter(
         self._update_date_label()
         lbl_timer = getattr(self, "lbl_limit_timer", None)
         if lbl_timer is not None and not sip.isdeleted(lbl_timer):
-            desc = getattr(lbl_timer, "_en_tooltip", "") or "Soonest AI limit reset"
-            lbl_timer.setToolTip(tr(desc, lang))
+            # Re-publish the CURRENT description (the empty-state text is not
+            # the same key as the normal one) without re-arming a popup.
+            desc = getattr(lbl_timer, "_description_key", "") or ""
+            lbl_timer.set_hover_description(tr(desc, lang) if desc else "")
 
         # Translate sidebar tooltips
         for attr_name, en_val, tip_attr in (
@@ -12509,6 +13394,7 @@ class FastPrompter(
             ("btn_copy", "Copy", None, None),
             ("btn_clear", "Clear", None, None),
             ("btn_project_run", None, "Run Executable", None),
+            ("btn_code_run", None, "Run Code", None),
             ("btn_project_folder", None, "Open Project Folder", None),
             ("btn_trash", None, "Open Trash", None),
             ("btn_arc_snip", None, "Archive Active Snippet or Silo", None),
@@ -12548,11 +13434,22 @@ class FastPrompter(
 
     def open_drop_zones_settings(self):
         from fastprompter.ui.drop_overlay import DropZonesDialog
-        dlg = DropZonesDialog(self)
         self._increment_focus_lock()
+        dlg = None
         try:
+            dlg = DropZonesDialog(self)
             dlg.exec()
         finally:
+            if dlg is not None:
+                dlg.deleteLater()
+            else:
+                # construction raised after super().__init__(): retire the orphan
+                for child in list(self.children()):
+                    try:
+                        if isinstance(child, DropZonesDialog):
+                            child.deleteLater()
+                    except RuntimeError:
+                        pass
             QTimer.singleShot(300, weak_qt_callback(
                 self, lambda w: w._decrement_focus_lock()))
 
@@ -13074,13 +13971,14 @@ class FastPrompter(
         """Move a silo to a new position, shifting the others (drop 'between' silos)."""
         temps = self.data["archive_temp_presets"] if is_archive else self.data["temp_presets"]
         if not (0 <= from_idx < len(temps)):
-            return
+            return False
         to_idx = max(0, min(len(temps) - 1, to_idx))
         if from_idx == to_idx:
-            return
+            return True
         if not self._durable_undo_or_refuse("Move silo"):
-            return
+            return False
         self._relocate_silo_slot(from_idx, to_idx, is_archive=is_archive)
+        return True
 
     def _relocate_silo_slot(self, from_idx, to_idx, is_archive=False):
         """Apply the raw-order permutation for one silo move — NO undo record.
@@ -13463,7 +14361,7 @@ class FastPrompter(
             self.snippet_docs.clear()
             self.snippet_docs.update(docs_before[2])
             self.active_temp_slot, self.active_is_archive, self.editing_snippet = owner
-            return False
+            return
 
     def swap_cross_temp_slots(self, source_idx, target_idx, source_is_archive, target_is_archive):
         if not getattr(self, "editing_snippet", None):
@@ -13795,11 +14693,14 @@ class FastPrompter(
 
     def open_hotkey_settings(self):
         from fastprompter.ui.settings import HotkeySettingsDialog
-        dlg = HotkeySettingsDialog(self)
         self.ignore_focus_loss = True
+        dlg = None
         try:
+            dlg = HotkeySettingsDialog(self)
             dlg.exec()
         finally:
+            if dlg is not None:
+                dlg.deleteLater()
             self.ignore_focus_loss = False
 
     # Snapshot keys that are bookkeeping, not user data. They MUST be left out
@@ -14194,6 +15095,37 @@ class FastPrompter(
             return area._apply_cursor_state(record.after)
         return False
 
+    def _flush_pending_table_edit(self):
+        """Commit the active table pane's parked cell edit NOW (T-1462 Stage 8).
+
+        A cell edit still sitting in the grid's 500 ms coalescing timer is the
+        user's MOST RECENT action, but it is not in the document yet. Undoing
+        before it lands reverses the transaction BELOW it: the user pressed
+        Ctrl+Z after a cell change and an EARLIER edit disappeared instead,
+        while the cell change stayed on screen. Committing the pending edit
+        first puts it on top of the document's own undo stack, so the undo that
+        follows reverses exactly that step and nothing else.
+
+        Table pane only, and only the ACTIVE one: the kanban pane's parked edit
+        has no evidence behind changing its undo behaviour, and a background
+        widget's edit belongs to a document that is not in front.
+        """
+        try:
+            if self.silo_view.currentIndex() != 2:
+                return
+        except Exception:
+            return
+        widget = getattr(self, "table_widget", None)
+        if widget is None or sip.isdeleted(widget):
+            return
+        flush = getattr(widget, "flush", None)
+        if flush is None:
+            return
+        try:
+            flush()
+        except Exception:
+            pass
+
     def _smart_undo(self):
         """Ctrl+Z: interaction, data, or text undo."""
         if getattr(self, "_in_smart_undo", False):
@@ -14201,6 +15133,7 @@ class FastPrompter(
         self._in_smart_undo = True
         self._increment_focus_lock()
         try:
+            self._flush_pending_table_edit()
             kinds = self._undo_kinds()
             doc = self._active_doc()
             history = self._active_interaction_history()
@@ -14256,6 +15189,14 @@ class FastPrompter(
                 self.statusBar().showMessage(tr("Nothing to undo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_undo = False
+            # T-1462 Stage 3: whatever this undo reversed, the active visual
+            # pane must not keep a pre-undo model. Reconcile it synchronously
+            # before the deferred focus-lock release, so no stale model can
+            # write the undone edit back inside the 300 ms window.
+            try:
+                self._reconcile_visual_after_history()
+            except Exception:
+                pass
             # A data undo rebuilds documents, switches silos and re-flows the
             # list — any of which can queue a transient window deactivation.
             # The deactivation event is DELIVERED asynchronously (next event
@@ -14338,6 +15279,12 @@ class FastPrompter(
             self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_redo = False
+            # T-1462 Stage 3: mirror of _smart_undo — a redone table edit must
+            # reappear in the pane now, not after the coalescing timer.
+            try:
+                self._reconcile_visual_after_history()
+            except Exception:
+                pass
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(300, weak_qt_callback(
                 self, lambda w: w._decrement_focus_lock()))
@@ -15823,9 +16770,21 @@ class FastPrompter(
     def open_window_presets(self):
         from fastprompter.ui.window_presets_dialog import WindowPresetsDialog
         self._increment_focus_lock()
+        dialog = None
         try:
-            WindowPresetsDialog(self).exec()
+            dialog = WindowPresetsDialog(self)
+            dialog.exec()
         finally:
+            if dialog is not None:
+                dialog.deleteLater()
+            else:
+                # construction raised after super().__init__(): retire the orphan
+                for child in list(self.children()):
+                    try:
+                        if isinstance(child, WindowPresetsDialog):
+                            child.deleteLater()
+                    except RuntimeError:
+                        pass
             # the Presets page appears/disappears with the preset list, so the
             # Fast-mode page picker has to be refilled after this dialog
             self._reload_fast_zone_pages()
@@ -16191,21 +17150,35 @@ class FastPrompter(
 
     def open_color_settings(self):
         from fastprompter.ui.settings import ColorConfigDialog
-        dlg = ColorConfigDialog(self)
         self.ignore_focus_loss = True
+        dlg = None
         try:
+            dlg = ColorConfigDialog(self)
             dlg.exec()
         finally:
+            if dlg is not None:
+                dlg.deleteLater()
             self.ignore_focus_loss = False
 
     def backup_db(self):
         from fastprompter.ui.backup_dialog import BackupDialog
 
-        dlg = BackupDialog(self)
         self._increment_focus_lock()
+        dlg = None
         try:
+            dlg = BackupDialog(self)
             dlg.exec()
         finally:
+            if dlg is not None:
+                dlg.deleteLater()
+            else:
+                # construction raised after super().__init__(): retire the orphan
+                for child in list(self.children()):
+                    try:
+                        if isinstance(child, BackupDialog):
+                            child.deleteLater()
+                    except RuntimeError:
+                        pass
             QTimer.singleShot(300, weak_qt_callback(
                 self, lambda w: w._decrement_focus_lock()))
 
@@ -16508,6 +17481,7 @@ class FastPrompter(
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setFont(QApplication.font())
         if not self._add_silo_preset_actions(menu, self._new_silo_with_text):
+            menu.deleteLater()
             return
         # popup(), not exec(): this is raised from a mouse-release handler, and
         # exec() spins its own event loop that BLOCKS the caller until the menu
@@ -16648,19 +17622,19 @@ class FastPrompter(
         if getattr(self, "_in_physical_teardown", False):
             super().closeEvent(event)
             return
-        # P0-6: quit_app already ran the final save while the event loop was
-        # alive (watcher quiesced first); a second save here would race the
-        # post-loop teardown, so it is skipped when the pre-quit finalize
-        # succeeded.
+        # P0-6: the ONE finalization path is _pre_quit_logical_finalize --
+        # it quiesces the watcher BEFORE the loop dies and then saves exactly
+        # once, marking _logical_finalized. A local save here without that
+        # order would double-save (closeEvent then quit_app) and race the
+        # watcher, so the close runs the same finalize and refuses on failure.
         if not getattr(self, "_logical_finalized", False):
-            saved = True
             try:
-                saved = self.save_data_to_db(force=True)
+                finalized = self._pre_quit_logical_finalize()
             except Exception:
                 from fastprompter.core.logging import logger
                 logger.exception("closeEvent: final save failed")
-                saved = False
-            if not saved:
+                finalized = False
+            if not finalized:
                 # P0: a failed save must not vanish behind a closed/hidden
                 # window. Ignore the close, keep and raise the window so the
                 # dirty state stays visible and the user can retry or save.
@@ -17027,7 +18001,10 @@ class FastPrompter(
                        on_target(self.check_project_typos))
         menu_pos = (global_pos if global_pos is not None
                     else (anchor or self.cat_combo).mapToGlobal(pos))
-        menu.exec(menu_pos)
+        try:
+            menu.exec(menu_pos)
+        finally:
+            menu.deleteLater()
 
     def rename_category(self):
         if self.cat_combo.count() == 0:
@@ -17571,6 +18548,7 @@ class FastPrompter(
         try:
             ok = dlg.exec()
         finally:
+            dlg.deleteLater()
             self.ignore_focus_loss = False
         if not ok:
             return
@@ -17774,6 +18752,9 @@ class FastPrompter(
         self._line_count_cache = {}
         self._editor_text_snaps = None
         self._last_cached_text = None
+        # The coverage store is a cached projection of the OLD profile's
+        # data; _get_coverage_store re-derives it from the new profile.
+        self._coverage_store = None
         self.silo_docs = [None] * len(self.data.get("temp_presets", []))
         self.archive_docs = [None] * len(
             self.data.get("archive_temp_presets", []))
@@ -18445,6 +19426,11 @@ class FastPrompter(
 
     def _switch_to_slot(self, idx, initial=False, is_archive=False,
                         sync_outgoing=True):
+        # T-1456: a document switch must invalidate stale code candidates --
+        # stale code must never be executable from the new document.
+        self._code_candidates = []
+        if hasattr(self, "btn_code_run"):
+            self._set_topbar_semantic("btn_code_run", False)
         if is_archive:
             self.arc_silo_page = idx // 10
         else:
@@ -18472,6 +19458,18 @@ class FastPrompter(
                 )
             except Exception:
                 pass
+
+        # T-1459: flush the outgoing visual widget BEFORE its document is
+        # read. The grid coalesces cell edits on a 500 ms timer; if that timer
+        # is still armed here, it fires against the NEW silo's text and the
+        # edit is either lost or applied to the wrong document.
+        for _w in (getattr(self, "table_widget", None),
+                   getattr(self, "kanban_widget", None)):
+            if _w is None or sip.isdeleted(_w):
+                continue
+            _flush = getattr(_w, "flush", None)
+            if _flush is not None:
+                _flush()
 
         # T-1250: observe the outgoing document BEFORE anything else. If it
         # cannot be read, the navigation cannot truthfully publish its newest
@@ -18662,24 +19660,21 @@ class FastPrompter(
                 self._restore_centered_blocks()
                 self._restore_aligned_blocks()
 
-                # "Silos at Start" (silo_home) means always open at the top,
-                # so it must OVERRIDE the remembered cursor/scroll. A plain
-                # restore would win for any silo last edited below the top
-                # (i.e. almost always) and the setting would do nothing.
-                if self.data.get("silo_home", "False") == "True":
-                    # restore marks/heat/folds, then force the top
-                    restore_started = time.perf_counter()
-                    self.restore_silo_state(idx, is_archive)
-                    profile_phase("restore_state", restore_started, doc,
-                                  warm=warm_document)
-                    self.text_area.moveCursor(QTextCursor.MoveOperation.Start)
-                else:
-                    restore_started = time.perf_counter()
+                # "Remember Silo Scroll Position" ON restores the per-silo
+                # cursor/scroll captured on the last visit; OFF — or a
+                # missing/stale entry on the first visit — always opens at the
+                # top (T-1459). The old "Silos at Start" switch was the exact
+                # inverse of this one, so the restore is no longer overridden.
+                restore_started = time.perf_counter()
+                if self.data.get("silo_remember_scroll", "True") == "True":
                     restored = self.restore_silo_state(idx, is_archive)
-                    profile_phase("restore_state", restore_started, doc,
-                                  warm=warm_document)
-                    if not restored:
-                        self.text_area.moveCursor(QTextCursor.MoveOperation.End)
+                else:
+                    self.restore_silo_state(idx, is_archive)
+                    restored = False
+                profile_phase("restore_state", restore_started, doc,
+                              warm=warm_document)
+                if not restored:
+                    self.text_area.moveCursor(QTextCursor.MoveOperation.Start)
             finally:
                 self.text_area.blockSignals(False)
                 self._suspend_cache = False
@@ -18715,7 +19710,8 @@ class FastPrompter(
             if hasattr(self, "_typo_timer"):
                 self._typo_timer.start()
             self.text_area.setFocus()
-            self.text_area.ensureCursorVisible()
+            if not restored:
+                self.text_area.ensureCursorVisible()
             profile_phase("total", navigation_started, doc)
             if not initial:
                 # PERF-002: navigation is settings-domain state
@@ -18723,11 +19719,85 @@ class FastPrompter(
         finally:
             self._end_batch_update()
 
-    def _on_visual_widget_changed(self, new_text):
+    def _on_visual_widget_changed(self, new_text, widget=None):
         if getattr(self, "_suspend_temp_sync", False) or getattr(self, "_suspend_cache", False):
             return
-        if self.text_area.toPlainText() != new_text:
-            # Use QTextCursor so that the change is recorded in the undo stack
+        # A queued timer callback for a widget that is no longer the live one
+        # must never edit the active silo (T-1462). The flush() on silo switch
+        # covers the widget in hand, but a deferred edit from a widget rebuilt
+        # out of the tree can still land: bound every visual write to the silo
+        # that actually owns the document.
+        active_idx = self.silo_view.currentIndex()
+        owner = (1 if getattr(self, "kanban_widget", None) is widget
+                 else 2 if getattr(self, "table_widget", None) is widget
+                 else None)
+        if owner is not None and owner != active_idx:
+            return
+        loaded = getattr(widget, "_visual_source", None)
+        current = self.text_area.toPlainText()
+        if loaded is not None and current != loaded:
+            # T-1459: a pending edit timer fired after the plain-text side
+            # moved. The widget would splice its CACHED prefix/suffix over the
+            # current document and silently drop whatever changed there.
+            # Reject the revision; the 300 ms rebuild re-renders the widget
+            # from the live text instead.
+            return
+        if current == new_text:
+            if widget is not None and hasattr(widget, "_visual_source"):
+                widget._visual_source = new_text
+            # The pane already shows `new_text`; a pending rebuild must not
+            # reload the widget and reset its ownership (T-1462 Stage 2).
+            self._rendered_visual_text = new_text
+            return
+        # T-1462: replace ONLY the table region the widget owns. Selecting the
+        # whole document and inserting a rebuilt copy threw away any change
+        # that arrived between the load and this flush (a whitespace edit in
+        # the notes above the table is enough) — and it replaced the user's
+        # caret/selection with one the cursor re-select had to rebuild.
+        from fastprompter.ui import table_edit_target
+        span = getattr(widget, "_visual_span", None)
+        table_lines = None
+        if span is not None:
+            # The live document is authoritative: derive the region boundaries
+            # from IT, never from the widget's cached copy. The widget's
+            # serialize() returns the FULL silo text with its rendered table,
+            # so extract only the table lines by slicing off the prefix/suffix
+            # as they exist in the CURRENT document.
+            lines = current.split("\n")
+            first, last = span
+            if 0 <= first <= last <= len(lines) - 1:
+                from fastprompter.ui import silo_region as _sr
+                _prefix, _region, _suffix = _sr.split(lines, span)
+                payload = new_text.split("\n")
+                if len(payload) > len(_prefix) + len(_suffix):
+                    table_lines = payload[len(_prefix):
+                                           len(payload) - len(_suffix)]
+        if span is not None:
+            # T-1462 Stage 2: a widget that OWNS a region never falls back to
+            # replacing the whole document. The old fallback selected the
+            # entire document and inserted a rebuilt copy, so one refusal threw
+            # away every concurrent edit instead of just this one. Refuse
+            # instead: the 300 ms rebuild re-renders the widget from the live
+            # text, which is the only recovery that keeps the user's typing.
+            if table_lines is None:
+                return
+            self._syncing_from_visual = True
+            try:
+                placed = table_edit_target.replace_region(
+                    self.text_area, span, table_lines)
+            finally:
+                self._syncing_from_visual = False
+            if not placed:
+                return
+            # Refresh ownership: the region now holds len(table_lines) lines.
+            # Without this the second edit after an added row slices its
+            # write-back short and the last row is silently dropped.
+            note = getattr(widget, "note_write_back", None)
+            if note is not None:
+                note(span[0], len(table_lines))
+        else:
+            # No region ownership (kanban): whole-document replacement is its
+            # only path, so it keeps the old shape. Unchanged without evidence.
             from fastprompter.ui.edit_guard import edit_block
             cursor = self.text_area.textCursor()
             cursor.select(cursor.SelectionType.Document)
@@ -18737,7 +19807,17 @@ class FastPrompter(
                     cursor.insertText(new_text)
             finally:
                 self._syncing_from_visual = False
-            self.mark_dirty()
+        # The document region is now exactly what this widget just rendered,
+        # so its next edit is a current revision rather than a stale one.
+        # Widgets that never set `_visual_source` (kanban) are left alone: its
+        # serialization behaviour must not change without evidence.
+        if widget is not None and hasattr(widget, "_visual_source"):
+            widget._visual_source = new_text
+        # The pane now shows `new_text`; a pending 300 ms rebuild must see it
+        # as current and not reload the widget (which would mint a new identity
+        # and reset revision mid-edit — T-1462 Stage 2).
+        self._rendered_visual_text = new_text
+        self.mark_dirty()
 
     def _seed_silo_structure(self, idx, tgt_type, text, is_archive):
         """Give a silo the structure its new type needs. False = nothing added.
@@ -18783,7 +19863,7 @@ class FastPrompter(
             block = sk.new_board()
         else:
             from fastprompter.ui import silo_table as st
-            block = st.render(st.new_table(2, 3))
+            block = st.render(st.default_table(self._default_table_layout()))
 
         body = (text.rstrip() + "\n\n" if text.strip() else "") + "\n".join(block)
         presets = (self.data["archive_temp_presets"] if is_archive
@@ -18800,8 +19880,9 @@ class FastPrompter(
         if getattr(self, "kanban_widget", None) is None:
             from fastprompter.ui.kanban_widget import KanbanBoardWidget
             kw = KanbanBoardWidget(self)
-            kw.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
-            kw.undoRequested.connect(self.text_area.undo)
+            kw.changed.connect(lambda markdown, w=kw: self._on_visual_widget_changed(markdown, w))
+            kw.undoRequested.connect(self._smart_undo)
+            kw.redoRequested.connect(self._smart_redo)
             self.kanban_widget = kw
             if hasattr(self, "_apply_kanban_theme"):
                 self._apply_kanban_theme(None)
@@ -18817,8 +19898,9 @@ class FastPrompter(
         if getattr(self, "table_widget", None) is None:
             from fastprompter.ui.table_widget import TableGridWidget
             tw = TableGridWidget(self)
-            tw.changed.connect(lambda markdown: self._on_visual_widget_changed(markdown))
-            tw.undoRequested.connect(self.text_area.undo)
+            tw.changed.connect(lambda markdown, w=tw: self._on_visual_widget_changed(markdown, w))
+            tw.undoRequested.connect(self._smart_undo)
+            tw.redoRequested.connect(self._smart_redo)
             self.table_widget = tw
             if hasattr(self, "_apply_table_theme"):
                 self._apply_table_theme(None)
@@ -18847,19 +19929,28 @@ class FastPrompter(
         # a document it does not own. Found by fuzzing the transform path:
         # 17 mismatches in 220 steps, e.g. type "table" over a live board.
         if stype in ("kanban", "table"):
-            self._silo_structure_ok = self._silo_has_structure(stype, text)
+            # PERF-002: one structural analysis per (document, revision, type).
+            # The settled-edit recheck and this rebuild land on the same
+            # revision, so the second one reads the cached span instead of
+            # repeating the whole-document board/table parse.
+            self._silo_structure_ok, span = self._silo_structure_ready(stype, text)
             if not self._silo_structure_ok:
                 stype = "text"
+                span = None
 
         if stype == "kanban":
             kw = self._get_or_create_kanban_widget()
             self.silo_view.setCurrentIndex(1)
-            kw.load_markdown(text)
+            kw.load_markdown(text, span=span)
             self._rendered_visual_text = text
         elif stype == "table":
             tw = self._get_or_create_table_widget()
             self.silo_view.setCurrentIndex(2)
-            tw.load_markdown(text)
+            layout = self._saved_table_presentation()
+            default_layout = self._default_table_layout()
+            remember_scroll = self.data.get("silo_remember_scroll", "True") == "True"
+            tw.load_markdown(text, span=span, layout=layout,
+                             default_layout=default_layout, restore_scroll=remember_scroll)
             self._rendered_visual_text = text
         else:
             self.silo_view.setCurrentIndex(0)
@@ -18891,8 +19982,13 @@ class FastPrompter(
         stype = self.data.get("silo_types", {}).get(str(idx), "text")
         if stype not in ("kanban", "table"):
             return
-        text = self.text_area.toPlainText()
-        ok = self._silo_has_structure(stype, text)
+        # PERF-002: the same revision-keyed snapshot and structural analysis the
+        # visual rebuild consumes, instead of a second whole-document read and
+        # parse through the sibling 300 ms timer.
+        text = self._editor_text_snapshot()
+        if text is None:
+            text = self.text_area.toPlainText()
+        ok, _span = self._silo_structure_ready(stype, text)
         if ok == getattr(self, "_silo_structure_ok", None):
             return
         self._silo_structure_ok = ok
@@ -18908,20 +20004,74 @@ class FastPrompter(
                 pass
         self._flush_silo_type_recheck()
 
+    def _silo_structure_ready(self, stype, text):
+        """PERF-002: ``(ok, span)`` for one (document, revision, type).
+
+        Cached so the settled-edit recheck and the visual rebuild that follows
+        it share ONE whole-document structural pass. The cache is keyed by the
+        document identity, its revision and the type, and holds a weak
+        reference to the document it was computed from, so a document switch,
+        an undo, a silo switch or a type change can never reuse stale structure
+        and the text's own truth always wins over the stored type.
+        """
+        doc = None
+        try:
+            ta = getattr(self, "text_area", None)
+            if ta is not None and not sip.isdeleted(ta):
+                doc = ta.document()
+        except Exception:
+            doc = None
+        key = None
+        if doc is not None and not sip.isdeleted(doc):
+            try:
+                key = (id(doc), doc.revision(), str(stype))
+            except Exception:
+                key = None
+
+        cache = getattr(self, "_silo_structure_cache", None)
+        if cache is None:
+            cache = self._silo_structure_cache = {}
+        if key is not None:
+            entry = cache.get(key)
+            if entry is not None and entry[0]() is doc:
+                return entry[1], entry[2]
+
+        ok, span = self._silo_analyse_structure(stype, text)
+        if key is not None:
+            import weakref
+            cache[key] = (weakref.ref(doc), ok, span)
+            if len(cache) > 8:
+                for stale_key in [k for k in cache if k != key]:
+                    cache.pop(stale_key, None)
+        return ok, span
+
     @staticmethod
     def _silo_has_structure(stype, text):
         """Does this text actually hold the thing its type claims?
 
         An EMPTY silo counts as ready for either: that is the transform's own
-        starting point, and the widget seeds it.
+        starting point, and the widget seeds it. The pass itself is shared
+        with the visual rebuild through ``_silo_analyse_structure``.
+        """
+        return FastPrompter._silo_analyse_structure(stype, text)[0]
+
+    @staticmethod
+    def _silo_analyse_structure(stype, text):
+        """One whole-document structural pass: does the text hold ``stype``?
+
+        An EMPTY silo counts as ready for either: that is the transform's own
+        starting point, and the widget seeds it. Returns the region span too so
+        the visual loader does not have to locate it a second time.
         """
         from fastprompter.ui import silo_region
         if not text.strip():
-            return True
+            return True, None
         lines = text.split("\n")
         if stype == "kanban":
-            return silo_region.board_region(lines) is not None
-        return silo_region.table_region(lines) is not None
+            span = silo_region.board_region(lines)
+        else:
+            span = silo_region.table_region(lines)
+        return span is not None, span
 
     def _switch_to_arc_slot(self, idx):
         self._switch_to_slot(idx, is_archive=True)
@@ -20065,6 +21215,7 @@ class FastPrompter(
         try:
             menu.exec(pos)
         finally:
+            menu.deleteLater()
             self.ignore_focus_loss = False
         self.activateWindow()
 
@@ -20333,6 +21484,19 @@ class FastPrompter(
                       and dest_map.get(dst_idx) == record.get("dst_name"))
         src_exists = bool(src and os.path.isdir(src))
         dst_exists = bool(dst and os.path.isdir(dst))
+        # W2-001: the journal is untrusted recovery metadata. Ownership is
+        # checked through logical slot/name fields, but the PHYSICAL endpoints
+        # were previously accepted as arbitrary JSON strings, so a stale or
+        # foreign record could make startup rename a directory from outside the
+        # active storage tree. Both endpoints must be provably inside the
+        # current files root before any rename.
+        from fastprompter.utils.path_safety import recovery_path_owned
+        root = self._files_root()
+        if not (recovery_path_owned(root, src) and recovery_path_owned(root, dst)):
+            from fastprompter.core.logging import logger as _tlog
+            _tlog.warning("transfer journal endpoints are not provably inside "
+                          "the current files root; journal retained")
+            return
         from fastprompter.core.logging import logger
 
         try:
@@ -21604,6 +22768,47 @@ class FastPrompter(
             self._visual_rebuild_timer = t
         t.start()
 
+    def _reconcile_visual_after_history(self):
+        """T-1462 Stage 3: a text undo/redo just moved the document revision
+        under the active visual pane (table / kanban).
+
+        The pane's model still holds the PRE-undo table, so it must be
+        re-rendered from the live text NOW instead of waiting for the 300 ms
+        coalescing timer: inside that window the stale model can serialise the
+        undone edit straight back into the document (or refuse the next real
+        edit as a stale source). Rebuilding is the only safe recovery — the
+        widget's ownership span is re-derived from the current text — and it is
+        a no-op when the pane already matches the document, so a text undo that
+        did not touch the table costs nothing.
+        """
+        # A. Drop any edit the active visual pane still has parked in its own
+        # coalescing timer. It belongs to a document state that no longer
+        # exists, so if it fired after the undo it would write the undone value
+        # straight back in (measured: a cell typed just before Ctrl+Z
+        # reappeared once the timer ran).
+        idx = self.silo_view.currentIndex()
+        widget = (self.kanban_widget if idx == 1 else
+                  self.table_widget if idx == 2 else None)
+        if widget is not None and not sip.isdeleted(widget):
+            discard = getattr(widget, "discard_pending_sync", None)
+            if discard is not None:
+                try:
+                    discard()
+                except Exception:
+                    pass
+        t = getattr(self, "_visual_rebuild_timer", None)
+        if t is not None and not sip.isdeleted(t):
+            # A queued rebuild would only re-run the same equality check; stop
+            # it so the pane is rebuilt exactly once, synchronously.
+            t.stop()
+        # B. Force the reload. The equality check in _flush_visual_rebuild is a
+        # performance shortcut, but it is exactly what hides a dirty model:
+        # when the edit was never flushed the rendered text already equals the
+        # document, so the check returns and the stale model survives until the
+        # widget's own timer writes it back. None defeats the shortcut.
+        self._rendered_visual_text = None
+        self._flush_visual_rebuild()
+
     def _flush_visual_rebuild(self):
         """Rebuild the active visual widget from the CURRENT document text
         only when it differs from what is already rendered (PERF-001).
@@ -21627,12 +22832,23 @@ class FastPrompter(
             return
         if text == getattr(self, "_rendered_visual_text", None):
             return
+        # PERF-002: the same revision-keyed structural analysis the recheck
+        # consumed, so the widget receives the ALREADY computed span instead
+        # of repeating the whole-document region parse for the same revision.
+        stype = "kanban" if idx == 1 else "table"
+        _ok, span = self._silo_structure_ready(stype, text)
         if idx == 1:
             kw = self._get_or_create_kanban_widget()
-            kw.load_markdown(text)
+            kw.load_markdown(text, span=span)
         else:
             tw = self._get_or_create_table_widget()
-            tw.load_markdown(text)
+            # T-1462 Stage 5: the rebuild reloads the widget from scratch, so a
+            # prose edit above the table would autofit away the column widths
+            # the user dragged. Capture the LIVE layout and hand it back; the
+            # widget refuses it when the table's shape changed, and autofits
+            # then.
+            live = tw.capture_presentation() if not sip.isdeleted(tw) else None
+            tw.load_markdown(text, span=span, layout=live)
         self._rendered_visual_text = text
 
     def _editor_text_snapshot(self):
@@ -21756,6 +22972,11 @@ class FastPrompter(
             self._typo_timer.start()
         if hasattr(self, "_sync_push_timer"):
             self._sync_push_timer.start()
+        # T-1456: code detection rides the same debounce pattern, bounded to
+        # the settled document (never per keystroke).
+        if hasattr(self, "_code_run_debounce"):
+            self._code_candidates = []
+            self._code_run_debounce.start()
 
     def _on_cache_timer(self):
         self.cache_current_text()
@@ -22166,6 +23387,14 @@ def main_entry():
     except Exception:
         pass
 
+    # T-1461: pin the style BEFORE the QApplication exists. On a real Windows
+    # desktop Qt resolves `windowsvista`, which paints its own sub-controls
+    # and ignores the theme stylesheet -- measured as a white radio
+    # indicator and ~1000px of near-white inside every themed table. It was
+    # invisible to the headless suite because offscreen resolves Fusion.
+    from fastprompter.ui.qt_style import configure_deterministic_style
+    configure_deterministic_style()
+
     app = QApplication(sys.argv)
     from fastprompter.utils.fonts import no_aa, resolve_family
     global_font = no_aa(QFont(resolve_family("Verdana"), 10))
@@ -22377,6 +23606,19 @@ def _shutdown_application(window, app, lock):
         _log.exception("Sync push worker shutdown FAILED")
         clean = False
     if getattr(window, "_close_workers_clean", True) is False:
+        clean = False
+
+    # T-1432 CORE-001: a dedicated bundle QThread is not a member of the global
+    # Qt thread pool, so nothing else retires it. Quiesce it BEFORE the live
+    # SQLite handle and the process ownership are released, or a worker still
+    # writing could publish into a torn-down window.
+    try:
+        retire = getattr(window, "_bundle_ops_retire", None)
+        if retire is not None and retire(timeout_s=5.0) is False:
+            _log.error("silo bundle worker retirement TIMED_OUT")
+            clean = False
+    except Exception:
+        _log.exception("silo bundle worker retirement FAILED")
         clean = False
 
     # Retire IPC and live SQLite on every event-loop exit, not only Quit-menu.
