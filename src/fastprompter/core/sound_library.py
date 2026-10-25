@@ -23,8 +23,11 @@ rejected in every form.
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
 
+from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_data_dir, get_resource_path
 
 BUILTIN_PREFIX = "builtin:"
@@ -52,6 +55,73 @@ ALLOWED_SUFFIXES = (".wav",)
 
 #: Header window read to recognise a playable WAV before it is offered.
 _WAV_HEADER_WINDOW = 64
+
+
+PERSONAL_AUDIO_CONFIG_NAME = "personal_audio.json"
+
+
+def _personal_config_path() -> str:
+    from fastprompter.utils.paths import get_data_dir
+
+    return os.path.join(get_data_dir(), PERSONAL_AUDIO_CONFIG_NAME)
+
+
+_PERSONAL_CONFIG_CACHE: dict = {"mtime": None, "value": False, "overrides": {}}
+
+
+def _load_personal_config() -> tuple[bool, dict]:
+    """Read the private personal-audio marker. Cached by mtime.
+
+    Missing file => personal mode off (public behaviour unchanged). The
+    marker lives in user data, never in shipped resources, so a public
+    build stays clean.
+    """
+    import os as _os
+
+    env = _os.environ.get("FASTPROMPTER_PERSONAL_AUDIO")
+    if env is not None:
+        enabled = env.strip().lower() in ("1", "true", "yes", "on")
+        return enabled, {}
+
+    path = _personal_config_path()
+    try:
+        mtime = _os.path.getmtime(path)
+    except OSError:
+        _PERSONAL_CONFIG_CACHE["mtime"] = None
+        _PERSONAL_CONFIG_CACHE["value"] = False
+        _PERSONAL_CONFIG_CACHE["overrides"] = {}
+        return False, {}
+    if _PERSONAL_CONFIG_CACHE["mtime"] == mtime:
+        return _PERSONAL_CONFIG_CACHE["value"], _PERSONAL_CONFIG_CACHE["overrides"]
+    enabled = False
+    overrides: dict = {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        if isinstance(cfg, dict):
+            enabled = bool(cfg.get("personal_override", False))
+            raw = cfg.get("overrides")
+            if isinstance(raw, dict):
+                overrides = {str(k): str(v) for k, v in raw.items()}
+    except (OSError, ValueError, TypeError):
+        enabled = False
+        overrides = {}
+    _PERSONAL_CONFIG_CACHE["mtime"] = mtime
+    _PERSONAL_CONFIG_CACHE["value"] = enabled
+    _PERSONAL_CONFIG_CACHE["overrides"] = overrides
+    return enabled, overrides
+
+
+def personal_audio_enabled() -> bool:
+    return _load_personal_config()[0]
+
+
+def personal_overrides() -> dict:
+    return _load_personal_config()[1]
+
+
+def invalidate_personal_audio_cache() -> None:
+    _PERSONAL_CONFIG_CACHE["mtime"] = None
 
 
 def packaged_root() -> str:
@@ -134,14 +204,20 @@ def normalize_rel(rel: str) -> str | None:
 
 
 def contained_path(root: str, rel: str) -> str | None:
-    """Join ``rel`` under ``root`` and prove the result stays inside it."""
+    """Join ``rel`` under ``root`` and prove the result stays inside it.
+
+    Resolves symlinks in both ``root`` and the joined path so that a
+    symlinked parent directory or a symlinked file cannot escape the
+    managed root. See SOUND-01: lexical containment without realpath
+    allows ``managed/through -> foreign/`` traversal.
+    """
     safe = normalize_rel(rel)
     if safe is None or not root:
         return None
     if not safe.lower().endswith(ALLOWED_SUFFIXES):
         return None
-    base = os.path.normpath(root)
-    full = os.path.normpath(os.path.join(base, safe))
+    base = os.path.realpath(root)
+    full = os.path.realpath(os.path.join(base, safe))
     if full != base and not full.startswith(base + os.sep):
         return None
     return full
@@ -150,11 +226,6 @@ def contained_path(root: str, rel: str) -> str | None:
 def make_user_ref(rel: str) -> str:
     safe = normalize_rel(rel)
     return f"{USER_PREFIX}{safe}" if safe else ""
-
-
-def make_builtin_ref(rel: str) -> str:
-    safe = normalize_rel(rel)
-    return f"{BUILTIN_PREFIX}{safe}" if safe else ""
 
 
 def make_addon_ref(rel: str) -> str:
@@ -180,6 +251,32 @@ def split_ref(ref: str) -> tuple[str, str]:
     return "", text
 
 
+_RESOLVE_CACHE: dict = {}
+
+
+def _cache_key(ref, builtin, user, addon):
+    return (ref, builtin, user, addon)
+
+
+def is_safe_ref(ref: str) -> bool:
+    """True when ``ref`` is a contained, non-absolute reference."""
+    if not isinstance(ref, str) or not ref.strip():
+        return False
+    text = ref.strip()
+    # absolute path / UNC / drive
+    if os.path.isabs(text):
+        return False
+    namespace, rel = split_ref(text)
+    if namespace in ("builtin", "user", "addon"):
+        return normalize_rel(rel) is not None
+    # legacy bare
+    if ":" in text.split("/")[0] and not text.startswith(("http",)):
+        # could be drive letter like C:...
+        if len(text.split(":")[0]) == 1 and text[1:2] == ":":
+            return False
+    return normalize_rel(text) is not None
+
+
 def resolve_sound_ref(
     ref: str,
     *,
@@ -187,14 +284,30 @@ def resolve_sound_ref(
     user_root: str | None = None,
     addon_root_path: str | None = None,
 ) -> str | None:
-    """Resolve one stored sound reference to an existing file, or None."""
+    """Resolve one stored sound reference to an existing file, or None.
+
+    Personal-audio policy (R1/R2): when the private personal-audio marker is
+    enabled, a legacy bare ref may be overridden by an entry in its override
+    table, and otherwise resolves personal-addon originals BEFORE the packaged
+    synthetic assets. Explicit namespaces are never reinterpreted.
+    """
     namespace, rel = split_ref(ref)
     if not rel:
         return None
     builtin = builtin_root if builtin_root is not None else packaged_root()
     user = user_root if user_root is not None else managed_root()
     addon = addon_root_path if addon_root_path is not None else addon_root()
-    roots: list[str]
+
+    # Private override table (only in personal mode, only for legacy bare refs).
+    if namespace == "" and personal_audio_enabled():
+        override = personal_overrides().get(rel)
+        if override and override != ref:
+            resolved = resolve_sound_ref(
+                override, builtin_root=builtin_root, user_root=user_root,
+                addon_root_path=addon_root_path)
+            if resolved:
+                return resolved
+
     vault = os.path.join(builtin, VAULT_DIR_NAME) if builtin else ""
     if namespace == "builtin":
         roots = [builtin, vault]
@@ -203,12 +316,32 @@ def resolve_sound_ref(
     elif namespace == "user":
         roots = [user]
     else:
-        # legacy plain ref: packaged wins, then the private vault, then the
-        # managed user library, then the user's addon folder.
-        roots = [builtin, vault, user, addon]
+        if personal_audio_enabled():
+            # personal addon originals shadow packaged synthetic assets
+            roots = [addon, user, builtin, vault]
+        else:
+            roots = [builtin, vault, user, addon]
+
+    key = _cache_key(ref, builtin, user, addon)
+    cached = _RESOLVE_CACHE.get(key)
+    if cached is not None:
+        path, sig = cached
+        try:
+            st = os.stat(path)
+            if (st.st_mtime_ns, st.st_size) == sig and os.path.isfile(path):
+                return path
+        except OSError:
+            pass
+        del _RESOLVE_CACHE[key]
+
     for root in roots:
         full = contained_path(root, rel)
         if full and os.path.isfile(full):
+            try:
+                st = os.stat(full)
+                _RESOLVE_CACHE[key] = (full, (st.st_mtime_ns, st.st_size))
+            except OSError:
+                pass
             return full
     return None
 
@@ -315,14 +448,44 @@ def list_managed_sounds(user_root: str | None = None) -> list[str]:
     return sorted(found)
 
 
+def list_selectable_sounds(packaged: list[str] | None = None) -> list[str]:
+    """Every sound a picker may offer, in one canonical order.
+
+    The packaged snapshot first (the shipped defaults stay at the top), then
+    the managed library, then the user's addon folder.  This is the ONE
+    composition of the picker inventory: Sound Settings, the timer and the
+    AI-limit rules list exactly this set, so a sound imported into the
+    library can be picked anywhere -- not only where it was imported.
+
+    Names keep the namespace the canonical resolver needs (``user:``,
+    ``addon:``); a packaged sound stays a plain relative path, so every
+    shipped mapping keeps working.
+    """
+    names = list(packaged or ())
+    names += list_managed_sounds()
+    names += list_addon_sounds()
+    if personal_audio_enabled():
+        # dedupe by effective resolution: a packaged synthetic shadowed by a
+        # personal addon original is offered once, under the addon ref.
+        seen: set[str] = set()
+        out: list[str] = []
+        for ref in names:
+            resolved = resolve_sound_ref(ref)
+            key = resolved or ref
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(ref)
+        return out
+    return names
+
+
 def import_file(source_path: str, subdir: str = "imported") -> str:
     """Copy one external file into the managed library; return its ``user:`` ref.
 
     The caller chose the file interactively; the managed copy is what the
     profile persists, so the original location is never depended on again.
     """
-    import shutil
-
     if not source_path or not os.path.isfile(source_path):
         return ""
     name = os.path.basename(source_path)
@@ -336,14 +499,39 @@ def import_file(source_path: str, subdir: str = "imported") -> str:
     if target is None:
         return ""
     stem, ext = os.path.splitext(target)
+
+    # SOUND-02: no-clobber destination allocation. The collision loop must
+    # never fall through to overwriting an existing file. 1000 attempts is a
+    # sanity ceiling, not a contract -- exhaustion is a hard failure.
     counter = 1
-    while os.path.exists(target) and counter < 1000:
+    while os.path.exists(target):
         target = f"{stem}_{counter}{ext}"
         counter += 1
+        if counter > 1000:
+            logger.error("sound import exhausted collision names for %r", source_path)
+            return ""
+
+    # SOUND-03: stage in a temp file and atomically publish. On failure the
+    # temp is removed; an existing destination is never touched by cleanup.
+    staging = f"{target}.tmp.{os.getpid()}.{counter}"
     try:
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copy2(source_path, target)
-    except OSError:
+        shutil.copy2(source_path, staging)
+    except OSError as exc:
+        logger.warning("sound import failed for %r: %s", source_path, exc, exc_info=True)
+        try:
+            os.remove(staging)
+        except OSError:
+            pass
+        return ""
+    try:
+        os.replace(staging, target)
+    except OSError as exc:
+        logger.warning("sound import publish failed for %r: %s", source_path, exc, exc_info=True)
+        try:
+            os.remove(staging)
+        except OSError:
+            pass
         return ""
     return make_user_ref(os.path.relpath(target, root))
 
@@ -360,4 +548,12 @@ def remove_managed_sound(ref: str) -> bool:
         os.remove(full)
     except OSError:
         return False
+    # Invalidate voice pack caches when a managed voice fragment is removed.
+    try:
+        rel_norm = rel.replace("\\", "/")
+        if rel_norm.startswith("voice/") or rel_norm.startswith("voice\\"):
+            from fastprompter.core import voice_store
+            voice_store.reset_pack_cache()
+    except Exception:
+        pass
     return True
