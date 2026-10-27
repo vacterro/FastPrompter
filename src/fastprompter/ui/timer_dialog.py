@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QSpinBox,
@@ -39,8 +40,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from fastprompter.core import pomodoro
+from fastprompter.core import pomodoro, sound_library
 from fastprompter.core.duration import PRESETS, format_remaining, resolve_target
+from fastprompter.core.interval_preview import IntervalPreviewController
 from fastprompter.core.timers import (
     COLOR_STATIC,
     COLOR_TEMPERATURE,
@@ -65,6 +67,27 @@ from fastprompter.ui.analog_clock import BigAnalogClock
 
 _SOUNDS = ("tick", "click", "new", "save", "delete", "clear", "silo", "snippet")
 _TEST_DELAY_S = 5
+
+
+class _SingleShotTimer:
+    """A stoppable single-shot timer shim over QTimer.
+
+    T-1517: the interval preview controller needs a timer it can cancel
+    (a wheel scroll that changes again before the debounce window must kill
+    the pending preview). ``QTimer.singleShot`` returns no object, so this
+    adapter owns one real QTimer so ``stop()`` is effective.
+    """
+
+    __slots__ = ("_timer",)
+
+    def __init__(self, delay_ms, fn):
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(fn)
+        self._timer.start(max(0, delay_ms))
+
+    def stop(self):
+        self._timer.stop()
 
 
 def _find_sound_index(combo: QComboBox, ref: str) -> int:
@@ -138,6 +161,13 @@ def _set_combo_sound(combo: QComboBox, ref, lang="EN") -> None:
 # The canonical 24h Chime preset lives in core (T-1359): default_profile
 # bakes the SAME list into a fresh profile, so a second literal here would
 # be a copy that can drift from what new users actually get.
+from fastprompter.core.interval_preset_store import (  # noqa: E402
+    KIND_COLLECTION,
+    KIND_SINGLE,
+    IntervalPresetStore,
+    PresetNotFoundError,
+    PresetValidationError,
+)
 from fastprompter.core.interval_presets import (  # noqa: E402
     DAYPART_CHIME_RULES,
 )
@@ -272,15 +302,8 @@ class _TimerBehaviorEditor(QWidget):
         self._preview_single()
 
     def _quick_bar_slots(self):
-        saved = getattr(self.main_win, "data", {}).get("sound_quick_bar")
-        if isinstance(saved, list) and len(saved) == 10:
-            return list(saved)
-        return [
-            "file:newday.wav", "file:tick_on.wav", "file:tick_off.wav",
-            "file:menu1.wav", "file:chime_bell_ding1.wav", "file:panel_open.wav",
-            "file:pop.wav", "file:click_soft.wav", "file:timer_tick_pack.wav",
-            "file:blip_b.wav",
-        ]
+        saved = getattr(self.main_win, "data", {}).get("sound_quick_bar") if hasattr(self.main_win, "data") else None
+        return _normalize_quick_bar_slots(saved)
 
     def _save_quick_bar_slots(self, slots):
         if hasattr(self.main_win, "data") and isinstance(self.main_win.data, dict):
@@ -604,6 +627,21 @@ def _time_to_minute(t):
     return t.hour() * 60 + t.minute()
 
 
+_QUICK_BAR_SLOT_COUNT = 10
+_QUICK_BAR_DEFAULT_SLOTS = [
+    "file:newday.wav", "file:tick_on.wav", "file:tick_off.wav",
+    "file:menu1.wav", "file:chime_bell_ding1.wav", "file:panel_open.wav",
+    "file:pop.wav", "file:click_soft.wav", "file:timer_tick_pack.wav",
+    "file:blip_b.wav",
+]
+
+
+def _normalize_quick_bar_slots(saved):
+    if isinstance(saved, list) and len(saved) == _QUICK_BAR_SLOT_COUNT:
+        return list(saved)
+    return list(_QUICK_BAR_DEFAULT_SLOTS)
+
+
 class TimerDialog(QDialog):
     def __init__(self, main_win, initial_tab: int | str = 0):
         super().__init__(main_win if isinstance(main_win, QWidget) else None)
@@ -615,6 +653,21 @@ class TimerDialog(QDialog):
         self._editing_object_id = None
         self._editing_original_target = None
         self._editing_original_anchor = None
+        # Interval reminder editor state. Identity is the stable logical rule
+        # id; ``_interval_loaded_state`` is the snapshot used for dirty checks.
+        self._interval_cur = None
+        self._interval_cur_object_id = None
+        self._interval_loaded_state = None
+        self._interval_loading_form = False
+        self._interval_reloading = False
+        self._interval_reordering = False
+        self._interval_reset_backup = None
+        # T-1517: single authoritative interval sound audition policy. Owns
+        # the debounce/coalesce/replace-latest semantics so the combo never
+        # double-previews from currentIndexChanged + activated (or from wheel).
+        self._interval_preview = IntervalPreviewController(
+            self.main_win.sound_manager,
+            timer_factory=_SingleShotTimer)
         self.setWindowTitle(tr("Timers", self.lang))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.resize(780, 520)
@@ -884,6 +937,21 @@ class TimerDialog(QDialog):
         visible tab shows current state immediately instead of waiting for the
         next 1 Hz tick (which will only refresh the newly active tab).
         """
+        # Leaving the reminder editor with unsaved edits must not be silent.
+        last_tab = getattr(self, "_interval_last_tab", None)
+        if (last_tab is not None
+                and last_tab == getattr(self, "_interval_tab_index", None)
+                and idx != last_tab
+                and getattr(self, "interval_in_name", None) is not None
+                and self._interval_is_dirty()):
+            if not self._interval_confirm_leave_current():
+                self.tabs.blockSignals(True)
+                try:
+                    self.tabs.setCurrentIndex(last_tab)
+                finally:
+                    self.tabs.blockSignals(False)
+                return
+        self._interval_last_tab = idx
         for i in range(self.tabs.count()):
             widget = self.tabs.widget(i)
             if widget is not None:
@@ -1263,6 +1331,13 @@ class TimerDialog(QDialog):
         """One sound-choice inventory per dialog (PERF-002): named events plus
         every library file, favourites-starred. Built once and shared by all six
         sound combos so we never scan the sound library more than once per open.
+
+        The library files are the packaged snapshot, the managed library and
+        the addon folder -- the same set Sound Settings offers (T-1510), so an
+        imported sound can be picked for the timer too. The ``file:`` prefix
+        is the storage form the timer plays back through
+        ``SoundManager.play_sound_ref``; the namespace inside it is kept, so
+        ``file:user:imported/x.wav`` resolves to the managed root.
         """
         if getattr(self, "_sound_inventory_cache", None) is None:
             items = [(name, name) for name in _SOUNDS]
@@ -1272,7 +1347,7 @@ class TimerDialog(QDialog):
                 files = []
             favs = (set(self.main_win.data.get("sound_favorites", []))
                     if self.main_win else set())
-            for rel in files:
+            for rel in sound_library.list_selectable_sounds(files):
                 text = f"★ {rel}" if rel in favs else rel
                 items.append((text, f"file:{rel}"))
             self._sound_inventory_cache = items
@@ -2340,11 +2415,21 @@ class TimerDialog(QDialog):
         sync is idempotent, so a finish followed by a close still reports the
         settings exactly once.
         """
+        if result == QDialog.DialogCode.Accepted and getattr(
+                self, "interval_in_name", None) is not None and self.isVisible():
+            if self._interval_is_dirty() and not self._interval_confirm_leave_current():
+                return
         self._finish_dialog_lifecycle()
         super().done(result)
 
     def closeEvent(self, event):
+        if getattr(self, "interval_in_name", None) is not None and self.isVisible():
+            if self._interval_is_dirty() and not self._interval_confirm_leave_current():
+                event.ignore()
+                return
         self._finish_dialog_lifecycle()
+        # T-1517: no stale preview callback may fire after the widget is gone.
+        self._interval_preview.cancel()
         super().closeEvent(event)
 
 
@@ -2368,46 +2453,85 @@ class TimerDialog(QDialog):
 
         self.interval_list = QTreeWidget()
         self.interval_list.setHeaderLabels([
-            tr("State", self.lang),
+            tr("Enabled", self.lang),
             tr("Name", self.lang),
+            tr("Active Hours", self.lang),
             tr("Every", self.lang),
+            tr("Sound", self.lang),
         ])
         self.interval_list.setRootIsDecorated(False)
         self.interval_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.interval_list.setMinimumHeight(60)
-        self.interval_list.setMaximumHeight(85)
-        self.interval_list.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.interval_list.setColumnWidth(0, 50)
-        self.interval_list.setColumnWidth(2, 60)
+        self.interval_list.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.interval_list.setAllColumnsShowFocus(True)
+        self.interval_list.setAlternatingRowColors(True)
+        self.interval_list.setMinimumHeight(90)
+        self.interval_list.setMaximumHeight(130)
+        self.interval_list.setToolTip(tr(
+            "One row per reminder. Click to edit it.\n"
+            "Higher reminders take priority when schedules overlap.",
+            self.lang))
+        header = self.interval_list.header()
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.interval_list.setColumnWidth(0, 62)
+        self.interval_list.setColumnWidth(3, 62)
+        self.interval_list.setColumnWidth(4, 96)
         self.interval_list.setDragEnabled(True)
         self.interval_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.interval_list.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.interval_list.setDropIndicatorShown(True)
-        self.interval_list.itemClicked.connect(lambda item, *_: self._interval_load(item))
-        self.interval_list.currentItemChanged.connect(lambda cur, *_: self._interval_load(cur) if cur else None)
+        self.interval_list.itemClicked.connect(self._interval_on_item_clicked)
+        self.interval_list.itemDoubleClicked.connect(self._interval_on_item_double_clicked)
+        self.interval_list.currentItemChanged.connect(
+            lambda cur, prev: self._interval_on_current_changed(cur, prev))
         try:
             self.interval_list.model().rowsMoved.connect(self._interval_reorder)
         except Exception:
             pass
         clock_box_lay.addWidget(self.interval_list)
 
+        self.interval_quick_toggle = QCheckBox(tr("Selected reminder enabled", self.lang))
+        self.interval_quick_toggle.setToolTip(tr(
+            "Toggles ONLY the selected reminder's enabled state and saves it "
+            "immediately. Other staged form edits are left alone.",
+            self.lang))
+        self.interval_quick_toggle.setEnabled(False)
+        self.interval_quick_toggle.clicked.connect(self._interval_toggle_selected_enabled)
+        clock_box_lay.addWidget(self.interval_quick_toggle)
+
         list_btns = QHBoxLayout()
         list_btns.setSpacing(3)
         self.interval_btn_new = QPushButton(tr("+ New", self.lang))
+        self.interval_btn_new.setToolTip(tr("Create a new, independent reminder", self.lang))
         self.interval_btn_new.clicked.connect(self._interval_new)
         list_btns.addWidget(self.interval_btn_new)
 
         self.interval_btn_delete = QPushButton(tr("Delete", self.lang))
+        self.interval_btn_delete.setToolTip(tr("Delete only the selected reminder", self.lang))
         self.interval_btn_delete.clicked.connect(self._interval_delete)
         list_btns.addWidget(self.interval_btn_delete)
 
-        self.interval_btn_defaults = QPushButton(tr("Defaults", self.lang))
-        self.interval_btn_defaults.setToolTip(tr("Reset to the default 24h Chime preset (four daypart chimes, volume 0.05)", self.lang))
+        self.interval_btn_reset_selected = QPushButton(tr("Reset Selected", self.lang))
+        self.interval_btn_reset_selected.setToolTip(tr(
+            "Restore the selected reminder to its original preset values.\n"
+            "Only available when the reminder still matches a canonical preset.",
+            self.lang))
+        self.interval_btn_reset_selected.clicked.connect(self._interval_reset_selected)
+        list_btns.addWidget(self.interval_btn_reset_selected)
+
+        self.interval_btn_defaults = QPushButton(tr("Reset All to Defaults", self.lang))
+        self.interval_btn_defaults.setToolTip(tr(
+            "Replace the WHOLE reminder collection with the default 24h Chime "
+            "preset (four daypart chimes, volume 0.05).\n"
+            "Custom reminders are destroyed; you are asked to confirm.",
+            self.lang))
         self.interval_btn_defaults.clicked.connect(self._interval_reset_defaults)
         list_btns.addWidget(self.interval_btn_defaults)
 
         self.interval_btn_presets = QPushButton(tr("Presets…", self.lang))
-        self.interval_btn_presets.setToolTip(tr("Choose from predefined interval schedule presets", self.lang))
+        self.interval_btn_presets.setToolTip(tr(
+            "Add a preset reminder, or replace all reminders with a preset",
+            self.lang))
         self.interval_btn_presets.clicked.connect(self._interval_show_presets_menu)
         list_btns.addWidget(self.interval_btn_presets)
         clock_box_lay.addLayout(list_btns)
@@ -2430,16 +2554,28 @@ class TimerDialog(QDialog):
 
         # Right Column: Rich Interval Settings Form
         form_box = QGroupBox(tr("Interval Configuration", self.lang))
+        self.interval_form_box = form_box
         form_lay = QVBoxLayout(form_box)
         form_lay.setContentsMargins(6, 6, 6, 6)
         form_lay.setSpacing(3)
+
+        # Row 0: contextual heading + unsaved-changes indicator
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        self.interval_lbl_editing = QLabel(tr("Editing: (no reminder selected)", self.lang))
+        self.interval_lbl_editing.setStyleSheet("font-weight: bold;")
+        head.addWidget(self.interval_lbl_editing, 1)
+        self.interval_lbl_dirty = QLabel("")
+        self.interval_lbl_dirty.setToolTip(tr("This reminder has unsaved changes", self.lang))
+        head.addWidget(self.interval_lbl_dirty)
+        form_lay.addLayout(head)
 
         # Row 1: Name + Enabled checkbox
         r1 = QHBoxLayout()
         r1.setSpacing(4)
         r1.addWidget(QLabel(tr("Name:", self.lang)))
         self.interval_in_name = QLineEdit()
-        self.interval_in_name.setPlaceholderText(tr("Every New Hour", self.lang))
+        self.interval_in_name.setPlaceholderText(tr("Reminder name", self.lang))
         r1.addWidget(self.interval_in_name, 1)
 
         self.interval_in_enabled = QCheckBox(tr("Enabled", self.lang))
@@ -2502,8 +2638,9 @@ class TimerDialog(QDialog):
         self.interval_in_sound.setMaxVisibleItems(20)
         self._fill_interval_sound_choices()
         self._suppress_interval_preview = False
-        self.interval_in_sound.currentIndexChanged.connect(self._on_interval_sound_changed)
-        self.interval_in_sound.activated.connect(lambda _i: self._interval_test_sound())
+        self.interval_in_sound.currentIndexChanged.connect(
+            self._on_interval_sound_changed)
+        self.interval_in_sound.activated.connect(self._interval_on_sound_activated)
         r4.addWidget(self.interval_in_sound, 1)
 
         r4.addWidget(QLabel(tr("Vol:", self.lang)))
@@ -2543,8 +2680,17 @@ class TimerDialog(QDialog):
         form_lay.addLayout(r6)
 
         self.interval_btn_save = QPushButton(tr("Save Changes", self.lang))
+        self.interval_btn_save.setToolTip(tr("Save changes to the selected reminder only", self.lang))
         self.interval_btn_save.clicked.connect(self._interval_save)
-        form_lay.addWidget(self.interval_btn_save)
+        self.interval_btn_revert = QPushButton(tr("Revert", self.lang))
+        self.interval_btn_revert.setToolTip(tr(
+            "Discard unsaved changes to the selected reminder", self.lang))
+        self.interval_btn_revert.clicked.connect(self._interval_revert)
+        save_row = QHBoxLayout()
+        save_row.setSpacing(4)
+        save_row.addWidget(self.interval_btn_save, 1)
+        save_row.addWidget(self.interval_btn_revert)
+        form_lay.addLayout(save_row)
         form_lay.addStretch(1)
 
         mid_layout.addWidget(form_box, 1)
@@ -2559,7 +2705,9 @@ class TimerDialog(QDialog):
         lay.addLayout(btns)
 
         page._timer_refresh = self._refresh_interval_tab
-        self.tabs.addTab(page, tr("Interval Notifications", self.lang))
+        self._interval_tab_index = self.tabs.addTab(
+            page, tr("Interval Notifications", self.lang))
+        self._interval_wire_dirty_tracking()
         self._interval_reload()
 
     def _fill_interval_sound_choices(self):
@@ -2568,15 +2716,8 @@ class TimerDialog(QDialog):
             self.interval_in_sound.addItem(disp, ref)
 
     def _quick_bar_slots(self):
-        saved = getattr(self.main_win, "data", {}).get("sound_quick_bar")
-        if isinstance(saved, list) and len(saved) == 10:
-            return list(saved)
-        return [
-            "file:newday.wav", "file:tick_on.wav", "file:tick_off.wav",
-            "file:menu1.wav", "file:chime_bell_ding1.wav", "file:panel_open.wav",
-            "file:pop.wav", "file:click_soft.wav", "file:timer_tick_pack.wav",
-            "file:blip_b.wav",
-        ]
+        saved = getattr(self.main_win, "data", {}).get("sound_quick_bar") if hasattr(self.main_win, "data") else None
+        return _normalize_quick_bar_slots(saved)
 
     def _save_quick_bar_slots(self, slots):
         if hasattr(self.main_win, "data") and isinstance(self.main_win.data, dict):
@@ -2637,15 +2778,36 @@ class TimerDialog(QDialog):
         self.interval_clock.set_interval(mins, align)
 
     def _on_interval_sound_changed(self, _i):
+        # T-1517: a selection change (mouse or arrow/wheel) schedules ONE
+        # coalesced preview. currentIndexChanged fires for programmatic
+        # loads too, which are silenced by _suppress_interval_preview so they
+        # never audition while the form is being populated.
         if getattr(self, "_suppress_interval_preview", False):
             return
-        self._interval_test_sound()
+        ref = self.interval_in_sound.currentData()
+        if not ref:
+            return
+        vol = self.interval_in_volume.value()
+        self._interval_preview.schedule_selection(ref, vol, source="select")
+
+    def _interval_on_sound_activated(self, _i):
+        # T-1517: activated fires once per explicit user pick (confirm/Enter
+        # on a combo item). Play immediately, exactly once -- the
+        # currentIndexChanged route above is debounced and coalesced, not a
+        # second parallel preview.
+        ref = self.interval_in_sound.currentData()
+        if not ref:
+            return
+        vol = self.interval_in_volume.value()
+        self._interval_preview.immediate(ref, vol, source="explicit")
 
     def _interval_test_sound(self):
+        # T-1517: the Test button and the quick-sound bar both want exactly
+        # one immediate audition through the controller's replace-latest gate.
         ref = self.interval_in_sound.currentData() or "newday"
         vol = self.interval_in_volume.value()
         try:
-            self.main_win.sound_manager.preview_sound_ref(ref, vol)
+            self._interval_preview.immediate(ref, vol, source="explicit")
         except Exception:
             pass
 
@@ -2656,9 +2818,20 @@ class TimerDialog(QDialog):
         finally:
             self._suppress_interval_preview = False
 
+    # ------------------------------------------------------------------
+    # Interval rule store access (ONE authoritative mutation path)
+    #
+    # Identity is the stable logical rule id, never id(dict). The main
+    # window owns the store; these helpers prefer its explicit operations
+    # and fall back to the stored list for simplified test doubles.
     def _interval_rules(self):
-        # Heal through the main-window getter so malformed stored rules are
-        # canonicalized before the dialog ever renders them (W2-004).
+        """Authoritative stored rule list (healed by the main window).
+
+        The production getter returns the stored list itself, so its dicts
+        are persistent objects. A backend that returns freshly cloned dicts
+        is still supported: every mutation below resolves the rule again by
+        stable id against ``main_win.data``.
+        """
         meth = getattr(self.main_win, "_interval_notifs", None)
         if callable(meth):
             return meth()
@@ -2669,130 +2842,675 @@ class TimerDialog(QDialog):
                 self.main_win.data["interval_notifs"] = rules
         return rules
 
-    def _interval_reload(self):
-        self._suppress_interval_preview = True
+    def _interval_mark_dirty(self):
+        """Persist-mark the interval domain, tolerating narrow test doubles."""
+        marker = getattr(self.main_win, "mark_dirty", None)
+        if not callable(marker):
+            return
         try:
-            cur = getattr(self, "_interval_cur", None)
-            cur_object_id = getattr(self, "_interval_cur_object_id", None)
-            self.interval_list.clear()
-            rules = self._interval_rules()
-            for rule in rules:
-                state = tr("ON", self.lang) if rule.get("enabled") else tr("OFF", self.lang)
-                name = str(rule.get("name") or tr("Hourly Reminder", self.lang))
-                mins = int(rule.get("minutes") or 60)
-                if mins % 60 == 0:
-                    interval_str = f"{mins // 60} h"
-                else:
-                    interval_str = f"{mins} m"
-                item = QTreeWidgetItem([state, name, interval_str])
-                item.setData(0, Qt.ItemDataRole.UserRole, rule.get("id"))
-                item.setData(0, int(Qt.ItemDataRole.UserRole) + 1, id(rule))
-                if rule.get("enabled"):
-                    from PyQt6.QtGui import QColor
-                    gold = QColor(217, 179, 64)
-                    item.setForeground(0, gold)
-                    item.setForeground(1, gold)
-                self.interval_list.addTopLevelItem(item)
-                if (id(rule) == cur_object_id
-                        or (cur_object_id is None and cur is not None
-                            and rule.get("id") == cur)):
-                    self.interval_list.setCurrentItem(item)
-            if cur is None and self.interval_list.topLevelItemCount():
-                self.interval_list.setCurrentItem(self.interval_list.topLevelItem(0))
-        finally:
-            self._suppress_interval_preview = False
-
-    def _interval_reorder(self, *args):
-        """Draggable priority: topmost wins on collision. Persist UI order to data."""
-        try:
-            new_object_ids = []
-            for i in range(self.interval_list.topLevelItemCount()):
-                it = self.interval_list.topLevelItem(i)
-                if it is not None:
-                    new_object_ids.append(it.data(
-                        0, int(Qt.ItemDataRole.UserRole) + 1))
-            rules = self._interval_rules()
-            object_to_rule = {id(r): r for r in rules if isinstance(r, dict)}
-            reordered = [object_to_rule[obj_id] for obj_id in new_object_ids
-                         if obj_id in object_to_rule]
-            # keep any not in UI (defensive)
-            remaining = [r for r in rules if id(r) not in new_object_ids]
-            reordered.extend(remaining)
-            if len(reordered) == len(rules):
-                rules[:] = reordered
-                self.main_win.mark_dirty()
+            marker("settings")
+        except TypeError:
+            try:
+                marker()
+            except Exception:
+                pass
         except Exception:
             pass
 
-    def _interval_load(self, item):
-        if item is None:
+    def _interval_data_list(self):
+        """The mutable list inside ``main_win.data`` (fallback store)."""
+        data = getattr(self.main_win, "data", None)
+        if isinstance(data, dict):
+            rules = data.get("interval_notifs")
+            if not isinstance(rules, list):
+                rules = list(self._interval_rules())
+                data["interval_notifs"] = rules
+            return rules
+        return self._interval_rules()
+
+    def _interval_find(self, rule_id):
+        if not isinstance(rule_id, str) or not rule_id:
+            return None
+        meth = getattr(self.main_win, "interval_rule_get", None)
+        if callable(meth):
+            try:
+                found = meth(rule_id)
+                if isinstance(found, dict):
+                    return found
+            except Exception:
+                pass
+        for rule in self._interval_data_list():
+            if isinstance(rule, dict) and rule.get("id") == rule_id:
+                return rule
+        return None
+
+    def _interval_update(self, rule_id, fields):
+        meth = getattr(self.main_win, "interval_rule_update", None)
+        if callable(meth):
+            try:
+                if meth(rule_id, fields):
+                    return True
+            except Exception:
+                pass
+        rule = self._interval_find(rule_id)
+        if rule is None:
+            return False
+        rule.update(fields)
+        if hasattr(self.main_win, "mark_dirty"):
+            self._interval_mark_dirty()
+        return True
+
+    def _interval_add(self, fields):
+        import uuid
+
+        meth = getattr(self.main_win, "interval_rule_add", None)
+        if callable(meth):
+            try:
+                rid = meth(fields)
+                if isinstance(rid, str) and rid:
+                    return rid
+            except Exception:
+                pass
+        rules = self._interval_data_list()
+        existing = {r.get("id") for r in rules if isinstance(r, dict)}
+        rid = fields.get("id")
+        if not isinstance(rid, str) or not rid or rid in existing:
+            rid = "interval_" + uuid.uuid4().hex[:8]
+            while rid in existing:
+                rid = "interval_" + uuid.uuid4().hex[:8]
+        rule = dict(fields)
+        rule["id"] = rid
+        rules.append(rule)
+        if hasattr(self.main_win, "mark_dirty"):
+            self._interval_mark_dirty()
+        return rid
+
+    def _interval_delete_rule(self, rule_id):
+        meth = getattr(self.main_win, "interval_rule_delete", None)
+        if callable(meth):
+            try:
+                if meth(rule_id):
+                    return True
+            except Exception:
+                pass
+        rules = self._interval_data_list()
+        for idx, rule in enumerate(rules):
+            if isinstance(rule, dict) and rule.get("id") == rule_id:
+                del rules[idx]
+                if hasattr(self.main_win, "mark_dirty"):
+                    self._interval_mark_dirty()
+                return True
+        return False
+
+    def _interval_apply_order(self, rule_ids):
+        meth = getattr(self.main_win, "interval_rule_reorder", None)
+        if callable(meth):
+            try:
+                if meth(rule_ids):
+                    return True
+            except Exception:
+                pass
+        rules = self._interval_data_list()
+        by_id = {r.get("id"): r for r in rules if isinstance(r, dict)}
+        ordered = [by_id[rid] for rid in rule_ids if rid in by_id]
+        used = {rid for rid in rule_ids if rid in by_id}
+        ordered.extend(r for r in rules if r.get("id") not in used)
+        if len(ordered) != len(rules):
+            return False
+        rules[:] = ordered
+        if hasattr(self.main_win, "mark_dirty"):
+            self._interval_mark_dirty()
+        return True
+
+    # ---- form state / dirty tracking ---------------------------------
+    @staticmethod
+    def _sound_key(ref):
+        text = str(ref or "")
+        if text.startswith("file:"):
+            text = text[5:]
+        if text.lower().endswith(".wav"):
+            text = text[:-4]
+        return text.lower()
+
+    def _interval_form_state(self):
+        return (
+            self.interval_in_name.text().strip(),
+            int(self.interval_in_minutes.value()),
+            bool(self.interval_in_enabled.isChecked()),
+            str(self.interval_cb_align.currentData() or "clock"),
+            bool(self.interval_cb_allday.isChecked()),
+            _time_to_minute(self.interval_time_start.time()),
+            _time_to_minute(self.interval_time_end.time()),
+            self._sound_key(self.interval_in_sound.currentData()),
+            round(float(self.interval_in_volume.value()), 4),
+            bool(self.interval_in_notify.isChecked()),
+            bool(self.interval_in_topbar.isChecked()),
+        )
+
+    def _interval_rule_state(self, rule):
+        if not isinstance(rule, dict):
+            return None
+        try:
+            vol = float(rule.get("volume", 0.05))
+            if vol > 1.0 and vol <= 10.0 and float(vol).is_integer():
+                vol = vol / 10.0
+        except (TypeError, ValueError):
+            vol = 0.05
+        return (
+            str(rule.get("name") or "").strip(),
+            int(rule.get("minutes") or 60),
+            bool(rule.get("enabled", True)),
+            str(rule.get("align_mode") or "clock"),
+            bool(rule.get("all_day", True)),
+            int(rule.get("start_minute") or 0),
+            int(rule.get("end_minute") or 0),
+            self._sound_key(rule.get("sound")),
+            round(max(0.0, min(1.0, vol)), 4),
+            bool(rule.get("show_notification", False)),
+            bool(rule.get("show_in_top_bar", False)),
+        )
+
+    def _interval_is_dirty(self):
+        if self._interval_cur is None or self._interval_loaded_state is None:
+            return False
+        return self._interval_form_state() != self._interval_loaded_state
+
+    def _interval_refresh_dirty_indicator(self):
+        dirty = self._interval_is_dirty()
+        self.interval_lbl_dirty.setText(tr("● Unsaved changes", self.lang) if dirty else "")
+        if hasattr(self, "interval_btn_revert"):
+            self.interval_btn_revert.setEnabled(dirty)
+        if hasattr(self, "interval_btn_save"):
+            self.interval_btn_save.setEnabled(self._interval_cur is not None)
+
+    def _interval_on_form_changed(self, *_args):
+        if getattr(self, "_interval_loading_form", False):
             return
+        self._interval_refresh_dirty_indicator()
+
+    def _interval_wire_dirty_tracking(self):
+        signals = (
+            (self.interval_in_name.textChanged, self._interval_on_form_changed),
+            (self.interval_in_minutes.valueChanged, self._interval_on_form_changed),
+            (self.interval_in_enabled.toggled, self._interval_on_form_changed),
+            (self.interval_cb_align.currentIndexChanged, self._interval_on_form_changed),
+            (self.interval_cb_allday.toggled, self._interval_on_form_changed),
+            (self.interval_time_start.timeChanged, self._interval_on_form_changed),
+            (self.interval_time_end.timeChanged, self._interval_on_form_changed),
+            (self.interval_in_sound.currentIndexChanged, self._interval_on_form_changed),
+            (self.interval_in_volume.valueChanged, self._interval_on_form_changed),
+            (self.interval_in_notify.toggled, self._interval_on_form_changed),
+            (self.interval_in_topbar.toggled, self._interval_on_form_changed),
+        )
+        for signal, slot in signals:
+            try:
+                signal.connect(slot)
+            except Exception:
+                pass
+
+    # ---- unsaved-change protection -----------------------------------
+    def _interval_ask_unsaved(self):
+        """Return 'save', 'discard' or 'cancel'. Overridable for tests."""
+        handler = getattr(self, "_interval_prompt_handler", None)
+        if callable(handler):
+            return handler()
+        if not self.isVisible():
+            # Headless/programmatic callers cannot answer a modal box; the
+            # documented programmatic contract is "keep the form as staged".
+            return "cancel"
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Unsaved changes", self.lang))
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(tr(
+            "The selected reminder has unsaved changes.\n"
+            "Save them before switching to another reminder?", self.lang))
+        save_btn = box.addButton(tr("Save", self.lang), QMessageBox.ButtonRole.AcceptRole)
+        discard_btn = box.addButton(tr("Discard", self.lang), QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(tr("Cancel", self.lang), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(save_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is save_btn:
+            return "save"
+        if clicked is discard_btn:
+            return "discard"
+        return "cancel"
+
+    def _interval_confirm_replace_all(self, what):
+        handler = getattr(self, "_interval_confirm_handler", None)
+        if callable(handler):
+            return bool(handler(what))
+        if not self.isVisible():
+            # Headless/programmatic caller: no operator to confirm with.
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Replace all reminders?", self.lang))
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(tr(
+            "This replaces the WHOLE reminder collection with {}.\n"
+            "Custom reminders will be removed. Continue?", self.lang).format(what))
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        return box.exec() == QMessageBox.StandardButton.Yes
+
+    def _interval_confirm_leave_current(self):
+        """True when it is safe to leave the current form.
+
+        Interactive dialogs prompt; headless/programmatic callers (tests,
+        automation) proceed deterministically and keep their staged values.
+        """
+        if not self._interval_is_dirty():
+            return True
+        if not callable(getattr(self, "_interval_prompt_handler", None)) and not self.isVisible():
+            # Headless automation without an injected handler: proceed
+            # deterministically and keep the staged values.
+            return True
+        choice = self._interval_ask_unsaved()
+        if choice == "save":
+            return bool(self._interval_save())
+        if choice == "discard":
+            self._interval_revert()
+            return True
+        return False
+
+    # ---- list / selection --------------------------------------------
+    @staticmethod
+    def _interval_item_rule_id(item):
+        if item is None:
+            return None
+        rid = item.data(0, Qt.ItemDataRole.UserRole)
+        return rid if isinstance(rid, str) and rid else None
+
+    def _interval_rule_summary(self, rule):
+        enabled = tr("Yes", self.lang) if rule.get("enabled") else tr("No", self.lang)
+        name = str(rule.get("name") or tr("Reminder", self.lang))
+        if rule.get("all_day", True):
+            hours = tr("All day", self.lang)
+        else:
+            start = _minute_to_time(rule.get("start_minute", 0)).toString("HH:mm")
+            end = _minute_to_time(rule.get("end_minute", 1439)).toString("HH:mm")
+            hours = f"{start}-{end}"
+        mins = int(rule.get("minutes") or 60)
+        every = f"{mins // 60} h" if mins % 60 == 0 else f"{mins} min"
+        ref = rule.get("sound")
+        sound = str(ref or "")
+        if sound.startswith("file:"):
+            sound = sound[5:]
+        if sound.lower().endswith(".wav"):
+            sound = sound[:-4]
+        return enabled, name, hours, every, sound
+
+    def _interval_ensure_unique_ids(self, rules):
+        """Repair missing/malformed/duplicate ids IN PLACE (never drop rules).
+
+        The production healer collapses duplicate ids before the dialog sees
+        them, but a simplified backend (or a legacy profile written by an old
+        build) can still hand us collisions. Two distinct reminders must stay
+        distinct: the later one gets a fresh id and keeps all its data.
+        """
+        import uuid
+
+        seen = set()
+        changed = False
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            rid = rule.get("id")
+            if not isinstance(rid, str) or not rid or rid in seen:
+                rid = "interval_" + uuid.uuid4().hex[:8]
+                while rid in seen:
+                    rid = "interval_" + uuid.uuid4().hex[:8]
+                rule["id"] = rid
+                changed = True
+            seen.add(rid)
+        if changed:
+            self._interval_mark_dirty()
+        return rules
+
+    def _interval_reload(self, select_id=None):
+        """Rebuild the list from stored data and load the selected rule.
+
+        The form is only refilled when the selection actually changes, so a
+        plain refresh never discards staged edits.
+        """
+        target = select_id if select_id is not None else self._interval_cur
+        target_item = None
+        self._interval_reloading = True
         self._suppress_interval_preview = True
         try:
-            rid = item.data(0, Qt.ItemDataRole.UserRole)
-            object_id = item.data(0, int(Qt.ItemDataRole.UserRole) + 1)
-            for rule in self._interval_rules():
-                if id(rule) == object_id or (object_id is None and rule.get("id") == rid):
-                    self._interval_cur = rid
-                    self._interval_cur_object_id = id(rule)
-                    self.interval_in_name.setText(str(rule.get("name") or ""))
-                    mins = int(rule.get("minutes") or 60)
-                    self.interval_in_minutes.setValue(mins)
-                    self.interval_in_enabled.setChecked(bool(rule.get("enabled", True)))
-                    align = str(rule.get("align_mode", "clock"))
-                    idx = self.interval_cb_align.findData(align)
-                    if idx >= 0:
-                        self.interval_cb_align.setCurrentIndex(idx)
-                    self.interval_cb_allday.setChecked(bool(rule.get("all_day", True)))
-                    self.interval_time_start.setTime(_minute_to_time(rule.get("start_minute", 0)))
-                    self.interval_time_end.setTime(_minute_to_time(rule.get("end_minute", 1439)))
-                    self._interval_set_sound(str(rule.get("sound") or "newday"))
-                    v = rule.get("volume", 0.05)
-                    try:
-                        fv = float(v)
-                        if fv > 1.0 and fv <= 10.0 and float(fv).is_integer():
-                            fv = fv / 10.0
-                        v = max(0.0, min(1.0, fv))
-                    except (TypeError, ValueError):
-                        v = 0.05
-                    self.interval_in_volume.setValue(float(v))
-                    self.interval_in_notify.setChecked(bool(rule.get("show_notification", True)))
-                    self.interval_in_topbar.setChecked(bool(rule.get("show_in_top_bar", False)))
-                    self.interval_clock.set_interval(mins, align)
-                    return
+            self.interval_list.blockSignals(True)
+            self.interval_list.clear()
+            rules = self._interval_ensure_unique_ids(self._interval_data_list())
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    continue
+                rid = rule.get("id")
+                if not isinstance(rid, str) or not rid:
+                    continue
+                item = QTreeWidgetItem(list(self._interval_rule_summary(rule)))
+                item.setData(0, Qt.ItemDataRole.UserRole, rid)
+                item.setToolTip(1, tr(
+                    "Higher reminders take priority when schedules overlap.",
+                    self.lang))
+                from PyQt6.QtGui import QColor
+                gold = QColor(217, 179, 64)
+                dim = QColor(140, 140, 140)
+                colour = gold if rule.get("enabled") else dim
+                for col in range(5):
+                    item.setForeground(col, colour)
+                self.interval_list.addTopLevelItem(item)
+                if rid == target:
+                    target_item = item
+            if target_item is None and self.interval_list.topLevelItemCount():
+                target_item = self.interval_list.topLevelItem(0)
+            if target_item is not None:
+                self.interval_list.setCurrentItem(target_item)
         finally:
+            self.interval_list.blockSignals(False)
+            self._interval_reloading = False
             self._suppress_interval_preview = False
+        if target_item is not None:
+            self._interval_load(target_item)
+        else:
+            self._interval_clear_form()
+
+    def _interval_select_rule(self, rule_id):
+        """Programmatically select a row without re-entering the prompt."""
+        if not isinstance(rule_id, str) or not rule_id:
+            return None
+        for i in range(self.interval_list.topLevelItemCount()):
+            item = self.interval_list.topLevelItem(i)
+            if self._interval_item_rule_id(item) == rule_id:
+                self._interval_reloading = True
+                try:
+                    self.interval_list.blockSignals(True)
+                    self.interval_list.setCurrentItem(item)
+                finally:
+                    self.interval_list.blockSignals(False)
+                    self._interval_reloading = False
+                return item
+        return None
+
+    def _interval_on_item_clicked(self, item, *_args):
+        self._interval_load(item)
+
+    def _interval_on_item_double_clicked(self, item, *_args):
+        self._interval_load(item)
+        self.interval_in_name.setFocus()
+        self.interval_in_name.selectAll()
+
+    def _interval_on_current_changed(self, cur, prev):
+        if getattr(self, "_interval_reloading", False) or cur is None:
+            return
+        rid = self._interval_item_rule_id(cur)
+        if rid is None or rid == self._interval_cur:
+            return
+        if not self._interval_confirm_leave_current():
+            self._interval_select_rule(self._interval_cur)
+            return
+        self._interval_load(cur)
+
+    def _interval_clear_form(self):
+        self._interval_loading_form = True
+        try:
+            self._interval_cur = None
+            self._interval_loaded_state = None
+            self.interval_lbl_editing.setText(tr("Editing: (no reminder selected)", self.lang))
+            self.interval_lbl_dirty.setText("")
+            if hasattr(self, "interval_quick_toggle"):
+                self.interval_quick_toggle.setChecked(False)
+                self.interval_quick_toggle.setEnabled(False)
+            if hasattr(self, "interval_btn_save"):
+                self.interval_btn_save.setEnabled(False)
+            if hasattr(self, "interval_btn_revert"):
+                self.interval_btn_revert.setEnabled(False)
+        finally:
+            self._interval_loading_form = False
+
+    def _interval_load(self, item):
+        rid = self._interval_item_rule_id(item)
+        if rid is None:
+            return False
+        rule = self._interval_find(rid)
+        if rule is None:
+            # Stale row (rule deleted underneath): refresh from the store.
+            self._interval_reload(select_id=None)
+            return False
+        self._interval_loading_form = True
+        self._suppress_interval_preview = True
+        try:
+            self._interval_cur = rid
+            self._interval_cur_object_id = None  # object identity is NOT identity
+            name = str(rule.get("name") or "")
+            self.interval_in_name.setText(name)
+            self.interval_lbl_editing.setText(
+                tr("Editing: {}", self.lang).format(name or tr("Reminder", self.lang)))
+            mins = int(rule.get("minutes") or 60)
+            self.interval_in_minutes.setValue(mins)
+            self.interval_in_enabled.setChecked(bool(rule.get("enabled", True)))
+            align = str(rule.get("align_mode", "clock"))
+            idx = self.interval_cb_align.findData(align)
+            if idx >= 0:
+                self.interval_cb_align.setCurrentIndex(idx)
+            self.interval_cb_allday.setChecked(bool(rule.get("all_day", True)))
+            self.interval_time_start.setTime(_minute_to_time(rule.get("start_minute", 0)))
+            self.interval_time_end.setTime(_minute_to_time(rule.get("end_minute", 1439)))
+            self._interval_set_sound(str(rule.get("sound") or "newday"))
+            v = rule.get("volume", 0.05)
+            try:
+                fv = float(v)
+                if fv > 1.0 and fv <= 10.0 and float(fv).is_integer():
+                    fv = fv / 10.0
+                v = max(0.0, min(1.0, fv))
+            except (TypeError, ValueError):
+                v = 0.05
+            self.interval_in_volume.setValue(float(v))
+            self.interval_in_notify.setChecked(bool(rule.get("show_notification", True)))
+            self.interval_in_topbar.setChecked(bool(rule.get("show_in_top_bar", False)))
+            self.interval_clock.set_interval(mins, align)
+            if hasattr(self, "interval_quick_toggle"):
+                self.interval_quick_toggle.setEnabled(True)
+                self.interval_quick_toggle.blockSignals(True)
+                self.interval_quick_toggle.setChecked(bool(rule.get("enabled", True)))
+                self.interval_quick_toggle.blockSignals(False)
+            self._interval_loaded_state = self._interval_form_state()
+        finally:
+            self._interval_loading_form = False
+            self._suppress_interval_preview = False
+        self._interval_refresh_dirty_indicator()
+        return True
+
+    def _interval_reorder(self, *args):
+        """Drag = scheduler priority. Persist stable-id order, nothing else."""
+        if getattr(self, "_interval_reordering", False):
+            return
+        self._interval_reordering = True
+        try:
+            ids = []
+            for i in range(self.interval_list.topLevelItemCount()):
+                rid = self._interval_item_rule_id(self.interval_list.topLevelItem(i))
+                if rid is not None:
+                    ids.append(rid)
+            if ids:
+                self._interval_apply_order(ids)
+        except Exception:
+            pass
+        finally:
+            self._interval_reordering = False
+
+    # ---- individual operations ---------------------------------------
+    def _interval_fields_from_form(self):
+        name = self.interval_in_name.text().strip() or tr("Reminder", self.lang)
+        return {
+            "name": name,
+            "minutes": int(self.interval_in_minutes.value()),
+            "enabled": bool(self.interval_in_enabled.isChecked()),
+            "align_mode": self.interval_cb_align.currentData() or "clock",
+            "all_day": bool(self.interval_cb_allday.isChecked()),
+            "start_minute": _time_to_minute(self.interval_time_start.time()),
+            "end_minute": _time_to_minute(self.interval_time_end.time()),
+            "sound": self.interval_in_sound.currentData() or "newday",
+            "volume": float(self.interval_in_volume.value()),
+            "show_notification": bool(self.interval_in_notify.isChecked()),
+            "show_in_top_bar": bool(self.interval_in_topbar.isChecked()),
+        }
+
+    def _interval_save(self):
+        rid = self._interval_cur
+        if rid is None:
+            item = self.interval_list.currentItem()
+            rid = self._interval_item_rule_id(item)
+        if rid is None:
+            return False
+        fields = self._interval_fields_from_form()
+        if not self._interval_update(rid, fields):
+            return False
+        self._interval_cur = rid
+        rule = self._interval_find(rid)
+        self._interval_loaded_state = self._interval_rule_state(rule)
+        self._interval_reload(select_id=rid)
+        return True
+
+    def _interval_revert(self):
+        rid = self._interval_cur
+        if rid is None:
+            return False
+        rule = self._interval_find(rid)
+        if rule is None:
+            return False
+        item = self._interval_select_rule(rid) or self.interval_list.currentItem()
+        self._interval_load(item)
+        self._interval_loaded_state = self._interval_rule_state(rule)
+        self._interval_refresh_dirty_indicator()
+        return True
+
+    def _interval_toggle_selected_enabled(self):
+        """Persist ONLY the enabled flag of the selected rule."""
+        rid = self._interval_cur
+        if rid is None:
+            return False
+        enabled = bool(self.interval_quick_toggle.isChecked())
+        if not self._interval_update(rid, {"enabled": enabled}):
+            return False
+        # Keep the form in sync only for this field; other staged edits stay.
+        self._interval_loading_form = True
+        try:
+            self.interval_in_enabled.setChecked(enabled)
+        finally:
+            self._interval_loading_form = False
+        if self._interval_loaded_state is not None:
+            state = list(self._interval_loaded_state)
+            state[2] = enabled
+            self._interval_loaded_state = tuple(state)
+        self._interval_reload(select_id=rid)
+        return True
+
+    def _interval_new(self):
+        if not self._interval_confirm_leave_current():
+            return None
+        fields = self._interval_fields_from_form()
+        name = self.interval_in_name.text().strip() or tr("Reminder", self.lang)
+        fields["name"] = name
+        fields["last_fired"] = 0.0
+        fields["last_fired_minute"] = ""
+        rid = self._interval_add(fields)
+        if not rid:
+            return None
+        self._interval_cur = rid
+        self._interval_reload(select_id=rid)
+        return rid
+
+    def _interval_delete(self):
+        rid = self._interval_cur
+        if rid is None:
+            rid = self._interval_item_rule_id(self.interval_list.currentItem())
+        if rid is None:
+            return False
+        if not self._interval_delete_rule(rid):
+            return False
+        self._interval_cur = None
+        self._interval_loaded_state = None
+        self._interval_reload(select_id=None)
+        return True
+
+    def _interval_preset_source(self, rule):
+        """Canonical preset that originally produced ``rule``, if any."""
+        if not isinstance(rule, dict):
+            return None
+        rid = rule.get("id")
+        for preset in DEFAULT_INTERVAL_RULES:
+            if preset.get("id") == rid:
+                return preset
+        name = str(rule.get("name") or "").strip()
+        for preset in DEFAULT_INTERVAL_RULES:
+            if name and str(preset.get("name") or "").strip() == name:
+                return preset
+        return None
+
+    def _interval_reset_selected(self):
+        rid = self._interval_cur
+        if rid is None:
+            return False
+        rule = self._interval_find(rid)
+        preset = self._interval_preset_source(rule)
+        if preset is None:
+            box = QMessageBox(self)
+            box.setWindowTitle(tr("No preset available", self.lang))
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setText(tr(
+                "This reminder has no canonical preset, so there are no "
+                "original values to restore. Use Revert to discard unsaved "
+                "edits, or edit the fields directly.", self.lang))
+            box.exec()
+            return False
+        fields = {k: preset[k] for k in self._interval_fields_from_form() if k in preset}
+        if not self._interval_update(rid, fields):
+            return False
+        self._interval_reload(select_id=rid)
+        return True
 
     def _interval_reset_defaults(self):
         import copy
-        self.main_win.data["interval_notifs"] = copy.deepcopy(DEFAULT_INTERVAL_RULES)
+        rules = self._interval_rules()
+        if rules and not self._interval_confirm_replace_all(
+                tr("the default 24h Chime preset", self.lang)):
+            return False
+        if not self._interval_confirm_leave_current():
+            return False
+        # Keep the previous collection recoverable until the dialog closes.
+        self._interval_reset_backup = copy.deepcopy(list(rules))
+        data = getattr(self.main_win, "data", None)
+        if isinstance(data, dict):
+            data["interval_notifs"] = copy.deepcopy(DEFAULT_INTERVAL_RULES)
         self._interval_cur = None
-        self._interval_cur_object_id = None
-        self.main_win.mark_dirty()
+        self._interval_loaded_state = None
+        if hasattr(self.main_win, "mark_dirty"):
+            self._interval_mark_dirty()
         self._interval_reload()
+        return True
 
-    def _interval_show_presets_menu(self):
+    def _interval_restore_backup(self):
+        """Recover the collection replaced by the last Reset All."""
+        backup = getattr(self, "_interval_reset_backup", None)
+        if not isinstance(backup, list):
+            return False
         import copy
+        data = getattr(self.main_win, "data", None)
+        if isinstance(data, dict):
+            data["interval_notifs"] = copy.deepcopy(backup)
+            if hasattr(self.main_win, "mark_dirty"):
+                self._interval_mark_dirty()
+            self._interval_cur = None
+            self._interval_loaded_state = None
+            self._interval_reload()
+            return True
+        return False
 
-        from PyQt6.QtCore import QPoint
-        from PyQt6.QtWidgets import QMenu
-        menu = QMenu(self)
-        
-        a_chime = menu.addAction(tr("24h Chime (Genie / NewDay / Owl @ 0.05)", self.lang))
-        a_workday = menu.addAction(tr("Workday Hours (09:00 - 18:00 @ 0.05)", self.lang))
-        a_hourly = menu.addAction(tr("Hourly Bell (24/7 @ 0.05)", self.lang))
-        a_pomo = menu.addAction(tr("Pomodoro Focus (Every 25m @ 0.05)", self.lang))
-        a_night = menu.addAction(tr("Night Owl (22:00 - 06:00 @ 0.05)", self.lang))
-
-        pos = self.interval_btn_presets.mapToGlobal(QPoint(0, self.interval_btn_presets.height()))
-        act = menu.exec(pos)
-        if not act:
-            return
-
-        if act == a_chime:
-            self.main_win.data["interval_notifs"] = copy.deepcopy(DAYPART_CHIME_RULES)
-        elif act == a_workday:
-            self.main_win.data["interval_notifs"] = [{
+    def _interval_preset_definitions(self):
+        return {
+            "chime": (tr("24h Chime (Genie / NewDay / Owl @ 0.05)", self.lang),
+                      list(DAYPART_CHIME_RULES)),
+            "workday": (tr("Workday Hours (09:00 - 18:00 @ 0.05)", self.lang), [{
                 "id": "interval_workday",
                 "name": tr("Workday (09:00 - 18:00)", self.lang),
                 "minutes": 60,
@@ -2805,9 +3523,8 @@ class TimerDialog(QDialog):
                 "all_day": False,
                 "start_minute": 540,
                 "end_minute": 1079,
-            }]
-        elif act == a_hourly:
-            self.main_win.data["interval_notifs"] = [{
+            }]),
+            "hourly": (tr("Hourly Bell (24/7 @ 0.05)", self.lang), [{
                 "id": "interval_hourly",
                 "name": tr("Hourly Bell (24/7)", self.lang),
                 "minutes": 60,
@@ -2820,9 +3537,8 @@ class TimerDialog(QDialog):
                 "all_day": True,
                 "start_minute": 0,
                 "end_minute": 1439,
-            }]
-        elif act == a_pomo:
-            self.main_win.data["interval_notifs"] = [{
+            }]),
+            "pomo": (tr("Pomodoro Focus (Every 25m @ 0.05)", self.lang), [{
                 "id": "interval_pomo",
                 "name": tr("Pomodoro Focus (25m)", self.lang),
                 "minutes": 25,
@@ -2835,9 +3551,8 @@ class TimerDialog(QDialog):
                 "all_day": True,
                 "start_minute": 0,
                 "end_minute": 1439,
-            }]
-        elif act == a_night:
-            self.main_win.data["interval_notifs"] = [{
+            }]),
+            "night": (tr("Night Owl (22:00 - 06:00 @ 0.05)", self.lang), [{
                 "id": "interval_night",
                 "name": tr("Night Owl (22:00 - 06:00)", self.lang),
                 "minutes": 60,
@@ -2850,72 +3565,273 @@ class TimerDialog(QDialog):
                 "all_day": False,
                 "start_minute": 1320,
                 "end_minute": 419,
-            }]
-
-        self._interval_cur = None
-        self._interval_cur_object_id = None
-        self.main_win.mark_dirty()
-        self._interval_reload()
-
-    def _interval_new(self):
-        import uuid
-        rule = {
-            "id": f"interval_{uuid.uuid4().hex[:8]}",
-            "name": self.interval_in_name.text().strip() or tr("Reminder", self.lang),
-            "minutes": self.interval_in_minutes.value(),
-            "enabled": self.interval_in_enabled.isChecked(),
-            "align_mode": self.interval_cb_align.currentData() or "clock",
-            "all_day": self.interval_cb_allday.isChecked(),
-            "start_minute": _time_to_minute(self.interval_time_start.time()),
-            "end_minute": _time_to_minute(self.interval_time_end.time()),
-            "sound": self.interval_in_sound.currentData() or "newday",
-            "volume": self.interval_in_volume.value(),
-            "show_notification": self.interval_in_notify.isChecked(),
-            "show_in_top_bar": self.interval_in_topbar.isChecked(),
-            "last_fired": 0.0,
-            "last_fired_minute": "",
+            }]),
         }
-        self._interval_rules().append(rule)
-        self._interval_cur = rule["id"]
-        self._interval_cur_object_id = id(rule)
-        self.main_win.mark_dirty()
-        self._interval_reload()
 
-    def _interval_save(self):
-        rid = getattr(self, "_interval_cur", None)
-        object_id = getattr(self, "_interval_cur_object_id", None)
-        if rid is None:
-            items = self.interval_list.selectedItems()
-            if items:
-                rid = items[0].data(0, Qt.ItemDataRole.UserRole)
-        for rule in self._interval_rules():
-            if id(rule) == object_id or (object_id is None and rule.get("id") == rid):
-                rule["name"] = self.interval_in_name.text().strip() or tr("Reminder", self.lang)
-                rule["minutes"] = self.interval_in_minutes.value()
-                rule["enabled"] = self.interval_in_enabled.isChecked()
-                rule["align_mode"] = self.interval_cb_align.currentData() or "clock"
-                rule["all_day"] = self.interval_cb_allday.isChecked()
-                rule["start_minute"] = _time_to_minute(self.interval_time_start.time())
-                rule["end_minute"] = _time_to_minute(self.interval_time_end.time())
-                rule["sound"] = self.interval_in_sound.currentData() or "newday"
-                rule["volume"] = self.interval_in_volume.value()
-                rule["show_notification"] = self.interval_in_notify.isChecked()
-                rule["show_in_top_bar"] = self.interval_in_topbar.isChecked()
-                self.main_win.mark_dirty()
-                self._interval_reload()
-                return
+    def _interval_preset_store(self):
+        """The one durable preset store for this dialog's host process.
 
-    def _interval_delete(self):
-        rid = getattr(self, "_interval_cur", None)
-        object_id = getattr(self, "_interval_cur_object_id", None)
-        if rid is None and object_id is None:
+        Bound to ``main_win`` so a test double can inject its own directory,
+        and cached there rather than rebuilt per menu open (each build lists
+        the data directory, and this menu opens on a click).
+        """
+        store = getattr(self.main_win, "_interval_preset_store", None)
+        if store is None:
+            store = IntervalPresetStore()
+            try:
+                setattr(self.main_win, "_interval_preset_store", store)
+            except (AttributeError, TypeError):
+                pass
+        return store
+
+    def _interval_show_presets_menu(self):
+        import copy
+
+        from PyQt6.QtCore import QPoint
+        from PyQt6.QtWidgets import QMenu
+        presets = self._interval_preset_definitions()
+        menu = QMenu(self)
+        add_menu = menu.addMenu(tr("Add preset reminder…", self.lang))
+        replace_menu = menu.addMenu(tr("Replace all with preset…", self.lang))
+        for key, (label, _rules) in presets.items():
+            add_menu.addAction(label).setData(("add", key))
+            replace_menu.addAction(label).setData(("replace", key))
+
+        # My Presets: the durable library the user saved through this dialog.
+        # A store read failure degrades to an empty section -- a broken data
+        # directory must not take the whole presets menu down with it.
+        try:
+            user_presets = self._interval_preset_store().load()
+        except Exception:
+            user_presets = []
+        if user_presets:
+            menu.addSeparator()
+            menu.addSection(tr("My Presets", self.lang))
+            mine_add = menu.addMenu(tr("Add my preset…", self.lang))
+            mine_replace = menu.addMenu(tr("Replace all with my preset…", self.lang))
+            for preset in user_presets:
+                pid = preset["id"]
+                mine_add.addAction(preset["name"]).setData(("add_user", pid))
+                mine_replace.addAction(preset["name"]).setData(
+                    ("replace_user", pid))
+
+        menu.addSeparator()
+        save_act = menu.addAction(tr("Save current rules as preset…", self.lang))
+        save_act.setData(("save_current", None))
+        rename_act = menu.addAction(tr("Rename a preset…", self.lang))
+        rename_act.setEnabled(bool(user_presets))
+        rename_act.setData(("rename", None))
+        dup_act = menu.addAction(tr("Duplicate a preset…", self.lang))
+        dup_act.setEnabled(bool(user_presets))
+        dup_act.setData(("duplicate", None))
+        del_act = menu.addAction(tr("Delete a preset…", self.lang))
+        del_act.setEnabled(bool(user_presets))
+        del_act.setData(("delete", None))
+        menu.addSeparator()
+        undo = menu.addAction(tr("Restore configuration before last reset", self.lang))
+        undo.setEnabled(isinstance(getattr(self, "_interval_reset_backup", None), list))
+        undo.setData(("undo", None))
+
+        pos = self.interval_btn_presets.mapToGlobal(QPoint(0, self.interval_btn_presets.height()))
+        act = menu.exec(pos)
+        if not act:
             return
-        rules = self._interval_rules()
-        self.main_win.data["interval_notifs"] = [
-            r for r in rules
-            if not (id(r) == object_id
-                    or (object_id is None and r.get("id") == rid))]
+        data = act.data()
+        if not isinstance(data, tuple) or len(data) != 2:
+            return
+        mode, key = data
+        if mode == "undo":
+            self._interval_restore_backup()
+            return
+        if mode == "save_current":
+            self._interval_preset_save_current()
+            return
+        if mode in ("rename", "duplicate", "delete"):
+            self._interval_preset_manage(mode)
+            return
+        if mode in ("add_user", "replace_user"):
+            self._interval_apply_user_preset(mode, key)
+            return
+        preset = presets.get(key)
+        if preset is None:
+            return
+        label, rules = preset
+        if mode == "add":
+            if not self._interval_confirm_leave_current():
+                return
+            new_ids = []
+            for rule in rules:
+                payload = copy.deepcopy(rule)
+                payload["id"] = None  # let the store mint a unique id
+                new_ids.append(self._interval_add(payload))
+            self._interval_cur = new_ids[-1] if new_ids else None
+            self._interval_reload(select_id=self._interval_cur)
+            return
+        if not self._interval_confirm_replace_all(label):
+            return
+        if not self._interval_confirm_leave_current():
+            return
+        self._interval_reset_backup = copy.deepcopy(list(self._interval_rules()))
+        data_obj = getattr(self.main_win, "data", None)
+        if isinstance(data_obj, dict):
+            data_obj["interval_notifs"] = copy.deepcopy(rules)
         self._interval_cur = None
-        self._interval_cur_object_id = None
-        self.main_win.mark_dirty()
+        self._interval_loaded_state = None
+        if hasattr(self.main_win, "mark_dirty"):
+            self._interval_mark_dirty()
         self._interval_reload()
+
+    # ------------------------------------------------------------------
+    # My Presets: durable library management (T-1517)
+    def _interval_apply_user_preset(self, mode, preset_id):
+        """Apply one stored preset as Add or Replace all."""
+        import copy
+
+        try:
+            preset = self._interval_preset_store().get(preset_id)
+        except Exception:
+            preset = None
+        if preset is None:
+            return
+        rules = preset["rules"]
+        label = preset["name"]
+        if mode == "add_user":
+            if not self._interval_confirm_leave_current():
+                return
+            new_ids = []
+            for rule in rules:
+                payload = copy.deepcopy(rule)
+                payload["id"] = None  # let the rule store mint a unique id
+                new_ids.append(self._interval_add(payload))
+            self._interval_cur = new_ids[-1] if new_ids else None
+            self._interval_reload(select_id=self._interval_cur)
+            return
+        if not self._interval_confirm_replace_all(label):
+            return
+        if not self._interval_confirm_leave_current():
+            return
+        self._interval_reset_backup = copy.deepcopy(list(self._interval_rules()))
+        data_obj = getattr(self.main_win, "data", None)
+        if isinstance(data_obj, dict):
+            data_obj["interval_notifs"] = copy.deepcopy(rules)
+        self._interval_cur = None
+        self._interval_loaded_state = None
+        if hasattr(self.main_win, "mark_dirty"):
+            self._interval_mark_dirty()
+        self._interval_reload()
+
+    def _interval_preset_store_snapshot(self):
+        """The current live rules, stripped to a preset-safe shape.
+
+        Runtime history (``last_fired``) is dropped here as well as in the
+        store: the dialog owns the shape it hands over, and a failed store
+        write must not be the thing that discovers a live runtime field.
+        """
+        import copy
+
+        rules = []
+        for rule in self._interval_rules():
+            if not isinstance(rule, dict):
+                continue
+            clean = copy.deepcopy(rule)
+            clean.pop("last_fired", None)
+            clean.pop("last_fired_minute", None)
+            rules.append(clean)
+        return rules
+
+    def _interval_preset_save_current(self):
+        from PyQt6.QtWidgets import QInputDialog
+
+        rules = self._interval_preset_store_snapshot()
+        if not rules:
+            return
+        name, ok = QInputDialog.getText(
+            self, tr("Save preset", self.lang),
+            tr("Preset name:", self.lang))
+        if not ok or not name.strip():
+            return
+        self._interval_preset_save_named(name.strip())
+
+    def _interval_preset_save_named(self, name):
+        """Persist the current rules under ``name``; returns the stored doc.
+
+        The prompt and the save are separate so the durable behaviour is
+        exercised without a modal dialog blocking a headless test.
+        """
+        rules = self._interval_preset_store_snapshot()
+        if not rules:
+            return None
+        kind = KIND_SINGLE if len(rules) == 1 else KIND_COLLECTION
+        try:
+            stored = self._interval_preset_store().create_preset(
+                name, rules, kind)
+        except PresetValidationError:
+            # A name the store refuses is reported, never silently dropped.
+            self._interval_preset_report_error(
+                tr("Could not save this preset.", self.lang))
+            return None
+        self._interval_reload()
+        return stored
+
+    def _interval_preset_pick(self, title):
+        """Ask which stored preset an action applies to; None on cancel."""
+        from PyQt6.QtWidgets import QInputDialog
+
+        try:
+            presets = self._interval_preset_store().load()
+        except Exception:
+            presets = []
+        if not presets:
+            return None
+        names = [p["name"] for p in presets]
+        name, ok = QInputDialog.getItem(
+            self, title, tr("Preset:", self.lang), names, 0, False)
+        if not ok:
+            return None
+        for preset in presets:
+            if preset["name"] == name:
+                return preset
+        return None
+
+    def _interval_preset_manage(self, mode):
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+
+        preset = self._interval_preset_pick(
+            tr("Rename preset", self.lang) if mode == "rename"
+            else tr("Duplicate preset", self.lang) if mode == "duplicate"
+            else tr("Delete preset", self.lang))
+        if preset is None:
+            return
+        store = self._interval_preset_store()
+        try:
+            if mode == "rename":
+                new_name, ok = QInputDialog.getText(
+                    self, tr("Rename preset", self.lang),
+                    tr("New name:", self.lang), text=preset["name"])
+                if ok and new_name.strip():
+                    store.rename_preset(preset["id"], new_name.strip())
+            elif mode == "duplicate":
+                store.duplicate_preset(preset["id"])
+            else:
+                box = QMessageBox(self)
+                box.setWindowTitle(tr("Delete preset", self.lang))
+                box.setIcon(QMessageBox.Icon.Question)
+                box.setText(tr("Delete {}?", self.lang).format(preset["name"]))
+                box.setStandardButtons(
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                if box.exec() == QMessageBox.StandardButton.Yes:
+                    store.delete_preset(preset["id"])
+        except (PresetValidationError, PresetNotFoundError):
+            self._interval_preset_report_error(
+                tr("Could not update this preset.", self.lang))
+            return
+        self._interval_reload()
+
+    def _interval_preset_report_error(self, message):
+        from PyQt6.QtWidgets import QMessageBox
+
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Presets", self.lang))
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText(message)
+        box.exec()
