@@ -615,13 +615,13 @@ def migrate_sound_settings(data: dict[str, Any], sounds_dir: str = "") -> None:
         cfg = dict(cfg) if isinstance(cfg, dict) else {}
         chosen = cfg.get("file") or ""
         # A ref is stale only when the one canonical resolver cannot find it.
-        # A valid ``user:`` / ``builtin:`` / ``_vault`` ref resolves through the
-        # resolver, so it must SURVIVE migration byte-for-byte -- never be healed
-        # into the event default just because a packaged-root join of the token
-        # does not exist.
-        if chosen and sounds_dir and sound_library.resolve_sound_ref(
-                chosen, builtin_root=sounds_dir) is None:
-            chosen = ""                      # stale name: fall back to default
+        # Never destroy a SAFE stored ref merely because it is unresolvable
+        # right now: keep it verbatim and let playback fall back to the default
+        # without persisting that fallback (R5). Unsafe refs -- absolute,
+        # traversal or qualified -- are still dropped, and an empty choice
+        # still gets the event default.
+        if chosen and not sound_library.is_safe_ref(chosen):
+            chosen = ""
         cfg["file"] = chosen or default_file
         cfg.setdefault("enabled", "False" if event in _DEFAULT_OFF else "True")
         cfg.setdefault("volume", "")
