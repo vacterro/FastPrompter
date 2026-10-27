@@ -28,6 +28,7 @@ from fastprompter.core import sound_library
 from fastprompter.core.audio_hub import (
     DROPPED_OUTCOMES,
     AudioHub,
+    Bus,
     NullTransport,
     Outcome,
     QtSoundTransport,
@@ -1595,6 +1596,19 @@ class SoundManager(QObject):
         # The legacy policy engine's single transport must also fall silent.
         self._legacy_silence_now()
         self._trace_transport("STOP_ALL", None, "stop_all_sound")
+
+    def cancel_preview(self) -> None:
+        """Stop only in-flight preview playback.
+
+        T-1517: interval sound browsing previews one sound at a time. A new
+        selection must preempt the previous preview rather than overlap it,
+        while leaving real timer alerts, ambience, voice and UI cues
+        untouched. The preview scope is exactly ``Bus.PREVIEW``, so cancelling
+        it can never kill a real countdown chime that started in the same
+        window.
+        """
+        self._hub.stop_bus(Bus.PREVIEW)
+        self._trace_transport("CANCEL_PREVIEW", None, "cancel_preview")
 
     # -- hot-set preloading (T-1242 spec 5) ---------------------------------
 
