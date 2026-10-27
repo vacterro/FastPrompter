@@ -13002,9 +13002,42 @@ def test_ctrl_z_makes_exactly_one_sound(win):
 
 def test_timer_sound_picker_offers_the_whole_library(win):
     """It listed eight event NAMES out of 412 files, so an alarm could only
-    ever be one of eight sounds."""
+    ever be one of eight sounds.
+
+    The packaged inventory is the redistributable manifest, exactly. The old
+    assertion demanded MORE THAN 300 files, which held only while the tree
+    still carried restricted third-party audio, so it graded the leak as a
+    pass and a compliant release as a failure. A bare ``> 0`` would be just as
+    blind in the other direction, so the contract here is two-sided: an
+    unlisted WAV in the folder fails (a restricted original came back), a
+    manifested WAV missing from the folder fails (a fallback was dropped), and
+    the picker must offer every file the package actually ships.
+    """
+    import pathlib
+
     from fastprompter.core.sound_manager import discover_sound_files
     from fastprompter.ui.timer_dialog import TimerDialog
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    manifest = root / "sounds-redistributable.manifest"
+    listed = {
+        line.strip().replace("\\", "/").lower()
+        for line in manifest.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    assert listed, f"the sound allowlist is empty: {manifest}"
+
+    packaged_dir = root / "src" / "fastprompter" / "sound"
+    packaged = {
+        path.relative_to(packaged_dir).as_posix().lower()
+        for path in packaged_dir.rglob("*.wav")
+    }
+    unexpected = sorted(packaged - listed)
+    assert not unexpected, (
+        "the packaged folder carries audio the redistributable manifest does "
+        f"not license: {unexpected}")
+    absent = sorted(listed - packaged)
+    assert not absent, f"manifested fallbacks are missing from the package: {absent}"
 
     dlg = TimerDialog(win)
     try:
@@ -13012,8 +13045,20 @@ def test_timer_sound_picker_offers_the_whole_library(win):
         data = [cb.itemData(i) for i in range(cb.count())]
         files = [d for d in data if isinstance(d, str) and d.startswith("file:")]
         shipped = discover_sound_files(win.sound_manager._sounds_dir)
-        assert len(shipped) > 300, f"only {len(shipped)} sounds shipped?"
-        assert len(files) == len(shipped), f"{len(files)} offered of {len(shipped)}"
+        assert shipped, "the sound manager discovered no playable files at all"
+        leaked = sorted(rel for rel in shipped if rel.startswith("_"))
+        assert not leaked, f"a private namespace reached the everyday picker: {leaked}"
+        # The packaged half of the picker must match what is actually there.
+        offered_packaged = {
+            ref[len("file:"):].replace("\\", "/").lower()
+            for ref in files
+            if not ref[len("file:"):].startswith(("user:", "addon:"))
+        }
+        actual_packaged = {rel.replace("\\", "/").lower() for rel in shipped}
+        assert offered_packaged == actual_packaged, (
+            "the picker and the package disagree about "
+            f"{sorted(offered_packaged ^ actual_packaged)} "
+            f"({len(files)} offered of {len(shipped)})")
         # the named events are still first, so an existing timer still resolves
         assert data[0] == "tick"
         dlg._select_sound("file:" + shipped[0])
