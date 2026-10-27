@@ -100,6 +100,11 @@ def builtin_root(tmp_path):
     # lookup falls through to the last-resort {event}.wav probe and the
     # assertion below would pass for the wrong reason.
     _make_wav(root / "cs_style" / "buttonrollover.wav")
+    # The SHIPPED click default is button1.wav.  Without it here, the click
+    # fallback only resolved on a machine whose private addon folder happened
+    # to contain a button1.wav -- the test then passed for a reason that has
+    # nothing to do with the packaged tree it claims to exercise.
+    _make_wav(root / _DEFAULT_SOUND_MAP["click"])
     return str(root)
 
 
@@ -217,15 +222,22 @@ class TestMigration:
 
     def test_J_genuinely_missing_ref_keeps_the_fallback_policy(
             self, builtin_root, managed_root):
-        """Documented policy: a ref that really cannot resolve heals to the
-        shipped default -- and nothing else moves."""
+        """R5 policy: the STORED ref survives migration; PLAYBACK falls back.
+
+        Dropping an unresolvable ref at migration time destroys the user's
+        choice for good the moment an addon folder or a restored backup is
+        temporarily unavailable, so the split is: preserve the reference,
+        resolve at play time, fall back only then.
+        """
         data = {"sound_events": {
             "click": {"file": "user:imported/does-not-exist.wav"},
             "hover": {"file": "hover.wav"},
         }}
         migrate_sound_settings(data, builtin_root)
-        assert data["sound_events"]["click"]["file"] == _DEFAULT_SOUND_MAP["click"]
+        assert data["sound_events"]["click"]["file"] == "user:imported/does-not-exist.wav"
         assert data["sound_events"]["hover"]["file"] == "hover.wav"
+        assert get_sound_file_for_event(
+            "click", data, builtin_root) == _DEFAULT_SOUND_MAP["click"]
 
 
 # ---------------------------------------------------------------------------
