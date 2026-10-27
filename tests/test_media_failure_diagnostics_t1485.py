@@ -85,7 +85,7 @@ def test_the_three_remote_outcomes_do_not_render_the_same_box(view):
 
 
 def test_the_reason_is_logged_without_the_url_token(view, caplog):
-    block = _block(view, ONLINE)
+    _block(view, ONLINE)
     with caplog.at_level(logging.WARNING):
         view._on_remote_failed(ONLINE, "timeout after 10s")
 

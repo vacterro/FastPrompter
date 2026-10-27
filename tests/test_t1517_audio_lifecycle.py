@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 
 from fastprompter.core.interval_preview import IntervalPreviewController
 from fastprompter.core.sound_manager import (
-    bus_for_event,
     _PREVIEW_SLOTS,
+    bus_for_event,
 )
 from fastprompter.ui.timer_dialog import TimerDialog
 
@@ -64,6 +64,7 @@ class TestBusRouting:
         previews would route on Bus.ALERT and could be silenced by cancel_preview.
         """
         import inspect
+
         from fastprompter.core.sound_manager import SoundManager
 
         source = inspect.getsource(SoundManager._emit_file)
@@ -75,6 +76,7 @@ class TestBusRouting:
         """cancel_preview must call self._hub.stop_bus(Bus.PREVIEW), not
         stop_bus(Bus.ALERT) or stop_bus(Bus.UI)."""
         import inspect
+
         from fastprompter.core.sound_manager import SoundManager
 
         source = inspect.getsource(SoundManager.cancel_preview)
@@ -175,6 +177,7 @@ class TestStaticBusRouting:
 
 def _get_bus_for_event_source():
     import inspect
+
     from fastprompter.core.sound_manager import bus_for_event
     return inspect.getsource(bus_for_event)
 

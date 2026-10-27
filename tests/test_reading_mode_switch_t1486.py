@@ -15,8 +15,6 @@ the T-1484 module still passes -- which is exactly the gap being closed.
 
 from __future__ import annotations
 
-import pathlib
-
 import pytest
 from PyQt6.QtCore import QObject
 from PyQt6.QtWidgets import QApplication, QComboBox, QTextEdit
