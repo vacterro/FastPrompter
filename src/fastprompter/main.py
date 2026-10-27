@@ -4104,12 +4104,28 @@ class FastPrompter(
         r["last_fired_minute"] = lfm if isinstance(lfm, str) else ""
         return r
 
+    #: Fields the interval editor owns. Runtime bookkeeping fields
+    #: (``last_fired``, ``last_fired_minute``) are deliberately absent: an
+    #: ordinary edit must never reset the scheduler's timestamps.
+    _INTERVAL_EDITABLE_FIELDS = (
+        "name", "minutes", "enabled", "align_mode", "all_day",
+        "start_minute", "end_minute", "sound", "volume",
+        "show_notification", "show_in_top_bar",
+    )
+
     def _interval_notifs(self):
-        """Return the healed interval-notif rules.
+        """Return the AUTHORITATIVE stored interval-notif rule list.
+
+        This is the single mutation surface for interval rules. The returned
+        list is ``self.data["interval_notifs"]`` itself and, whenever the
+        stored data is already canonical, its dictionaries are the stored
+        dictionaries too — callers may mutate them and the change persists.
+        That contract is what the editor relies on; returning a detached
+        healed snapshot (the old behaviour) silently discarded every edit.
 
         Non-dict entries are dropped, malformed fields are healed, duplicate
-        ids are collapsed (first wins), and the result is written back so a
-        malformed stored list round-trips to canonical JSON (W2-004).
+        ids are collapsed (first wins), and the canonical form is written back
+        IN PLACE so the list identity never changes (W2-004).
         """
         rules = self.data.get("interval_notifs")
         if not isinstance(rules, list):
@@ -4129,13 +4145,127 @@ class FastPrompter(
                 changed = True
                 continue
             seen_ids.add(h["id"])
-            healed.append(h)
-            if h != raw:
+            if h == raw:
+                # Canonical entry: keep the very same dict object so any
+                # caller holding it is holding persistent data.
+                healed.append(raw)
+            else:
+                healed.append(h)
                 changed = True
         if changed:
-            self.data["interval_notifs"] = healed
+            # In-place replacement keeps ``self.data["interval_notifs"]``
+            # identity stable for the whole process lifetime.
+            rules[:] = healed
             self.mark_dirty("settings")
-        return healed
+        return rules
+
+    # ---- Authoritative interval-rule operations -------------------------
+    # The editor never edits a snapshot: every write goes through one of
+    # these methods, which always operate on the stored list above.
+
+    def interval_rule_list(self):
+        """The mutable authoritative list of interval rules."""
+        return self._interval_notifs()
+
+    def interval_rule_get(self, rule_id):
+        """Return the stored rule with ``rule_id`` or None."""
+        if not isinstance(rule_id, str) or not rule_id:
+            return None
+        for rule in self.interval_rule_list():
+            if rule.get("id") == rule_id:
+                return rule
+        return None
+
+    def interval_rule_update(self, rule_id, fields):
+        """Update one rule's editable fields; runtime timestamps untouched.
+
+        ``fields`` is a mapping of presentation fields. Unknown keys are
+        ignored. Returns True when the rule exists and was updated.
+        """
+        rule = self.interval_rule_get(rule_id)
+        if rule is None or not isinstance(fields, dict):
+            return False
+        candidate = dict(rule)
+        for key in self._INTERVAL_EDITABLE_FIELDS:
+            if key in fields:
+                candidate[key] = fields[key]
+        healed = self._heal_interval_rule(candidate)
+        if healed is None:
+            return False
+        # Mutate in place: identity and runtime fields stay put.
+        rule.clear()
+        rule.update(healed)
+        self.mark_dirty("settings")
+        return True
+
+    def interval_rule_add(self, fields):
+        """Append a new rule and return its stable id.
+
+        The id is unique against the stored collection; a caller-supplied id
+        that already exists is replaced by a fresh one so two reminders can
+        never share an identity.
+        """
+        import uuid as _uuid
+
+        if not isinstance(fields, dict):
+            fields = {}
+        candidate = dict(fields)
+        existing = {r.get("id") for r in self.interval_rule_list()}
+        rid = candidate.get("id")
+        if not isinstance(rid, str) or not rid or rid in existing:
+            rid = "interval_" + _uuid.uuid4().hex[:8]
+            while rid in existing:
+                rid = "interval_" + _uuid.uuid4().hex[:8]
+        candidate["id"] = rid
+        healed = self._heal_interval_rule(candidate)
+        if healed is None:
+            return None
+        self.interval_rule_list().append(healed)
+        self.mark_dirty("settings")
+        return healed["id"]
+
+    def interval_rule_delete(self, rule_id):
+        """Delete exactly the rule with ``rule_id``; return True if removed."""
+        if not isinstance(rule_id, str) or not rule_id:
+            return False
+        rules = self.interval_rule_list()
+        for idx, rule in enumerate(rules):
+            if rule.get("id") == rule_id:
+                del rules[idx]
+                self.mark_dirty("settings")
+                return True
+        return False
+
+    def interval_rule_reorder(self, rule_ids):
+        """Persist list order (scheduler priority) from stable ids.
+
+        Rules absent from ``rule_ids`` keep their relative order after the
+        listed ones; unknown ids are ignored. No rule property is touched, so
+        ``last_fired`` survives a drag.
+        """
+        if not isinstance(rule_ids, (list, tuple)):
+            return False
+        rules = self.interval_rule_list()
+        by_id = {r.get("id"): r for r in rules}
+        ordered = []
+        used = set()
+        for rid in rule_ids:
+            if rid in by_id and rid not in used:
+                ordered.append(by_id[rid])
+                used.add(rid)
+        for rule in rules:
+            if rule.get("id") not in used:
+                ordered.append(rule)
+                used.add(rule.get("id"))
+        if len(ordered) != len(rules):
+            return False
+        rules[:] = ordered
+        self.mark_dirty("settings")
+        return True
+
+    def interval_rule_set_enabled(self, rule_id, enabled):
+        """Persist only the enabled flag — never other staged form fields."""
+        return self.interval_rule_update(rule_id, {"enabled": bool(enabled)})
 
     def _check_interval_notifs(self):
         """Fire every enabled rule whose interval has elapsed or reached
