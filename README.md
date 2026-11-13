@@ -18,6 +18,10 @@ One global hotkey brings the same workspace back from anywhere. Your text and pr
 
 Guides: [English](GUIDE_EN.md) · [Русский](GUIDE_RU.md) · [Deutsch](GUIDE_DE.md) · [Eesti](GUIDE_EST.md) · [日本語](GUIDE_JA.md)
 
+<img src="docs/images/readme/00-main-workspace.webp" alt="FastPrompter main workspace with project tabs, note editor and silo sidebar" width="100%">
+
+<sub>FastPrompter main workspace in the dark-and-gold theme.</sub>
+
 </div>
 
 ---
@@ -57,7 +61,7 @@ Typical uses:
 
 ## Screenshots
 
-The screenshots below focus on general interface settings and self-contained feature examples. Workspace content is described in the guide without exposing personal working notes.
+The main workspace is shown above. The screenshots below highlight individual settings and features.
 
 
 
