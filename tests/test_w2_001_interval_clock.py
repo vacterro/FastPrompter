@@ -143,15 +143,38 @@ def test_120m_every_two_hours(monkeypatch):
 
 
 def test_over_24h_covers_midnight(monkeypatch):
+    # CORE-004: this test used to assert that a 1500-minute rule fired at
+    # every midnight, which was the defect itself -- "0 % 1500 == 0" made any
+    # interval longer than a day fire daily. The cadence is now continuous
+    # from one absolute anchor, so the assertion is about the GAP between
+    # occurrences, not about midnight being special.
     _patch(monkeypatch)
     fake = _bind(_Fake([_rule("rbig", 1500)]))
+    from fastprompter.core import interval_schedule as schedule
+
+    first = schedule.next_clock_boundary(
+        RealDateTime(2026, 1, 1, 0, 0), 1500, inclusive=True)
+    second = schedule.next_clock_boundary(
+        first + _dt_mod.timedelta(minutes=1), 1500, inclusive=False)
+    assert (second - first) == _dt_mod.timedelta(minutes=1500)
+
+    # And the rule does NOT fire merely because it is midnight.
     _set(_mdt(0, 0))
     fake._check_interval_notifs()
-    assert "rbig" in fake.fired
-    fake.fired.clear()
-    _set(_mdt(12, 0))
-    fake._check_interval_notifs()
-    assert fake.fired == []   # not a boundary for >24h
+    assert fake.fired == []
+
+
+def test_100m_keeps_its_cadence_across_midnight(monkeypatch):
+    """CORE-004 headline case: a 100-minute rule at 23:20 -> 00:00 (40 min)."""
+    _patch(monkeypatch)
+    from fastprompter.core import interval_schedule as schedule
+
+    rule = _rule("r100", 100)
+    # 22:20 and 00:00 are 100 minutes apart; 23:20 is not a boundary at all.
+    assert schedule.is_due_now(rule, RealDateTime(2026, 10, 25, 22, 20))
+    assert not schedule.is_due_now(rule, RealDateTime(2026, 10, 25, 23, 20))
+    assert schedule.is_due_now(rule, RealDateTime(2026, 10, 26, 0, 0))
+
 
 
 def test_elapsed_mode_unchanged(monkeypatch):

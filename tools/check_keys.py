@@ -1,5 +1,4 @@
 import json
-import re
 
 with open('scratch_keys.json', encoding='utf-8') as f:
     keys = json.load(f)

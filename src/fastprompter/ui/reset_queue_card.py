@@ -181,6 +181,20 @@ def window_label(window, provider_id: str = "") -> str:
         return "Weekly"
     if key == MONTHLY:
         return "Monthly"
+    if key == "daily_amount":
+        return "Daily Hours"
+    if key == "spend_limit":
+        return "Spend"
+    if key == "quota":
+        return "Quota"
+    if key in ("plan_day", "free_day"):
+        return "Daily"
+    if key == "plan_five_day":
+        return "5d"
+    if key == "free_week":
+        return "Weekly"
+    if key in ("plan_month", "free_month"):
+        return "Monthly"
     mins = getattr(window, "duration_minutes", None)
     if isinstance(mins, (int, float)) and mins > 0:
         if mins < 60:

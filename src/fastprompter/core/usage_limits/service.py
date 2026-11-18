@@ -36,6 +36,7 @@ from fastprompter.core.usage_limits.providers.antigravity import AntigravityProv
 from fastprompter.core.usage_limits.providers.claude import ClaudeProvider
 from fastprompter.core.usage_limits.providers.codex import CodexProvider
 from fastprompter.core.usage_limits.providers.freebuff import FreebuffProvider
+from fastprompter.core.usage_limits.providers.shared_snapshot import SharedSnapshotProvider
 from fastprompter.core.usage_limits.providers.zcode import ZCodeProvider
 
 POOL_SIZE = 3
@@ -59,7 +60,8 @@ REDISCOVER_EVERY_S = 300
 # Human label per provider, used to build display names ("Codex 1", "Claude").
 _PROVIDER_LABEL = {"codex": "Codex", "claude": "Claude",
                    "antigravity": "Antigravity", "zcode": "ZCode",
-                   "freebuff": "Freebuff"}
+                   "freebuff": "Freebuff", "commandcode": "CommandCode",
+                   "opencode-go": "OpenCode Go"}
 
 # Discovery order: the account the user actually runs by default first, then
 # env/configured overrides, then auto-detected siblings. Ordinals are
@@ -234,6 +236,11 @@ class UsageLimitService:
                 enabled=str(self._data.get("limit_freebuff_enabled", "False")) == "True",
                 state_path=str(self._data.get("limit_freebuff_state", "") or ""),
             ),
+            # CommandCode and OpenCode Go are measured ONCE by LIMISAW and read
+            # here from its published snapshot. No credential, no HTTP request,
+            # no second polling loop: an absent producer is simply "no accounts".
+            "commandcode": SharedSnapshotProvider("commandcode"),
+            "opencode-go": SharedSnapshotProvider("opencode-go"),
         }
 
     def add_callback(self, cb: callable) -> None:

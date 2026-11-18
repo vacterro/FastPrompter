@@ -97,9 +97,11 @@ def _antigravity_snapshot(gemini_5h=0.0, gemini_w=0.0, claude_5h=0.0,
 
 
 def test_account_has_usage_truth_table():
-    # 1. 0% in both 5h and weekly (untouched / 100% remaining) -> False
+    # 1. Untouched / 100% remaining is FULL capacity, not empty (T-1462).
+    # "Hide exhausted" must never hide a healthy account just because nobody
+    # has spent anything yet.
     s_zero = _make_snapshot(five_h_used=0.0, weekly_used=0.0)
-    assert account_has_usage(s_zero) is False
+    assert account_has_usage(s_zero) is True
 
     # 2. 0% left in both 5h and weekly (depleted / exhausted quota) -> False
     s_depleted = _make_snapshot(five_h_used=100.0, weekly_used=100.0)
@@ -134,16 +136,18 @@ def test_account_has_usage_truth_table():
 
 
 def test_limit_gauges_hide_zero_usage_filtering(win):
-    acc_zero = AccountRef("claude", "acc_zero", "Zero Acc", "auto_default")
+    acc_exhausted = AccountRef("claude", "acc_exhausted", "Exhausted Acc", "auto_default")
     acc_active = AccountRef("codex", "acc_active", "Active Acc", "auto_default")
 
-    snap_zero = _make_snapshot("claude", five_h_used=0.0, weekly_used=0.0)
+    # 0% LEFT (fully spent) is exhausted; 0% USED (untouched) is full capacity
+    # and must stay visible -- T-1462.
+    snap_exhausted = _make_snapshot("claude", five_h_used=100.0, weekly_used=100.0)
     snap_active = _make_snapshot("codex", five_h_used=20.0, weekly_used=5.0)
 
     with win.limit_service._lock:
-        win.limit_service._state.accounts = [acc_zero, acc_active]
+        win.limit_service._state.accounts = [acc_exhausted, acc_active]
         win.limit_service._state.snapshots = {
-            acc_zero.key: snap_zero,
+            acc_exhausted.key: snap_exhausted,
             acc_active.key: snap_active,
         }
 
@@ -152,7 +156,7 @@ def test_limit_gauges_hide_zero_usage_filtering(win):
     visible = win.limit_gauges._visible_accounts()
     assert len(visible) == 2
 
-    # Enable hide_zero_usage -> only acc_active visible
+    # Enable hide_zero_usage -> only the account with remaining quota visible
     win.data["limit_gauges_hide_zero_usage"] = "True"
     visible_filtered = win.limit_gauges._visible_accounts()
     assert len(visible_filtered) == 1
@@ -162,16 +166,17 @@ def test_limit_gauges_hide_zero_usage_filtering(win):
 def test_limit_overview_hide_zero_usage_filtering(win):
     from fastprompter.ui.limit_overview import LimitOverview
 
-    acc_zero = AccountRef("claude", "acc_zero", "Zero Acc", "auto_default")
+    acc_exhausted = AccountRef("claude", "acc_exhausted", "Exhausted Acc", "auto_default")
     acc_active = AccountRef("codex", "acc_active", "Active Acc", "auto_default")
 
-    snap_zero = _make_snapshot("claude", five_h_used=0.0, weekly_used=0.0)
+    # Exhausted (0% LEFT), not untouched, is what the filter removes (T-1462).
+    snap_exhausted = _make_snapshot("claude", five_h_used=100.0, weekly_used=100.0)
     snap_active = _make_snapshot("codex", five_h_used=20.0, weekly_used=5.0)
 
     with win.limit_service._lock:
-        win.limit_service._state.accounts = [acc_zero, acc_active]
+        win.limit_service._state.accounts = [acc_exhausted, acc_active]
         win.limit_service._state.snapshots = {
-            acc_zero.key: snap_zero,
+            acc_exhausted.key: snap_exhausted,
             acc_active.key: snap_active,
         }
 
@@ -617,7 +622,12 @@ def test_hidden_accounts_with_banked_resets_are_announced(win):
 
 
 def test_limit_gauges_shift_hover_ignores_all_filters(win, monkeypatch):
-    """When Shift is held during hover on LimitGauges, all accounts are shown ignoring filters."""
+    """When Shift is held during hover on LimitGauges, all accounts are shown ignoring filters.
+
+    An untouched 100% account is healthy and now stays visible without Shift
+    (T-1462); only the explicitly hidden account is filtered. Shift still
+    overrides every filter, including the explicit hide.
+    """
     acc_hidden = AccountRef("codex", "codex_off", "Codex Off", "auto_default")
     acc_zero = AccountRef("gemini", "gemini_zero", "Gemini Zero", "auto_default")
     acc_active = AccountRef("claude", "claude_on", "Claude On", "auto_default")
@@ -636,11 +646,12 @@ def test_limit_gauges_shift_hover_ignores_all_filters(win, monkeypatch):
     win.data["limit_gauges_hide_zero_usage"] = "True"
     win.data["limit_gauges_hidden_accounts"] = [acc_hidden.key]
 
-    # Without Shift: hidden and zero are filtered out of active table
+    # Without Shift: only the explicitly hidden account is removed; the
+    # untouched full account is healthy, not "0% usage".
     html_normal = win.limit_gauges._build_tooltip(ignore_filters=False)
     assert f">{acc_active.display_name}</b>" in html_normal
     assert f">{acc_hidden.display_name}</b>" not in html_normal
-    assert f">{acc_zero.display_name}</b>" not in html_normal
+    assert f">{acc_zero.display_name}</b>" in html_normal
     assert "Hidden:" in html_normal
     assert "(all accounts — Shift held)" not in html_normal
 

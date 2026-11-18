@@ -21,7 +21,7 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | Key | Type | Default | Description |
 |---|---|---|---|
 | **Theme & Display** | | | |
-| `theme` | string | `Golden Default` | Theme: Default, Golden Vintage, Golden Default, Vintage Dark, Vintage Classic, Dark 2 (OLED), Dracula, Nord, Solarized Dark, Custom |
+| `theme` | string | `Golden Default` | 15 built-in themes: 9 classic (Default, Golden Vintage, Golden Default, Vintage Dark, Vintage Classic, Dark 2 (OLED), Dracula, Nord, Solarized Dark) + 6 Wintage palettes ported from the ProBlipAndroid reference (Dark Golden (Win95), Claude Code, Antigravity, K-Lite (MPC-HC), FreeBuff, CodeNomad), or Custom |
 | `font_family` | string | `Verdana` | Editor font (auto-resolves to `_m1` bitmap variant if installed) |
 | `font_size` | int | 18 | Editor font size in points |
 | `ui_scale` | float | 0.5 | UI scaling (0.5 to 1.5) |
@@ -36,6 +36,14 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `pie_menu_hotkey` | string | `Shift+Alt+X` | Pie menu hotkey |
 | `lock_window_hotkey` | string | `Alt+E` | Window lock toggle |
 | `always_on_top_hotkey` | string | `Alt+S` | Always-on-top toggle |
+| **Silo Bundles (Pack Silo)** | | | |
+| `hk_pack_silo` | hotkey | `Ctrl+Shift+P` | Pack the active silo into one portable ZIP |
+| `hk_pack_selection` | hotkey | `Ctrl+Shift+C` | Fast Pack Selection — selection + referenced media |
+| `silo_bundle_keep_versions` | int | 5 | "Keep last versions in exports": how many bundles the exports folder retains |
+| `show_pack_coverage` | bool | False | Show which requirements are already inside a published bundle |
+| `pack_coverage_fade` | bool | True | Fade packed requirements instead of flagging them permanently |
+| `silo_bundle_defaults` | JSON dict | `{}` | Per-silo remembered answers of the Pack With Options dialog |
+| `silo_bundle_history` | JSON dict | `{}` | Per-silo bundle records (path, title, kind) used by reuse, retention and Copy Last Bundle |
 | **Behavior** | | | |
 | `tray_click_activates` | bool | True | Tray double-click always brings window to focus; False = toggle hide/show (T-1082) |
 | `close_on_focus_loss` | bool | True | Auto-hide on focus loss |
@@ -70,6 +78,11 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `window_presets_enabled` | bool | True | Enable Ctrl+Q window presets page (T-608) |
 | `window_presets_capture_state` | bool | True | Ctrl+Q presets capture full app state (theme, font, scale, toolbar, zen, sidebar); off = geometry only (T-728) |
 | `image_paste_style` | string | `pill` | Pasted image markup: `pill` (clickable chip), `link` (markdown link), `path` (raw path) (T-724) |
+| `source_link_click` | string | `Single-click` | Source-view link gesture: `Single-click` opens a link on a plain click, `Ctrl+Click` reserves plain clicks for the caret (Alt+click always places the caret) (T-1494) |
+| `smart_links_enabled` | bool | True | Recognise links anywhere in a note — bare URLs, www hosts, mailto, Markdown links, local files — across Source, Live Preview, Reading and the context menu (T-1494) |
+| `smart_links_copy_hover` | bool | True | Show the small Copy button next to the hovered link (copies the destination only, query string and fragment included) (T-1494) |
+| `smart_links_tooltip` | bool | True | Show the destination of the link under the pointer (T-1494) |
+| `smart_links_feedback` | bool | True | Play the short confirmation sound when a link action runs (T-1494) |
 | `line_heat` | bool | True | Recency heatmap on recently edited silos |
 | `line_heat_strength` | int | 0 | Heatmap tint strength |
 | `line_heat_palette` | JSON | [] | Heatmap palette override |
@@ -119,14 +132,26 @@ Config lives in `settings` table key-value pairs. No INI file. All hot-reload on
 | `silo_view_state_all` | JSON dict | `{}` | Per-silo cursor/scroll/fold state |
 | `category_file_dirs` | JSON dict | `{}` | Logical category → physical folder mapping |
 | **Sound** | | | |
-| `sound_enabled` | bool | True | Master sound toggle |
 | `sound_ui` | bool | True | UI click sound effects |
-| `sound_typewriter` | bool | False | Typewriter key sounds |
-| `sound_volume` | int (0-10) | 1 | Master sound volume |
+| `sound_typewriter` | bool | True | Typewriter key sounds |
+| `sound_volume` | float 0.0–1.0 | 0.09 | Master sound volume (baked profile; legacy 0–10 ints still parsed, scaled ÷10) |
+| `sound_events` | JSON dict | 69 events | Per-event `enabled`/`file`/`volume`/`gain_db`/`mode` overrides; self-healed on every start against the shipped library |
+| `audio_global_playback_mode` | string | `overlay` | AudioHub global mode: `overlay` / `stack` / `replace` (T-1238-G) |
+| `snippets_hidden` | bool | True | Snippet panel starts hidden |
+| **AI limits (Freebuff + notifications)** | | | |
+| `limit_freebuff_enabled` | bool | True | Freebuff provider poll toggle (T-1243) |
+| `limit_freebuff_state` | JSON | (empty) | Freebuff provider session state cache |
+| `limit_gauges_hide_zero_usage` | bool | False | Hide gauges whose usage reads zero |
+| `limit_notif_color` | string | (empty) | Limit-notification toast accent color override |
+| `limit_notif_duration_sec` | int | 8 | Limit-notification toast display seconds |
+| `limit_notif_symbol` | string | `↻` | Limit-notification symbol |
+| `click` default mapping | — | `tick_on.wav` | The generic `click` event maps to `tick_on.wav` in the baked profile (was `button1.wav`); silo/save/delete also re-pinned to `tick_on.wav` |
+| **Auto Level / device-rate rendering (T-1242)** | | | |
+| `audio_render` + Auto Level | — | on | Every transient cue is pre-rendered to the output device's own rate with a band-limited polyphase resampler (`core/audio_render.py`, `RENDER_VERSION` invalidates the cache); per-event `gain_db` and the loudness analysis in `core/audio_level.py` level loud effects toward the UI reference |
 
 Restored in v0.8.32 (removed in v0.8.24, back with the launch grace and own-window click-out guards): `close_on_focus_loss` / "Hide on Click-Out" is read again — hides the window on focus loss unless the launch grace (2s) or the app's own undocked windows still hold it. `tray_click_activates`: when True (default) a double-click on the tray icon always brings the window to focus; when False it toggles hide/show like the hotkey.
 
-**Watcher `[limits]` (applied at arm since v0.8.25, in `adapters.toml`):** `min_gap_ms`, `max_sends`, `dry_run_new`. `blocker_pattern` only works on the CDP transport (it needs the target's visible text); a blocker on any other transport is flagged inactive.
+Retired in T-1183: the watcher `[limits]` block (`min_gap_ms`, `max_sends`, `dry_run_new`, `blocker_pattern`) and its `adapters.toml` no longer exist; the loader deletes leftover `watcher_*` settings rows on start.
 
 | `toolbar_order` | string | (empty) | Custom toolbar button order tokens |
 | `window_presets` | JSON | [] | User-saved window geometry presets |
@@ -156,6 +181,8 @@ Restored in v0.8.32 (removed in v0.8.24, back with the launch grace and own-wind
 | `passed_event_color` | string | `#e05555` | Color for passed-event silo highlight |
 | **Interval Notifications (24h Schedule)** | | | |
 | `interval_notifs` | JSON list | 4 defaults | Time-of-day scheduled reminders with clock-aligned or elapsed firing, per-rule sound/volume/notification, and configurable active hours (morning/noon/day/night presets). Default rules live in `core/state.py` (`volume: 1.0`, `show_in_top_bar: False`); `sound_volume` ships as 1 (0-10) in the baked profile (T-1089) |
+| **My Presets (Reminder Library)** | | | |
+| `interval_presets/` | data dir | — | Durable user preset library under the data dir: one JSON document per preset with a schema version, a journal for crash-safe writes, per-directory OS locking, and automatic recovery of an interrupted write (T-1517). Managed in the Timer Dialog's presets menu: Add preset reminder… / Replace all with preset… (factory), Add my preset… / Replace all with my preset… (saved), Save current rules as preset…, Rename/Duplicate/Delete a preset…, and Restore configuration before last reset |
 | **Sound Quick Bar** | | | |
 | `sound_quick_bar` | JSON list | 10 entries | Favorite sound shortcuts for quick-pick in Timer Dialog (click to select, right-click to store current sound) |
 | **Temp Timer** | | | |

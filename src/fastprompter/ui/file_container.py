@@ -87,6 +87,11 @@ from fastprompter.utils.path_safety import (
 )
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico"}
+
+#: PERF-003: how many rows one deferred prefetch tick may inspect. The tick can
+#: only submit a bounded batch anyway, so walking more rows than this only
+#: burns GUI-thread time on a directory that will not fit in one tick.
+PREFETCH_ROW_WINDOW = 512
 _SLUG_STRIP = re.compile(r"[#*_`•\[\]]+")
 
 
@@ -1481,6 +1486,12 @@ class FileContainerPanel(QWidget):
         self._thumb_mtimes = {}  # path -> mtime captured at last listing
         self._item_by_path = {}  # path -> QListWidgetItem (O(1) completion)
         self._thumb_gen = 0      # thumbnail generation; bumped per listing
+        # PERF-003: resumable cursor for the bounded deferred prefetch window.
+        # It records which listing generation it belongs to, so a new listing
+        # (folder change, refresh, owner change) restarts the sweep from the
+        # top instead of continuing against rows that no longer exist.
+        self._prefetch_cursor = 0
+        self._prefetch_cursor_gen = -1
         self._item_cards = {}    # path -> (mtime, html, preview) for hover
         self._file_count = 0
         self.setAcceptDrops(True)
@@ -2163,9 +2174,26 @@ class FileContainerPanel(QWidget):
         # the deferred pass may pull a capped number of unresolved rows rather
         # than enqueuing the entire uncached directory.
         offscreen_budget = 0 if immediate_only else 256
-        # PERF-007: an immediate (per-scrollbar-event) request derives the
-        # VISIBLE row range from the viewport and iterates only that range,
-        # so cost scales with visible rows, not total listed files.
+        # PERF-003: the deferred pass used to iterate EVERY row of the list,
+        # however many files there were, even though it can only ever submit a
+        # bounded number of candidates. That made each settled scroll gesture a
+        # whole-directory GUI-thread scan (50000 rows ~ 46 ms of pure walking
+        # before Qt model overhead). The deferred pass now walks a bounded
+        # window from a resumable cursor, so successive ticks continue the
+        # sweep instead of restarting it, and total work per tick is
+        # proportional to the window rather than the directory.
+        if not hasattr(self, "_fetching_thumbs"):
+            self._fetching_thumbs = set()
+        pending_budget = 512
+        batch_cap = 96
+        pending_count = sum(1 for k in self._fetching_thumbs if k[0] == gen)
+
+        # Nothing can be submitted while the backlog is full, so walking the
+        # list would be pure waste. The visible rows are handled by the
+        # immediate path, which is never gated this way.
+        if not immediate_only and pending_count >= pending_budget:
+            return
+
         if immediate_only:
             top_item = self.file_list.itemAt(viewport.topLeft())
             bottom_item = self.file_list.itemAt(viewport.bottomRight())
@@ -2175,7 +2203,18 @@ class FileContainerPanel(QWidget):
                 end = min(end, self.file_list.row(bottom_item) + 1)
             row_iter = range(max(0, start), max(0, end))
         else:
-            row_iter = range(self.file_list.count())
+            # A bounded window, continued from wherever the last deferred pass
+            # stopped. The cursor is invalidated whenever the listing changes,
+            # so it always describes the list it was computed against.
+            total = self.file_list.count()
+            if self._prefetch_cursor_gen != gen:
+                self._prefetch_cursor = 0
+                self._prefetch_cursor_gen = gen
+            start_row = self._prefetch_cursor % total if total else 0
+            window = min(total, PREFETCH_ROW_WINDOW)
+            end_row = min(total, start_row + window)
+            row_iter = range(start_row, end_row)
+            self._prefetch_cursor = end_row % total if total else 0
         for i in row_iter:
             item = self.file_list.item(i)
             path = item.data(Qt.ItemDataRole.UserRole)
@@ -2211,10 +2250,6 @@ class FileContainerPanel(QWidget):
         # sequence of same-generation workers; a pending-budget cap plus a
         # per-submission batch cap keeps the tail bounded and the final
         # viewport first (visible paths were inserted at the front).
-        pending_budget = 512
-        batch_cap = 96
-        cur_gen = gen
-        pending_count = sum(1 for k in self._fetching_thumbs if k[0] == cur_gen)
         filtered = []
         for path, mtime in to_fetch:
             if (gen, path) in self._fetching_thumbs:
@@ -3130,6 +3165,56 @@ class FileContainerPanel(QWidget):
     def _chest_folder_key(self):
         return os.path.normcase(os.path.abspath(self.folder or ""))
 
+    @staticmethod
+    def _coerce_chest_mapping(raw):
+        """Best-effort decode of the persisted top-level chest mapping.
+
+        Normal loads yield a dict (state codec). Pre-fix SQLite rows may still
+        carry a Python str(dict) or a JSON-encoded string; decode read-only so
+        we never execute persisted data and never silently overwrite a row that
+        failed to decode.
+        """
+        import ast
+        import json as _json
+
+        if raw is None:
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return {}
+            for loader in (_json.loads, ast.literal_eval):
+                try:
+                    val = loader(text)
+                except Exception:
+                    continue
+                # Unwrap a double-encoded JSON string.
+                if isinstance(val, str):
+                    try:
+                        val = _json.loads(val)
+                    except Exception:
+                        continue
+                if isinstance(val, dict):
+                    return val
+            # Unreadable/wrong-type legacy row: preserve it (no overwrite),
+            # surface no crash, and let the listing proceed without layout.
+            try:
+                from fastprompter.core.logging import logger
+                logger.warning("silo_chest_order: unreadable mapping (%s), "
+                               "preserving stored row", type(raw).__name__)
+            except Exception:
+                pass
+            return None
+        try:
+            from fastprompter.core.logging import logger
+            logger.warning("silo_chest_order: wrong top-level type %s, "
+                           "preserving stored row", type(raw).__name__)
+        except Exception:
+            pass
+        return None
+
     def _chest_saved_slots(self):
         """Saved {name: slot} for this folder, legacy list migrated in.
 
@@ -3139,8 +3224,11 @@ class FileContainerPanel(QWidget):
         data = getattr(self.main_win, "data", None)
         if not isinstance(data, dict) or not self.folder:
             return {}
-        raw = (data.get(self._CHEST_ORDER_KEY) or {}).get(
-            self._chest_folder_key())
+        mapping = self._coerce_chest_mapping(data.get(self._CHEST_ORDER_KEY))
+        if not isinstance(mapping, dict):
+            # Could not safely read the stored mapping: never replace it.
+            return {}
+        raw = mapping.get(self._chest_folder_key())
         return migrate_slot_map(raw)
 
     def _chest_target_slots(self):
@@ -3177,9 +3265,17 @@ class FileContainerPanel(QWidget):
         data = getattr(self.main_win, "data", None)
         if not isinstance(data, dict) or not self.folder:
             return
-        mapping = data.get(self._CHEST_ORDER_KEY)
+        # Coerce a pre-fix legacy str(dict) on first successful save so the
+        # row becomes a real dict; never clobber an unreadable row (we would
+        # lose recoverable data for every folder in it).
+        mapping = self._coerce_chest_mapping(data.get(self._CHEST_ORDER_KEY))
+        if mapping is None:
+            # Unreadable legacy mapping: do not overwrite the stored row.
+            return
         if not isinstance(mapping, dict):
             mapping = {}
+        # Rebind the in-memory value so subsequent reads/writes use a dict.
+        if not isinstance(data.get(self._CHEST_ORDER_KEY), dict):
             data[self._CHEST_ORDER_KEY] = mapping
         # ponytail: keys for deleted silo folders linger in the profile until
         # the profile is pruned; tiny strings, bounded by silo count.

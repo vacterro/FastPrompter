@@ -507,3 +507,4 @@ class TestStaticGuard:
         pinned here as the exact text it must never contain again."""
         legacy = 'path = os.path.join(sounds_dir, file_name)\n'
         assert any(pattern in legacy for pattern in _LEGACY_PATTERNS)
+

@@ -126,7 +126,7 @@ def spendable_total(snapshot):
     if wallet is None:
         return None
     daily = [w for w in (getattr(snapshot, "windows", None) or [])
-             if getattr(w, "unit", "") == "FB" and w.available]
+             if getattr(w, "unit", "") in ("Hours", "FB", "hrs") and w.available]
     if len(daily) != 1:
         return None
     remaining = _proven_amount(daily[0].remaining_amount)

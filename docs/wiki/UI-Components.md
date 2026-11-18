@@ -42,18 +42,20 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 **Silo List:** Up to 100 per project tab. Features:
 - Pin (📌) — anchor to top, sorted above unpinned
 - Tick (✅) — cross-silo done marker
-- Color box (🎨) — per-silo color tint (toggle in Settings)
+- Color box (🎨) — per-silo color tint: click swatch to cycle, right-click for the palette, or **Ctrl+Middle click** anywhere on the silo row to toggle a random color (T-1248)
+- **Middle click** — move silo to Trash; **Shift+Middle click** — clear silo text
 - File container icon (📁) — opens file drawer
 - Hierarchy — drag onto another silo to nest; Shift+drag swaps; collapse arrow (▾/▸)
 - Recency heatmap — warm background tint for recently edited
 - Sidebar gaps — user-defined spacer bars; Ctrl+drag to re-park
 - Multi-select — Shift=range, Ctrl=toggle; batch delete/save/clear
+- Hover affordances (T-1270) — entering a row reveals the done/tick control, pin, files button and colour hint IMMEDIATELY; only the destructive archive button waits out the 80 ms reveal delay. A row the pointer is already over is re-dressed after every refresh (data rebind, reorder, ticks setting toggle, selection/pin/tick change, child rebuild) with no leave/re-enter ritual, and `underMouse()` always agrees with what is drawn. The tick column is reserved on every row that can show one, so revealing the tick moves no geometry and the title x-position never shifts. Headless Qt platforms report a meaningless cursor position, so the stationary-pointer probe is off there (`_STATIONARY_POINTER_PROBE`) and real Enter/Leave events drive the same state.
 
 **Snippet Slots (F1-F10):** 10 macro paste buttons per project tab. Right-click to edit name/content. Ctrl+S or double-click opens Snippet Manager dialog.
 
 ### 3. Markdown Editor (`ui/editor.py` — VaultTextEdit)
 
-**Line gutter:** Left margin — line numbers + fold arrows (▾) + margin marks + heat stripes.
+**Line gutter:** Left margin — line numbers + fold arrows (▾) + colored line marks + heat stripes. Marks paint as fixed 12–14 px squares in the curated `MARK_PALETTE` (1 green, 2 red, 3 yellow, 4 blue, 5 purple — fixed hexes, crisp edges, no antialiasing, hover outline on empty slots; T-1248). **Ctrl+MiddleButton in the editor text** toggles a random palette color on the clicked line — never deletes text; clicking the gutter's 24 px mark zone cycles the palette with OFF included (left forward, right backward). Mark clicks stay above 2000-line documents, and rapid Ctrl+Middle routing shares T-1224's one-event-one-action rule.
 
 **Syntax highlighting:** `# Headers`, `**bold**`, `*italic*`, `~~strike~~`, `[links](url)`, `` `code` ``, ```code blocks```, `- [ ]` checkboxes, `> blockquotes`, `---` rules.
 
@@ -67,6 +69,8 @@ Configurable button bar. Tokens: cat tabs, search, silo controls, formatting, cl
 
 **Drop overlay:** 4 options on drag-drop: Insert Text, Insert Link, Copy to Files, Create Shortcut.
 
+**Pack control on the header (T-1409/T-1428):** the first block's header carries a Pack glyph whose rect comes from one capability gate (`_silo_bundle_rect`) that paint, hit-test, cursor, press, release and the context menu all share, so the six surfaces cannot disagree. Hover renders `_pack_tooltip_text` — the complete cheat sheet, not a one-line hint: the resolved chords (`Pack Silo (Ctrl+Shift+P)`, `Fast Pack Selection: Ctrl+Shift+C`, `Export Silo to file: Ctrl+Shift+S`) followed by Click / Shift+Click / Ctrl+Click / Ctrl+Shift+Click / Alt+Click / Right-click. Above 2000 blocks `_silo_bundle_block_at` stops hit-testing the glyph, so the chord stays the reliable route. **Pack coverage** marks (`show_pack_coverage`) are painted from the silo's coverage ledger and fade rather than persist when `pack_coverage_fade` is on.
+
 ### 4. File Container Drawer (`ui/file_container.py`)
 
 Per-silo collapsible drawer. Attached files, image thumbnails, document shortcuts.
@@ -74,6 +78,7 @@ Per-silo collapsible drawer. Attached files, image thumbnails, document shortcut
 - Templates: IN/OUT, Assets, Drafts, Custom folder structure
 - Drag-drop to add files
 - Silo export: Ctrl+click 📁 exports silo text to .md
+- **Chest view** (`ui/silo_chest.py`): sparse slot grid with real disabled placeholders, so an empty slot keeps its position across refresh/restart. Click selects; hold-and-move drags; drop on an empty slot moves, drop on an occupied slot swaps; Shift+press/drag range-selects without moving, Ctrl+Shift adds to the selection, and the drop highlight names the pending operation (move/swap vs. invalid) (T-1477/T-1478/T-1479)
 
 ### 5. Kanban Board (`ui/silo_kanban.py`)
 
@@ -83,25 +88,62 @@ Pure-text markdown kanban. Alt+arrows move cards between columns. Enter adds row
 
 Pure-text markdown table. Tab/Shift+Tab walk cells. Tab off last cell grows row. Enter adds row. No split-cell. Works on plain text.
 
+**Interactive grid (T-1462).** `ui/table_grid.py` + `ui/table_model.py` put a
+real `QTableView` over the cells: rectangle selection, clipboard TSV round-trip
+through `ui/clipboard_tsv.py` (multiline cells quoted, so a cell with a newline
+survives Excel and back), column/row resize, insert row/column, and grid-level
+undo/redo that never disturbs a column the user dragged.
+
+**Text-silo editing.** `ui/table_edit_dialog.py` opens the same grid over the
+table at the caret and writes back through `ui/table_edit_target.py`, which
+captures the table's exact content and span at open time and refuses an Apply
+when the live document no longer holds that content; the write-back is whole
+lines and one undo step, and the silo's type never changes.
+
 ### 7. Dialogs & Overlays
 
 | Dialog | Purpose |
 |---|---|
 | `Settings (Alt+`)` | Theme picker, hotkey rebind, sound, scale, toolbar reorder, silo tabs mode, image paste style, toolbar position |
 | `Sound Settings` | Per-event sound controls — enabled/file/volume/preview; includes the T-735 hotkey events (undo/redo/select-all/settings/help/new/save + generic `hotkey` which ships ON by default). Since v0.8.26 each row carries a painted pictogram (theme-coloured; 13 glyph-shape variants added in v0.8.29 split the confusable pairs after per-event hue tinting was reverted the same release) and the table is zebra-striped with no grid — zebra tones from the theme's alternate-background-color (v0.8.30), never Qt's default white |
+| `Sound Hub (Settings → Sound, tray)` | One managed library over six buses (UI/ALERT/VOICE/PROBLIP/AMBIENCE/PREVIEW) and three per-source modes (Overlay/Stack/Replace); pages: **Presets** (factory + portable import/export), **Playback** (per-event enabled/file/volume/`gain_db`/mode), **Voice** (VOX/FVOX/G-Man packs), **Ambience** (start/pause/resume/stop). **Master mute** (hotkey Ctrl+M, tray checkbox, Sound panel toggle) is ONE hub state, so muting anywhere shows everywhere; the tray's **STOP ALL SOUND** is the panic button instead — it drops every channel, queue, sequence and ambience layer now and leaves the master state alone (T-1244/T-1238-G) |
+| `Reset Queue card (top-bar countdown hover)` | The `ui/limit_hover_card.py` panel renders its content through `ui/reset_queue_card.py`: a real rich-text table with fixed `# | Account | Pool | Window | Left` columns, stable column starts, `Left` right-aligned and always present, and long pool names eliding before `Left` can be pushed out (T-1279) |
 | `Snippet Manager (Ctrl+S)` | Edit F1-F10 snippet names + content |
 | `Timer Dialog (Ctrl+Shift+T)` | Pomodoro + countdown timer setup (sound picks from the 411-sound library under `src/fastprompter/sound/`, T-741); one-click quick presets — in 10m / in 1h / tonight / tomorrow (T-726); timer list is a table with Name/Time/Remaining columns (T-733); **Interval tab** for 24h schedule notifications (clock-aligned/elapsed firing, active hours, per-rule sound/volume); **Temp tab** for temporary timer with increment, color mode, random pool sound rules; **Sound Quick Bar** (10 favorite sound buttons for quick-pick and store) |
-| `Queue Master (Alt+Shift+C)` | Watcher queue overview per silo |
+| `Queue Master (Alt+Shift+C)` | ~~Retired~~ — watcher queue dialog removed (T-1183); `open_queue_master` is a no-op stub, and Alt+C/Alt+Shift+C are unbound |
 | `Hashtag Dialog (Alt+Shift+T)` | Cross-silo tag search |
 | `Trash Dialog` | Browse/restore soft-deleted silos |
 | `Typo Check Dialog` | Right-click project tab → "Check Typos in this project…"; scans every silo with the dictionary, groups unknown words per silo, add-to-dictionary from the report |
 | `Backup Dialog` | DB export/import, backup snapshot |
+| `Smart Code Runner (⚡)` | Detection (`ui/code_detection.py`) plus a review dialog naming the language and an output dialog. Nothing runs before the explicit approval; adapters execute by argument vector (never a shell) and each output is decoded with its adapter's encoding — PowerShell `utf-16-le`, CMD `cp437`, the rest UTF-8 (T-1456/T-1460) |
+| `Edit Table (text silo)` | The Table-silo grid over the table at the caret; Apply replaces exactly that table's lines in one undo step and is refused when the document changed under the dialog (T-1462) |
+| `Pack Silo With Options…` (`ui/silo_bundle_dialog.py`) | Shift+Click on the Pack control. Rows are the silo's bundle candidates with their read/unavailable state, plus Include silo text (`.md`), Select All/None/Invert, sort (Newest first / Oldest first / Document order / Name), destination (Silo folder / Desktop / Documents / Choose folder…), *Make exported Markdown portable* (Hide local path vs Keep original links), Include non-media Silo Files, **Keep last versions in exports** (default `silo_bundle_keep_versions` = 5), and Remember these choices for Quick Pack. The summary line counts what is about to be packed (T-1409/T-1410) |
 | `Help Dialog` | Interactive shortcut reference |
 | `Window Presets` | Save/rename/reorder/move window geometry presets; optional full-state capture — theme, font, scale, toolbar, zen, sidebar (T-728) |
 | `Project Manager` | Show/hide projects, reorder (▲▼) |
 | `Color Config` | Custom theme color editing |
 
-### 8. Window Components
+### 8. Reading Surface (`ui/rich_preview_view.py`, T-1484/T-1486)
+
+The Reading view is a vertical list of blocks, not one `QTextEdit`:
+
+- `_HtmlBlock` holds one contiguous run of formatted content (headings,
+  paragraphs, real tables, lists, links) and sizes itself to its own height.
+- `_MediaBlock` holds one image: a `QMovie` when the payload animates, a scaled
+  `QPixmap` otherwise, or an honest placeholder. The placeholder always keeps
+  the URL clickable and names its cause — external images off, refused by
+  policy, transfer failed, too large, not decodable, local file missing — so a
+  blank box is never anonymous.
+- **Policy toggle.** `IMG` in the toolbar is external media **off**; clicking
+  it turns it into `IMG+` and permits HTTPS fetches for this session. The
+  syntax selector beside the view mode pins Auto / Markdown / BBCode.
+- **Lifecycle.** Leaving Reading stops every movie and cancels in-flight
+  requests while keeping the decoded-payload cache; returning replays the
+  cached payload instead of re-downloading it and restores the scroll offset
+  when the source text is unchanged. Repeated switching reuses one transport,
+  never a new `QNetworkAccessManager` per switch.
+
+### 9. Window Components
 
 - **FancyZoneOverlay** — visual 7-zone picker for screen snap
 - **AnalogClock** — custom-painted clock widget (header)

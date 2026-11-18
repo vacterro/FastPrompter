@@ -42,9 +42,39 @@ from fastprompter.core.usage_limits.model import (
 )
 from fastprompter.core.usage_limits.providers import UsageProvider, _freebuff_http
 
+candidate_state_paths = _freebuff_http.candidate_state_paths
+
 # Daily-window key. Amount quotas are their own window kind — NOT five_hour —
 # so percent-window alert rules and the "5h" label can never misread them.
 DAILY_AMOUNT = "daily_amount"
+# Freebucks → hours conversion (5 FB = 1 hour), as published by the vendor.
+FB_PER_HOUR = 5.0
+
+
+def _to_hours(value):
+    """Convert a Freebucks amount to hours without destroying the fraction.
+
+    CORE-003: the previous ``raw // 5`` was FLOOR division, so a positive
+    balance below one hour — and the fractional part of every larger one —
+    collapsed to 0.0 hours. Downstream, ``model.spare_balance`` reads this
+    field and gates ``account_usable_now`` / ``account_has_usage``, so a wallet
+    with 4 FB (0.8 h) reported zero hours and the account was classified
+    unusable. Display rounding is a separate concern and belongs at the
+    renderer, not in the value availability predicates consume.
+
+    Non-numeric input stays None so a missing balance is not claimed as zero.
+    Non-finite input is also None: ``inf`` here would flow into
+    ``spare_balance`` as an infinite balance and make an unusable account look
+    permanently usable.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    if value != value or value in (float("inf"), float("-inf")) or value < 0:
+        return None
+    return value / FB_PER_HOUR
+
+
 # Legacy windows, one pool-qualified key each (plan sessions vs free sessions).
 _LEGACY_WINDOWS = {
     ("plan", "day"): ("plan_day", 1440),
@@ -60,28 +90,33 @@ _LEGACY_WINDOWS = {
 BRAND_ACCENT = "#50ecb3"
 
 
+FREEBUCKS_PER_HOUR = 5.0
+
+
 def _amount_window(fb: dict) -> UsageWindow:
     """The daily Freebucks pool as an amount window.
 
     ``used_percent``/``remaining_percent`` are the honest percent of the daily
     pool (the vendor states remaining and limit, so the percent is exact);
-    ``used_amount``/``remaining_amount``/``limit_amount`` keep the Freebucks
-    truth beside it so the UI can render "42 / 100 FB" instead of a naked
-    percentage. Reset feeds the ordinary reset machinery.
+    ``used_amount``/``remaining_amount``/``limit_amount`` keep the Hours
+    truth beside it (5 FB = 1 hour) so the UI can render "21/21 hrs" instead
+    of a naked percentage. Reset feeds the ordinary reset machinery.
     """
-    remaining = float(fb["daily_remaining"])
-    limit = float(fb["daily_limit"])
+    raw_rem = float(fb["daily_remaining"])
+    raw_lim = float(fb["daily_limit"])
+    remaining = raw_rem / FREEBUCKS_PER_HOUR
+    limit = raw_lim / FREEBUCKS_PER_HOUR
     used = max(0.0, limit - remaining)
     return UsageWindow(
         key=DAILY_AMOUNT,
         duration_minutes=1440,
         available=True,
-        used_percent=min(100.0, used / limit * 100.0),
-        remaining_percent=max(0.0, min(100.0, remaining / limit * 100.0)),
+        used_percent=min(100.0, used / limit * 100.0) if limit > 0 else 0.0,
+        remaining_percent=max(0.0, min(100.0, remaining / limit * 100.0)) if limit > 0 else 0.0,
         used_amount=used,
         remaining_amount=remaining,
         limit_amount=limit,
-        unit="FB",
+        unit="hrs",
         resets_at_epoch=fb.get("resets_at"),
         source="freebuff-session",
     )
@@ -122,7 +157,16 @@ class FreebuffProvider(UsageProvider):
 
     # -- discovery ---------------------------------------------------------
     def config_path(self) -> str:
-        return self._state_path or _freebuff_http.default_state_path()
+        if self._state_path:
+            return self._state_path
+        candidates = _freebuff_http.candidate_state_paths()
+        if candidates:
+            return candidates[0]
+        return _freebuff_http.default_state_path()
+
+    @staticmethod
+    def candidate_state_paths() -> list[str]:
+        return _freebuff_http.candidate_state_paths()
 
     def discover_accounts(self) -> list[AccountRef]:
         """The one signed-in account, or nothing while opted out.
@@ -182,6 +226,12 @@ class FreebuffProvider(UsageProvider):
             fb = reading["freebucks"]
             windows = [_amount_window(fb)]
             reset_color_note = ""
+            raw_wallet = fb.get("wallet_balance")
+            raw_bonus = fb.get("wallet_monthly_bonus")
+            raw_total = fb.get("balance")
+            wallet_hours = _to_hours(raw_wallet)
+            bonus_hours = _to_hours(raw_bonus)
+            total_hours = _to_hours(raw_total)
             return UsageSnapshot(
                 account=account, status="OK", windows=windows,
                 plan_type=fb.get("plan_id") or "Freebucks",
@@ -190,14 +240,16 @@ class FreebuffProvider(UsageProvider):
                     "capability": "freebuff-freebucks",
                     "strategy": "https-freebuff-session-get",
                     "mode": "freebucks",
-                    # The wallet is a BALANCE: a number, no meter, no reset.
-                    "wallet_balance": fb.get("wallet_balance"),
-                    "wallet_monthly_bonus": fb.get("wallet_monthly_bonus"),
-                    "total_balance": fb.get("balance"),
+                    # The wallet is a BALANCE in hours (5 FB = 1 hour):
+                    "wallet_balance": wallet_hours,
+                    "wallet_monthly_bonus": bonus_hours,
+                    "total_balance": total_hours,
+                    "wallet_balance_fb": raw_wallet,
+                    "total_balance_fb": raw_total,
                     # Per-model prices (FB/hour) — tooltip/overview detail.
                     "model_prices": dict(fb.get("prices") or {}),
                     "price_notices": dict(fb.get("price_notices") or {}),
-                    "unit": "FB",
+                    "unit": "hrs",
                     "reset_color_note": reset_color_note,
                 },
             )

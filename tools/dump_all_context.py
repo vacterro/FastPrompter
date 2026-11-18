@@ -1,10 +1,9 @@
 import json
-import sys
 
 spa_un = json.load(open('build/untranslated/spa.json', encoding='utf-8'))
 pt_un = json.load(open('build/untranslated/pt.json', encoding='utf-8'))
 
-from fastprompter.core.i18n import ru, de, fra, it
+from fastprompter.core.i18n import de, fra, ru
 
 all_keys = sorted(list(set(spa_un.keys()) | set(pt_un.keys())))
 

@@ -24,20 +24,28 @@ import html as _html
 import os
 import re
 
+from PyQt6 import sip
 from PyQt6.QtCore import QBuffer, QByteArray, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QImage, QMovie, QPixmap
 from PyQt6.QtWidgets import (
+    QApplication,
     QFrame,
     QLabel,
     QScrollArea,
     QSizePolicy,
     QTextBrowser,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from fastprompter.core import rich_preview
 from fastprompter.core.logging import logger
+from fastprompter.core.translations import tr
+
+#: The glyph of the hover Copy control. The editor paints the same shape for
+#: its inline Copy, so the affordance looks the same in every surface.
+COPY_LINK_GLYPH = "\u2398"
 from fastprompter.core.preview_media import (
     MAX_REMOTE_BYTES,
     MediaCache,
@@ -108,6 +116,113 @@ class _HtmlBlock(QTextBrowser):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet("QTextBrowser { background: transparent; border: none; }")
         self.anchorClicked.connect(view._on_anchor_clicked)
+        # T-1494: ONE reusable hover Copy control for every link in this
+        # block. It is a child widget, so it never touches the document, and
+        # it is hidden again as soon as the pointer leaves the link.
+        self._copy_button = QToolButton(self)
+        self._copy_button.setText(COPY_LINK_GLYPH)
+        self._copy_button.setAutoRaise(True)
+        self._copy_button.setFixedSize(16, 16)
+        self._copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy_button.setVisible(False)
+        self._copy_button.clicked.connect(self._copy_hovered_link)
+        self._hover_href: str | None = None
+
+    # -- T-1494: hover Copy ------------------------------------------------
+
+    def _lang(self) -> str:
+        lang = getattr(self._view, "lang", None)
+        if isinstance(lang, str) and lang:
+            return lang
+        return "EN"
+
+    def _anchor_text(self, href: str, pos) -> str:
+        """The visible text of the anchor under ``pos``, or ''."""
+        try:
+            cursor = self.cursorForPosition(pos)
+            position = cursor.position()
+            block = cursor.block()
+            layout = block.layout()
+            if layout is None:
+                return ""
+            parts = []
+            hit = False
+            for index in range(layout.lineCount()):
+                line = layout.lineAt(index)
+                for fragment in line.fragments():
+                    if fragment.charFormat().anchorHref() != href:
+                        continue
+                    parts.append(fragment.text())
+                    try:
+                        if fragment.contains(position):
+                            hit = True
+                    except Exception:
+                        pass
+            return "".join(parts) if hit else ""
+        except Exception:
+            return ""
+
+    def _update_copy_control(self, pos) -> None:
+        """Show the Copy control next to the link under the pointer."""
+        if not (self._view.smart_links_enabled
+                and self._view.smart_links_copy_hover):
+            self._hover_href = None
+            self._copy_button.setVisible(False)
+            return
+        try:
+            href = self.anchorAt(pos)
+        except Exception:
+            href = ""
+        if not href:
+            self._hover_href = None
+            self._copy_button.setVisible(False)
+            return
+        if href != self._hover_href:
+            self._hover_href = href
+            self._copy_button.setToolTip(tr("Copy Link", self._lang()))
+        viewport = self.viewport()
+        x = pos.x() + 8
+        y = pos.y() - 8
+        x = max(0, min(x, viewport.width() - self._copy_button.width()))
+        y = max(0, min(y, viewport.height() - self._copy_button.height()))
+        self._copy_button.move(x, y)
+        self._copy_button.raise_()
+        self._copy_button.setVisible(True)
+
+    def _copy_hovered_link(self) -> None:
+        """Copy the destination of the hovered link -- and nothing else.
+
+        The destination is the href exactly as the document carries it, so
+        the query string and the fragment survive the copy.  Nothing is
+        launched, the document is untouched and no undo entry appears: the
+        control is a child widget that only reads.
+        """
+        href = self._hover_href
+        if not href:
+            return
+        QApplication.clipboard().setText(href)
+        self._flash_copied()
+
+    def _flash_copied(self) -> None:
+        """Subtle confirmation -- a glyph swap, never a modal dialog."""
+        self._copy_button.setText("\u2713")
+        QTimer.singleShot(900, self._restore_copy_glyph)
+
+    def _restore_copy_glyph(self) -> None:
+        try:
+            if not sip.isdeleted(self):
+                self._copy_button.setText(COPY_LINK_GLYPH)
+        except Exception:
+            pass
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        self._update_copy_control(event.pos())
+
+    def leaveEvent(self, event):
+        self._hover_href = None
+        self._copy_button.setVisible(False)
+        super().leaveEvent(event)
 
     def fit_height(self) -> None:
         width = max(80, self.viewport().width())
@@ -341,6 +456,12 @@ class RichPreviewView(QScrollArea):
         self._read_only = True
         self._base_font = None
         self.external_media_enabled = False
+        #: T-1494: the Smart Links switches, mirrored from the one settings
+        #: authority so Reading honours the same choices as Source.
+        self.smart_links_enabled = True
+        self.smart_links_copy_hover = True
+        #: The UI language, for the translated label of the hover control.
+        self.lang = "EN"
         self._tokens: dict[str, str] = dict(rich_preview.DEFAULT_TOKENS)
         self._loader: RemoteImageLoader | None = None
         #: ONE cache for the life of the surface. Leaving Reading abandons the
@@ -542,7 +663,10 @@ class RichPreviewView(QScrollArea):
 
     # -- theme / policy --------------------------------------------------
     def configure(self, tokens: dict[str, str] | None = None,
-                  external_media: bool | None = None) -> None:
+                  external_media: bool | None = None,
+                  smart_links: bool | None = None,
+                  smart_links_copy: bool | None = None,
+                  lang: str | None = None) -> None:
         """Store presentation settings WITHOUT rebuilding the blocks.
 
         Callers that are about to hand over a fresh document use this so the
@@ -556,6 +680,12 @@ class RichPreviewView(QScrollArea):
             self._tokens = merged
         if external_media is not None:
             self.external_media_enabled = bool(external_media)
+        if smart_links is not None:
+            self.smart_links_enabled = bool(smart_links)
+        if smart_links_copy is not None:
+            self.smart_links_copy_hover = bool(smart_links_copy)
+        if lang:
+            self.lang = lang
 
     def set_theme_tokens(self, tokens: dict[str, str]) -> None:
         self.configure(tokens=tokens)
@@ -573,6 +703,10 @@ class RichPreviewView(QScrollArea):
                 if isinstance(block, _MediaBlock):
                     block.shutdown()
                 self._layout.removeWidget(block)
+                # hide() before unparenting: a VISIBLE child handed to
+                # setParent(None) becomes a top-level window and gets painted
+                # over the app until it is destroyed.
+                block.hide()
                 block.setParent(None)
                 block.deleteLater()
             except Exception:

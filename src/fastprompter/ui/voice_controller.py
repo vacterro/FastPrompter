@@ -47,13 +47,66 @@ class VoiceController(QObject):
         self._settings = self._store.load()
         self._closed = False
         self._last_target: tuple[str, str, float] | None = None
+        self._clock = clock
 
-        self._scheduler = CountdownScheduler(self._speak, clock=clock)
+        # W2-005: the configured threshold selection is AUTHORITATIVE. The
+        # scheduler used to be constructed with no thresholds at all, so it
+        # always planned the global defaults no matter which checkboxes the
+        # operator had ticked.
+        self._scheduler = self._build_scheduler()
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_INTERVAL_MS)
         self._timer.timeout.connect(self._on_tick)
         if self._settings["enabled"]:
             self._timer.start()
+
+    # -- scheduler construction -------------------------------------------------
+
+    @staticmethod
+    def _label_for(seconds: int) -> str:
+        for value, label in COUNTDOWN_THRESHOLDS:
+            if value == seconds:
+                return label
+        minutes = seconds // 60
+        if minutes >= 60 and minutes % 60 == 0:
+            return f"{minutes // 60} hours"
+        return f"{minutes} minutes"
+
+    def _selected_thresholds(self) -> tuple[tuple[int, str], ...]:
+        """The thresholds the operator actually selected, in schedule order.
+
+        An EMPTY selection is a deliberate "announce nothing" configuration and
+        must not be silently replaced by the defaults (W2-005). A selection
+        that names an unknown value keeps a sensible generated label so the
+        phrase is still composed rather than dropped.
+        """
+        configured = [s for s in self._settings["thresholds"] if isinstance(s, int) and s > 0]
+        if not configured:
+            return ()
+        ordered = sorted(set(configured), reverse=True)
+        return tuple((seconds, self._label_for(seconds)) for seconds in ordered)
+
+    def _build_scheduler(self) -> CountdownScheduler:
+        return CountdownScheduler(
+            self._speak,
+            thresholds=self._selected_thresholds() or (),
+            clock=self._clock,
+        )
+
+    def _reconfigure_scheduler(self) -> None:
+        """Rebuild the plan after a threshold change, preserving the target.
+
+        W2-005: the target identity and deadline survive a configuration
+        change, but the generation is bumped by ``set_target`` so already-fired
+        thresholds can never be replayed and stale callbacks are invalidated.
+        """
+        scheduler = self._build_scheduler()
+        previous = self._last_target
+        self._scheduler = scheduler
+        if previous is not None and self.is_enabled():
+            kind, target_id, due = previous
+            scheduler.set_target(kind, target_id, due)
+        self._last_target = previous
 
     # -- accessors -------------------------------------------------------------
 
@@ -83,6 +136,11 @@ class VoiceController(QObject):
             self._timer.stop()
             self._scheduler.invalidate()
             self._last_target = None
+        # W2-005: a threshold change must reach the ACTIVE scheduler. Before
+        # this, the checkboxes were persisted and then ignored for the life of
+        # the process -- the scheduler kept planning the defaults.
+        if "thresholds" in changes:
+            self._reconfigure_scheduler()
         self.settingsChanged.emit(self._settings)
         return self._settings
 
@@ -171,8 +229,15 @@ class VoiceController(QObject):
         return True, f"{len(fragments)} fragments"
 
     def thresholds(self) -> list[int]:
-        configured = self._settings["thresholds"]
-        return configured or [s for s, _ in COUNTDOWN_THRESHOLDS]
+        """The thresholds the scheduler is actually planning (W2-005).
+
+        Returns the persisted selection verbatim -- including the empty list,
+        which is the operator's explicit "no announcements" choice. It no
+        longer falls back to the global defaults, because that fallback was
+        precisely the bug: the UI said "nothing selected", the scheduler said
+        "all five".
+        """
+        return [s for s, _ in self._selected_thresholds()]
 
     # -- lifecycle -------------------------------------------------------------------
 

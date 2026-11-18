@@ -23,9 +23,11 @@ rejected in every form.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
+import uuid
 
 from fastprompter.core.logging import logger
 from fastprompter.utils.paths import get_data_dir, get_resource_path
@@ -58,6 +60,26 @@ _WAV_HEADER_WINDOW = 64
 
 
 PERSONAL_AUDIO_CONFIG_NAME = "personal_audio.json"
+
+#: PERF-003: monotonically increasing count of application-owned mutations to
+#: the sound library. ``sound_manager.discover_sound_files`` keys its recursive
+#: discovery cache on this, because a nested file added under ``sound_library/``
+#: does not change the ROOT directory's mtime -- the old mtime-only identity
+#: left the new file invisible for the life of the process. Bumped by every
+#: successful import/removal through this module, so an import anywhere in the
+#: tree converges to the correct inventory without a restart.
+_LIBRARY_GENERATION = 0
+
+
+def library_generation() -> int:
+    """Current sound-library mutation generation (PERF-003 cache identity)."""
+    return _LIBRARY_GENERATION
+
+
+def _bump_library_generation() -> None:
+    global _LIBRARY_GENERATION
+    _LIBRARY_GENERATION += 1
+
 
 
 def _personal_config_path() -> str:
@@ -189,11 +211,19 @@ def normalize_rel(rel: str) -> str | None:
 
     Rejects absolute paths, drive letters, UNC prefixes and any ``..``
     segment, before any filesystem access happens.
+
+    W2-008: the absolute/UNC test runs on the ORIGINAL spelling. An earlier
+    version stripped leading separators first, turning ``/tmp/x.wav`` into
+    ``tmp/x.wav`` and ``\\\\server\\share\\x.wav`` into ``server/share/x.wav``.
+    Containment still held, but an invalid reference was silently rewritten
+    into a different valid one instead of refused.
     """
     if not isinstance(rel, str) or not rel.strip():
         return None
-    candidate = rel.strip().replace("\\", "/").lstrip("/")
-    if not candidate or candidate.startswith("//"):
+    candidate = rel.strip().replace("\\", "/")
+    # A leading separator means an absolute path (POSIX root) or a UNC/device
+    # share (``//server/share``, ``//?/C:``). Never rewrite those to relative.
+    if candidate.startswith("/"):
         return None
     parts = [p for p in candidate.split("/") if p not in ("", ".")]
     if not parts or any(p == ".." for p in parts):
@@ -290,7 +320,39 @@ def resolve_sound_ref(
     enabled, a legacy bare ref may be overridden by an entry in its override
     table, and otherwise resolves personal-addon originals BEFORE the packaged
     synthetic assets. Explicit namespaces are never reinterpreted.
+
+    W2-005 (audit/18): the override table is USER-CONFIGURABLE, so it can
+    contain a cycle (``a.wav -> b.wav -> a.wav``) or a hostile chain. The old
+    code recursed without any visited set and raised RecursionError straight
+    through callers that expect a path or None, interrupting sound discovery,
+    configuration migration and playback preparation. Resolution is now a
+    bounded walk that fails closed.
     """
+    return _resolve_sound_ref(
+        ref,
+        builtin_root=builtin_root,
+        user_root=user_root,
+        addon_root_path=addon_root_path,
+        visited=frozenset(),
+        depth=0,
+    )
+
+
+#: A personal-audio override chain longer than this is not a real
+#: configuration; treating it as unresolved keeps the walk bounded even when
+#: every link is unique.
+MAX_OVERRIDE_DEPTH = 16
+
+
+def _resolve_sound_ref(
+    ref: str,
+    *,
+    builtin_root: str | None,
+    user_root: str | None,
+    addon_root_path: str | None,
+    visited: frozenset,
+    depth: int,
+) -> str | None:
     namespace, rel = split_ref(ref)
     if not rel:
         return None
@@ -302,12 +364,24 @@ def resolve_sound_ref(
     if namespace == "" and personal_audio_enabled():
         override = personal_overrides().get(rel)
         if override and override != ref:
-            resolved = resolve_sound_ref(
+            if rel in visited or depth >= MAX_OVERRIDE_DEPTH:
+                # A cycle or an implausibly long chain: unresolved, not an
+                # exception. The remaining lookup below still runs, so a file
+                # that genuinely exists under this bare name is found.
+                return _resolve_roots(ref, rel, namespace, builtin, user,
+                                      addon)
+            resolved = _resolve_sound_ref(
                 override, builtin_root=builtin_root, user_root=user_root,
-                addon_root_path=addon_root_path)
+                addon_root_path=addon_root_path,
+                visited=visited | {rel}, depth=depth + 1)
             if resolved:
                 return resolved
 
+    return _resolve_roots(ref, rel, namespace, builtin, user, addon)
+
+
+def _resolve_roots(ref: str, rel: str, namespace: str, builtin: str,
+                   user: str, addon: str) -> str | None:
     vault = os.path.join(builtin, VAULT_DIR_NAME) if builtin else ""
     if namespace == "builtin":
         roots = [builtin, vault]
@@ -465,8 +539,10 @@ def list_selectable_sounds(packaged: list[str] | None = None) -> list[str]:
     names += list_managed_sounds()
     names += list_addon_sounds()
     if personal_audio_enabled():
-        # dedupe by effective resolution: a packaged synthetic shadowed by a
-        # personal addon original is offered once, under the addon ref.
+        # Dedupe by effective resolution: a packaged synthetic shadowed by a
+        # personal addon original is offered once. The FIRST spelling wins, so
+        # a shipped bare path survives and keeps resolving to the operator's
+        # original -- the namespace in the label does not change the bytes.
         seen: set[str] = set()
         out: list[str] = []
         for ref in names:
@@ -478,6 +554,92 @@ def list_selectable_sounds(packaged: list[str] | None = None) -> list[str]:
             out.append(ref)
         return out
     return names
+
+
+def _atomic_no_replace_rename(source: str, target: str) -> None:
+    """Rename ``source`` onto ``target`` without any capability to overwrite.
+
+    ``os.replace`` is deliberately NOT used: it clobbers, which is the defect
+    this whole publication path exists to avoid. Two platform behaviours are
+    usable and nothing else is:
+
+    * Windows ``os.rename`` maps to ``MoveFileExW`` without
+      ``MOVEFILE_REPLACE_EXISTING`` -- atomic inside a volume (the caller keeps
+      both paths in one directory) and it raises ``FileExistsError`` when the
+      destination is present.
+    * POSIX ``rename`` silently replaces, so it can never be a no-clobber
+      publish; the POSIX path only reaches here after ``os.link`` already
+      failed, and no equivalent primitive remains.
+
+    Raises ``OSError`` when no atomic no-replace strategy exists. That is the
+    documented fail-closed outcome: an import that cannot be published safely
+    is reported as failed, never published unsafely.
+    """
+    if os.name == "nt":
+        os.rename(source, target)
+        return
+    raise OSError(
+        getattr(errno, "ENOTSUP", 95),
+        "no atomic no-replace publication is available on this filesystem")
+
+
+def _publish_without_clobber(staging: str, target: str) -> bool:
+    """Move ``staging`` to ``target`` only if ``target`` does not exist.
+
+    W2-001: the destination existence check and the publication used to be two
+    separate operations, so a file created by anyone else between them was
+    destroyed by ``os.replace``. This routine publishes through an operation
+    the filesystem itself makes atomic:
+
+    * ``os.link`` is the primary path -- a hardlink fails with
+      ``FileExistsError`` when the destination is present, which is an atomic
+      create-if-absent on NTFS and on every POSIX filesystem.
+    * when hardlinks are unavailable (FAT/exFAT), the bytes are first copied
+      into an operation-owned ``.part`` file in the DESTINATION directory,
+      fsynced, and only then published with an atomic no-replace rename.
+
+    The destination file is never opened for writing. Opening it directly and
+    streaming the copy into it (the previous fallback) made ``O_EXCL`` protect
+    the NAME but not the BYTES: a copy that died halfway left a truncated file
+    sitting at the final path, discoverable by the library as if the import
+    had succeeded. Nothing but a complete, fsynced payload is ever linked or
+    renamed into place.
+
+    Returns False when ``target`` already exists -- the caller must then retry
+    with a fresh suffix rather than overwrite.
+    """
+    try:
+        os.link(staging, target)
+        return True
+    except FileExistsError:
+        return False
+    except OSError:
+        pass
+
+    part = f"{target}.part.{os.getpid()}.{uuid.uuid4().hex}"
+    try:
+        with open(part, "xb") as out, open(staging, "rb") as src:
+            shutil.copyfileobj(src, out)
+            out.flush()
+            os.fsync(out.fileno())
+        _atomic_no_replace_rename(part, target)
+        return True
+    except FileExistsError:
+        return False
+    except OSError as exc:
+        try:
+            from fastprompter.core.logging import logger as _log
+            _log.debug("sound import: link/copy publish failed: %s", exc)
+        except Exception:
+            pass
+        raise
+    finally:
+        # The operation-owned partial file is the only thing this routine may
+        # delete; a failed copy therefore leaves NOTHING at `target`.
+        try:
+            os.remove(part)
+        except OSError:
+            pass
 
 
 def import_file(source_path: str, subdir: str = "imported") -> str:
@@ -495,27 +657,18 @@ def import_file(source_path: str, subdir: str = "imported") -> str:
     if rel is None:
         return ""
     root = ensure_managed_root()
-    target = contained_path(root, rel)
-    if target is None:
+    candidate = contained_path(root, rel)
+    if candidate is None:
         return ""
-    stem, ext = os.path.splitext(target)
+    parent, base = os.path.split(candidate)
+    stem, ext = os.path.splitext(base)
 
-    # SOUND-02: no-clobber destination allocation. The collision loop must
-    # never fall through to overwriting an existing file. 1000 attempts is a
-    # sanity ceiling, not a contract -- exhaustion is a hard failure.
-    counter = 1
-    while os.path.exists(target):
-        target = f"{stem}_{counter}{ext}"
-        counter += 1
-        if counter > 1000:
-            logger.error("sound import exhausted collision names for %r", source_path)
-            return ""
-
-    # SOUND-03: stage in a temp file and atomically publish. On failure the
-    # temp is removed; an existing destination is never touched by cleanup.
-    staging = f"{target}.tmp.{os.getpid()}.{counter}"
+    # SOUND-03/W2-001: stage ONCE under a per-operation unique identity. PID
+    # plus a collision counter was not unique -- two imports in one process
+    # selecting the same destination produced the same staging path.
+    staging = f"{candidate}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
     try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
+        os.makedirs(parent, exist_ok=True)
         shutil.copy2(source_path, staging)
     except OSError as exc:
         logger.warning("sound import failed for %r: %s", source_path, exc, exc_info=True)
@@ -524,16 +677,35 @@ def import_file(source_path: str, subdir: str = "imported") -> str:
         except OSError:
             pass
         return ""
+
+    # SOUND-02/W2-001: no-clobber publication. 1000 attempts is a sanity
+    # ceiling, not a contract -- exhaustion is a hard failure, never a
+    # fallthrough to overwriting.
     try:
-        os.replace(staging, target)
+        for counter in range(0, 1001):
+            # The collision suffix replaces the BASENAME, never the whole
+            # path: `f"{stem}_{counter}{ext}"` alone dropped `parent`, so a
+            # retry published into the process working directory and the
+            # returned ref then failed containment.
+            if counter == 0:
+                target = candidate
+            else:
+                target = os.path.join(parent, f"{stem}_{counter}{ext}")
+            if _publish_without_clobber(staging, target):
+                _bump_library_generation()
+                return make_user_ref(os.path.relpath(target, root))
+        logger.error("sound import exhausted collision names for %r", source_path)
+        return ""
     except OSError as exc:
         logger.warning("sound import publish failed for %r: %s", source_path, exc, exc_info=True)
+        return ""
+    finally:
+        # The staged source is kept until publication succeeds or fails
+        # outright; the destination is never removed by this cleanup.
         try:
             os.remove(staging)
         except OSError:
             pass
-        return ""
-    return make_user_ref(os.path.relpath(target, root))
 
 
 def remove_managed_sound(ref: str) -> bool:
@@ -548,6 +720,7 @@ def remove_managed_sound(ref: str) -> bool:
         os.remove(full)
     except OSError:
         return False
+    _bump_library_generation()
     # Invalidate voice pack caches when a managed voice fragment is removed.
     try:
         rel_norm = rel.replace("\\", "/")

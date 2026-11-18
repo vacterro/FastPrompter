@@ -203,6 +203,53 @@ EXPECTED_QUIET_CODES = frozenset({"no_refusal_recorded", "quota_unknown"})
 _KNOWN_DURATION_MIN = {FIVE_HOUR: 300, WEEKLY: 10080, MONTHLY: 43200}
 _ZERO_REMAINING = 0.5  # an exhausted window is 0%, not 0.0001%
 
+# A trusted reading that ROUNDS to 1% is treated as 0% for availability,
+# gating, alerts and display alike: one point is inside the reading's own
+# noise, and a vendor quoting 1% has practically nothing left. This is the
+# SAME policy SAITULS (Limits.Pct) and LIMISAW
+# (Model.NormalizeRemainingPercent) already implement, so the three products
+# agree on one effective-quota rule instead of three divergent ones. The raw
+# provider reading is never mutated: only the resolved copy handed to
+# renderers and gates is floored (see ``_floor_effective``).
+_EFFECTIVE_FLOOR_PCT = 1.0
+
+
+def effective_remaining_percent(window) -> float | None:
+    """Trusted remaining percent under the 1%-is-0% policy.
+
+    ``None`` (UNKNOWN / unavailable) stays ``None`` and is never invented as
+    zero. A numeric reading that rounds to <= 1% reports 0.
+    """
+    rem = getattr(window, "remaining_percent", None)
+    if not isinstance(rem, (int, float)):
+        return None
+    rem = float(rem)
+    return 0.0 if round(rem) <= _EFFECTIVE_FLOOR_PCT else rem
+
+
+def _floor_effective(windows) -> list:
+    """Zero every live reading that rounds to <= 1%, on the resolved copy.
+
+    A window that is unavailable, awaiting its reset, or assumed refilled is
+    passed through untouched: the policy speaks only for a trusted live
+    reading. Raw telemetry is preserved for diagnostics; this rewrites only
+    the derived window the renderers and gates consume.
+    """
+    out = []
+    for w in windows:
+        if not isinstance(w, UsageWindow) or not w.available \
+                or w.reset_pending or w.assumed_full:
+            out.append(w)
+            continue
+        rem = w.remaining_percent
+        if isinstance(rem, (int, float)) and 0.0 < float(rem) \
+                and round(float(rem)) <= _EFFECTIVE_FLOOR_PCT:
+            out.append(dataclasses.replace(w, remaining_percent=0.0,
+                                           used_percent=100.0))
+        else:
+            out.append(w)
+    return out
+
 
 def _duration_minutes(window: UsageWindow) -> int | None:
     if isinstance(window.duration_minutes, (int, float)) and window.duration_minutes > 0:
@@ -211,10 +258,9 @@ def _duration_minutes(window: UsageWindow) -> int | None:
 
 
 def exhausted_key(window: UsageWindow) -> bool:
-    """True when this window has no usable quota left."""
-    return (window.available
-            and isinstance(window.remaining_percent, (int, float))
-            and window.remaining_percent <= _ZERO_REMAINING)
+    """True when this window has no usable quota left (1% counts as 0)."""
+    eff = effective_remaining_percent(window)
+    return window.available and eff is not None and eff <= _ZERO_REMAINING
 
 
 def gate_windows(windows) -> list:
@@ -326,11 +372,17 @@ def order_windows(windows) -> list:
 
 
 def resolved_windows(windows, now: float | None = None) -> list:
-    """Expire old readings, gate short windows, then order each pool for reading."""
+    """Expire old readings, floor the 1% residue, gate short windows, order.
+
+    ``_floor_effective`` runs after resets (so a refilled/pending window is not
+    floored) and before gating (so a weekly quoted at 1% — now 0 — still blocks
+    its 5h sibling). Every renderer, gate, alert and sorter reads this one list,
+    so the effective-quota policy has exactly one implementation.
+    """
     if now is None:
         import time as _time
         now = _time.time()
-    return order_windows(gate_windows(apply_elapsed_resets(windows, now)))
+    return order_windows(gate_windows(_floor_effective(apply_elapsed_resets(windows, now))))
 
 
 # Reset-timer label colours, one per vendor, so the header countdown tells the
@@ -585,8 +637,30 @@ def window_usable(window) -> bool:
         return False
     if getattr(window, "gated_by", None):
         return False
-    rem = getattr(window, "remaining_percent", None)
-    return isinstance(rem, (int, float)) and rem > _ZERO_REMAINING
+    eff = effective_remaining_percent(window)
+    return eff is not None and eff > _ZERO_REMAINING
+
+
+def _window_has_capacity(window) -> bool:
+    """True when this window proves POSITIVE spendable capacity.
+
+    Used by the hide-exhausted filter, which asks "is anything left to spend?"
+    rather than "was anything spent before?". An untouched window at 100% is
+    therefore healthy, while 0% / 1%-floored, gated, reset-pending and unknown
+    windows prove no capacity. Exact AMOUNT quotas keep their vendor number
+    beside the percent, so their amount is the truth when it is present.
+    """
+    if not isinstance(window, UsageWindow) or not window.available:
+        return False
+    if window.reset_pending or getattr(window, "gated_by", None):
+        return False
+    if str(getattr(window, "unit", "") or "") in ("FB", "hrs", "Hours") \
+            or getattr(window, "key", "") == "daily_amount":
+        amount = getattr(window, "remaining_amount", None)
+        if isinstance(amount, (int, float)) and not isinstance(amount, bool):
+            return float(amount) > 0.0
+    eff = effective_remaining_percent(window)
+    return eff is not None and eff > _ZERO_REMAINING
 
 
 def spare_balance(snapshot) -> float:
@@ -631,10 +705,26 @@ def account_usable_now(snapshot, now: float | None = None) -> bool:
 
 
 def _pool_usable(windows) -> bool:
-    if any(w.reset_pending or not w.available for w in windows):
-        return False
-    five = [w for w in windows if base_key(w.key) == FIVE_HOUR]
-    return any(window_usable(w) for w in (five or windows))
+    """Does this quota pool prove immediately spendable capacity?
+
+    An ``available=False`` or reset-pending window carries NO number: in the
+    shared LIMISAW contract that is "no reading", never 0%, and it has no
+    gating authority. It therefore cannot veto its live siblings (CommandCode
+    publishes an unavailable monthly placeholder beside live 5h/weekly windows;
+    ProbeCommandCode.cs:214-216). A longer window proven EXHAUSTED already
+    gates its shorter siblings in :func:`resolved_windows`, and a shorter
+    window carrying an explicit ``gated_by`` dependency on an unreadable longer
+    one is rejected by :func:`window_usable` -- neither uncertainty is silently
+    upgraded to "healthy".
+
+    Where the provider reports a 5h window, that window governs immediate work;
+    a plan without a readable 5h window is judged by its real governing window
+    (weekly, monthly, or any other reported window) instead.
+    """
+    readable = [w for w in windows
+                if w.available and not getattr(w, "reset_pending", False)]
+    five = [w for w in readable if base_key(w.key) == FIVE_HOUR]
+    return any(window_usable(w) for w in (five or readable))
 
 
 # -- model-specific availability -------------------------------------------
@@ -751,16 +841,6 @@ def account_usable_for(snapshot, model_family: str | None = None,
                                       if pool_serves_family(w, model_family)])
 
 
-def pool_labels(windows) -> list[str]:
-    """Distinct non-empty pool labels, in provider order."""
-    out: list[str] = []
-    for w in windows:
-        label = str(getattr(w, "group_label", "") or "")
-        if label and label not in out:
-            out.append(label)
-    return out
-
-
 def reserve_advice(snapshot, now: float | None = None) -> list[str]:
     """Compact recommendations for reserves that outlive ordinary capacity.
 
@@ -819,70 +899,35 @@ def display_windows(windows, now: float | None = None) -> list:
 
 
 def account_has_usage(snapshot, now: float | None = None) -> bool:
-    """Return True if the snapshot reports usable capacity for hide-zero filtering.
+    """True when the snapshot proves POSITIVE spendable capacity.
 
-    A positive spendable wallet (:func:`spare_balance`) is independently
-    sufficient usable capacity — it never resets, so it survives both a spent
-    metered pool AND the elapsed-reset/reset_pending boundary where every
-    resolved window reports ``available=False`` (T-1254). It is therefore
-    evaluated BEFORE the resolved metered windows, keeping this predicate
-    consistent with :func:`account_usable_now` about wallet independence.
+    This is the predicate behind "Hide exhausted accounts (0% left)". It asks
+    whether ANY independent pool still has something to spend -- NOT whether
+    anything was spent before. An untouched account at 100% remaining is full
+    capacity, never empty; only a genuinely exhausted (or fully gated) account
+    has no capacity to hide (T-1462).
 
-    Returns False if:
-    - snapshot is missing or not in OK/STALE status (invalid statuses fail
-      closed — wallet metadata never bypasses ERROR / UNAVAILABLE /
-      AUTH_REQUIRED);
-    - there is no wallet and no available quota windows exist;
-    - there is no wallet and all windows have 0% usage (used <= 0 or
-      remaining >= 100, untouched);
-    - there is no wallet and all windows have 0% remaining (remaining <= 0
-      or used >= 100, 0% left / exhausted).
+    Preserved policy:
+    - OK/STALE only; ERROR / UNAVAILABLE / AUTH_REQUIRED fail closed, and their
+      wallet metadata never bypasses the status check;
+    - a positive wallet (:func:`spare_balance`) and Freebuff's exact
+      :func:`spendable_total` are independently sufficient;
+    - amount quotas (Freebuff Freebucks/hours) use the vendor's own amount;
+    - the trusted 1%-to-0% floor, elapsed-reset/reset_pending uncertainty and
+      longer-window gating are consumed from :func:`resolved_windows`, so this
+      predicate can never disagree with gauges, alerts or rendering;
+    - independent Antigravity pools are evaluated as a whole: one spent pool
+      does not cancel another pool's live capacity.
+    Unknown telemetry is never invented as a percentage -- it simply proves no
+    capacity here, leaving the diagnostic presentation to the shared filter.
     """
     if snapshot is None or getattr(snapshot, "status", None) not in (OK, STALE):
         return False
-    # 1. status validated.  2. wallet first: a positive spendable balance is
-    # capacity on its own, even when every window is reset_pending/unavailable
-    # while waiting for the provider's post-reset refresh.
     if spare_balance(snapshot) > 0.0:
         return True
     from fastprompter.core.usage_limits.freebuff_format import spendable_total
     fb_total = spendable_total(snapshot)
     if fb_total is not None:
         return fb_total > 0.0
-
-    # 3. ordinary metered-window evaluation.
-    windows = [w for w in resolved_windows(getattr(snapshot, "windows", ()) or (), now=now)
-               if isinstance(w, UsageWindow) and getattr(w, "available", False)]
-    if not windows:
-        return False
-
-    has_any_used = False
-    has_any_remaining = False
-
-    for w in windows:
-        if getattr(w, "unit", "") == "FB" or getattr(w, "key", "") == "daily_amount":
-            rem_amt = getattr(w, "remaining_amount", None)
-            if rem_amt is not None:
-                has_capacity = isinstance(rem_amt, (int, float)) and rem_amt > 0.0
-            else:
-                rem_pct = getattr(w, "remaining_percent", None)
-                has_capacity = isinstance(rem_pct, (int, float)) and rem_pct > 0.0
-            if has_capacity:
-                return True
-            continue
-
-        used = getattr(w, "used_percent", None)
-        rem = getattr(w, "remaining_percent", None)
-        if used is None and rem is not None:
-            used = 100.0 - float(rem)
-        if rem is None and used is not None:
-            rem = 100.0 - float(used)
-
-        if isinstance(used, (int, float)) and used > 0.0:
-            if not getattr(w, "assumed_full", False):
-                has_any_used = True
-        if isinstance(rem, (int, float)) and rem > 0.0:
-            has_any_remaining = True
-
-    return has_any_used and has_any_remaining
-
+    return any(_window_has_capacity(w) for w in resolved_windows(
+        getattr(snapshot, "windows", ()) or (), now=now))

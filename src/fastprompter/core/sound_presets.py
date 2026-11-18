@@ -357,6 +357,28 @@ def _safe_relpath(name: str) -> str | None:
     return normalized
 
 
+def _contained_destination(root: str, rel: str) -> str:
+    """The physical destination for ``rel`` under ``root``, proven contained.
+
+    W2-004 (audit/18): the publication path validated a NORMALIZED STRING
+    PREFIX (``target.startswith(imported_root + os.sep)``), which says nothing
+    about where the bytes land. A pre-existing symlink or Windows directory
+    junction inside ``imported/`` makes ``os.makedirs`` and ``os.replace``
+    follow the redirection, so a pack wrote outside the managed library and
+    reported the logical in-library path. Containment is decided on the
+    RESOLVED destination, and every existing ancestor is checked as well,
+    because ``realpath`` on a not-yet-created leaf cannot see a redirect.
+    """
+    base = os.path.realpath(root)
+    target = os.path.normpath(os.path.join(base, rel.replace("/", os.sep)))
+    resolved = os.path.realpath(target)
+    if resolved != base and not resolved.startswith(base + os.sep):
+        raise ValueError(
+            f"pack member escapes the library through a redirected "
+            f"directory: {rel!r}")
+    return target
+
+
 def _definition_bytes(preset: dict) -> bytes:
     payload = copy.deepcopy(preset)
     payload["schema_version"] = PRESET_SCHEMA_VERSION
@@ -382,7 +404,10 @@ def export_preset_pack(preset: dict, sounds_dir: str) -> tuple[bytes, list[str]]
         rel = (entry or {}).get("file") or ""
         if not rel or rel in payloads or rel in missing:
             continue
-        src = os.path.join(sounds_dir, rel)
+        src = sound_library.resolve_sound_ref(rel, builtin_root=sounds_dir)
+        if not src:
+            missing.append(rel)
+            continue
         try:
             with open(src, "rb") as handle:
                 data = handle.read()
@@ -499,17 +524,18 @@ def _publish_pack_sounds(pack_sounds: dict[str, bytes], sounds_dir: str,
         # Collision-free publication: an existing asset is never overwritten.
         for rel, _data in checked:
             target_rel = rel
-            target = os.path.normpath(os.path.join(imported_root, target_rel))
+            target = _contained_destination(imported_root, target_rel)
             counter = 1
             while os.path.exists(target):
                 stem, ext = os.path.splitext(rel)
                 target_rel = f"{stem}__import{counter}{ext}"
-                target = os.path.normpath(
-                    os.path.join(imported_root, target_rel))
+                target = _contained_destination(imported_root, target_rel)
                 counter += 1
-            if not target.startswith(imported_root + os.sep):
-                raise ValueError(f"pack member escapes the library: {rel!r}")
             os.makedirs(os.path.dirname(target), exist_ok=True)
+            # Revalidate AFTER creating the parents: a directory that did not
+            # exist during the first check could have appeared (or been
+            # replaced by a redirect) in between.
+            _contained_destination(imported_root, target_rel)
             os.replace(os.path.join(staging, rel.replace("/", os.sep)), target)
             published.append(target)
             final_refs[rel] = os.path.relpath(target, library_root).replace(

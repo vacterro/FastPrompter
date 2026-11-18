@@ -99,17 +99,21 @@ class IntervalPreviewController:
         # that started before the debounce window expires cannot overlap the
         # newer intent.
         self._restart_timer(debounce_ms, ref, volume, source)
-        self._pending = _Pending(ref, volume, source)
 
     def _restart_timer(self, delay_ms: int, ref: str, volume: float,
                        source: str) -> None:
         if self._timer is not None:
             self._timer.stop()
+            self._timer = None
         if delay_ms <= 0:
+            # Nothing is queued, so nothing may be left looking queued: a
+            # caller that inspects `_pending` after an immediate preview must
+            # see that there is no timer waiting to fire.
+            self._pending = None
             self._fire(ref, volume, source)
         else:
-            self._timer = self._timer_factory(delay_ms, self._debounce_fired)
             self._pending = _Pending(ref, volume, source)
+            self._timer = self._timer_factory(delay_ms, self._debounce_fired)
 
     def _debounce_fired(self) -> None:
         p = self._pending

@@ -25,10 +25,13 @@ Semantics (documented once, here):
 
 from __future__ import annotations
 
+import datetime
 import fnmatch
 import hashlib
 import os
 import re
+import shutil
+import uuid
 import zlib
 
 # Files with these extensions are treated as text by default ("all normal
@@ -350,6 +353,25 @@ def read_text_file(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
 # between that read and the replace, because "absent" is a precondition too.
 MISSING_ON_DISK = ("<missing>", 0, 0)
 
+# CORE-001: a destination that EXISTS but cannot be read is a different fact
+# from one that is absent, and only the second is permission to create. The
+# former ``except OSError: return MISSING_ON_DISK`` collapsed both, so an
+# ACL-denied or locked destination satisfied the "approved as missing"
+# precondition and the unconditional final gate then replaced bytes that had
+# never been compared against it. UNREADABLE compares unequal to every
+# identity token, including a second UNREADABLE, so both gates refuse.
+UNREADABLE = ("<unreadable>", -1, -1)
+
+
+def is_unreadable_identity(token) -> bool:
+    """True when ``token`` is the CORE-001 unreadable-destination marker.
+
+    Callers classify a refusal with this instead of ``token is not None``: an
+    unreadable target is a write error against an unsafe path, never an
+    external edit to hand to conflict resolution.
+    """
+    return token == UNREADABLE
+
 
 def raw_identity(data: bytes):
     """The content identity of the EXACT bytes a reader consumed.
@@ -399,6 +421,50 @@ def read_text_file_with_identity(path: str, max_bytes: int = DEFAULT_MAX_BYTES):
             raw_identity(data))
 
 
+def _conflict_artifact_path(path: str) -> str | None:
+    """A durable sibling path that will hold the bytes an external edit wrote.
+
+    CORE-001: when publication cannot prove exclusive ownership across the
+    final rename, the revision that was on disk must not evaporate. The copy
+    goes next to the destination (same volume, so a hardlink or a fast copy is
+    possible) under a dot-name that the scanner's default exclude list ignores.
+    """
+    try:
+        directory = os.path.dirname(os.path.abspath(path))
+        base = os.path.basename(path)
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        token = uuid.uuid4().hex[:8]
+        return os.path.join(directory, f".{base}.conflict-{stamp}-{token}.bak")
+    except Exception:
+        return None
+
+
+def _preserve_conflict_copy(path: str) -> str | None:
+    """Copy the CURRENT destination bytes to a durable artifact; return it.
+
+    Returns None when nothing could be preserved. The write is best-effort by
+    design: failing to make the safety copy must never abort the publication
+    decision itself, but the caller must not claim the conflict was preserved
+    unless this returned a path.
+    """
+    dest = _conflict_artifact_path(path)
+    if dest is None:
+        return None
+    try:
+        with open(path, "rb") as src, open(dest, "wb") as out:
+            shutil.copyfileobj(src, out)
+            out.flush()
+            os.fsync(out.fileno())
+        return dest
+    except OSError:
+        try:
+            if os.path.exists(dest):
+                os.remove(dest)
+        except OSError:
+            pass
+        return None
+
+
 def compare_and_publish_text(path: str, text: str, expected_identity,
                              eol: str = "\n", write_bom: bool = False,
                              before_publish=None):
@@ -419,26 +485,69 @@ def compare_and_publish_text(path: str, text: str, expected_identity,
     Returns ``(written_text, None)`` on success and ``(None, conflict_id)``
     when the destination no longer matches — the caller reports a conflict
     carrying the CURRENT disk content instead of overwriting it.
+    ``conflict_id is UNREADABLE`` is the separate fact that the destination
+    exists but could not be read: a refusal too, but not a resolvable
+    conflict, so callers can classify it as an unsafe target.
+
+    CORE-001: revalidation is now UNCONDITIONAL and runs as late as possible,
+    with no Python-level work between the check and the rename. A filesystem
+    without a compare-and-swap rename cannot make check-then-replace atomic, and
+    this function does not claim otherwise. What it does guarantee: every
+    refusal hands back a durable copy of the revision that defeated the gate
+    (``_preserve_conflict_copy``), so a lost update can never be a *silent*
+    lost update — the bytes survive in a ``.<name>.conflict-*.bak`` sibling.
     """
     def _current():
+        # CORE-001: three distinct observations, never conflated. ABSENT is
+        # established only by FileNotFoundError (or an equivalent missing-path
+        # error), which is the sole precondition that authorises a create.
+        # Every other OSError is UNREADABLE and fails the gate closed.
         try:
             with open(path, "rb") as fh:
                 data = fh.read()
-        except OSError:
+        except FileNotFoundError:
             return MISSING_ON_DISK
+        except NotADirectoryError:
+            # A path component is not a directory: the destination cannot be a
+            # regular file, so it is not recreatable either.
+            return UNREADABLE
+        except OSError:
+            return UNREADABLE
         return raw_identity(data)
 
+    # A destination that is (or became) a directory cannot be published
+    # to: that is a write failure, not an external edit, and must never be
+    # reported as a sync conflict carrying stale on-disk bytes.
+    if os.path.isdir(path):
+        return None, None
     accepted = _current()
     if accepted != expected_identity:
+        # CORE-001: a destination we cannot read has no readable revision to
+        # preserve and is refused as an unsafe target, not reported as an
+        # external edit the caller could resolve.
+        if not is_unreadable_identity(accepted):
+            _preserve_conflict_copy(path)
         return None, accepted
     if before_publish is not None:
         before_publish()
-        # The window just elapsed: whatever landed must not be destroyed.
-        if _current() != expected_identity:
-            return None, _current()
+    # CORE-001: the final gate runs whether or not a hook was supplied, and it
+    # is the last statement before the write, so the residual window is the
+    # single rename syscall inside write_text_file rather than a stretch of
+    # Python work the caller cannot see. A destination that became unreadable
+    # between the two gates is refused here, exactly like one that changed.
+    if os.path.isdir(path):
+        return None, None
+    final = _current()
+    if final != expected_identity:
+        if not is_unreadable_identity(final):
+            _preserve_conflict_copy(path)
+        return None, final
     written = write_text_file(path, text, eol, write_bom=write_bom)
     if written is None:
-        return None, _current()
+        # Write failure (OSError): not a conflict. Returning no conflict id
+        # lets callers report a write error instead of clobbering the silo
+        # with stale on-disk text.
+        return None, None
     return written, None
 
 
@@ -463,11 +572,16 @@ def write_text_file(path: str, text: str, eol: str = "\n",
             fh.write(text.encode("utf-8"))
         os.replace(tmp, path)
         return text
-    except OSError:
+    except OSError as exc:
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)
         except OSError:
+            pass
+        try:
+            from fastprompter.core.logging import logger
+            logger.warning("write_text_file failed for %s: %s", path, exc)
+        except Exception:
             pass
         return None
 

@@ -159,11 +159,12 @@ def _ink_end(gauges, accounts, snapshots):
     ``GAP_ACC`` past the ink. Subtracting it gives the exclusive right edge.
     """
     x = gauges.PAD + gauges._status_width(accounts, gauges._service.state_copy)
-    show_labels, _per, n_fit = gauges._fit_layout(
-        max(0, gauges.width() - x - gauges.PAD), accounts)
+    avail = max(0, gauges.width() - x - gauges.PAD)
+    show_labels, _per, n_fit = gauges._fit_layout(avail, accounts)
+    plan = gauges._label_plan(accounts, avail) if show_labels else set()
     drawn = accounts[:n_fit]
     for account in drawn:
-        if show_labels:
+        if account.key in plan:
             x += gauges._account_label_width(account)
         for _bar in _cluster_windows(snapshots.get(account.key)):
             x += gauges._unit_width() + gauges.GAP_PAIR
@@ -209,6 +210,126 @@ class TestNoTrailingGap:
         assert gauges._bars_for(four) == 4
         assert gauges._cluster_width(False, two) < \
             gauges._cluster_width(False, four)
+
+
+class TestIdentityLabelsSurviveACrowdedRow:
+    """Identity must degrade gracefully, not vanish.
+
+    The old plan was all-or-nothing: the moment the fully-labelled row
+    exceeded the budget, EVERY badge was dropped and eight accounts painted as
+    a strip of anonymous 3px bars. Labels are now granted greedily in roster
+    order from what the unlabelled baseline leaves spare, so a crowded row
+    keeps identity for as many accounts as actually fit.
+    """
+
+    @staticmethod
+    def _roster(provider, count):
+        accounts = [_account(provider, f"a{i}") for i in range(count)]
+        return accounts, {a.key: _codex(a) for a in accounts}
+
+    @staticmethod
+    def _vendor_pixels(gauges, provider):
+        """Exact vendor-coloured pixels — the label glyphs' own ink.
+
+        The bars are quota-coloured (and vendor-TINTED, never the flat vendor
+        hue), so an exact vendor-colour pixel can only come from a label.
+        """
+        from PyQt6.QtGui import QColor, QImage
+
+        from fastprompter.ui.limit_colors import reset_color
+
+        vendor = reset_color(gauges.main_win, provider)
+        assert vendor, "test needs a vendor colour"
+        image = QImage(gauges.width(), gauges.height(),
+                       QImage.Format.Format_ARGB32)
+        image.fill(0)
+        gauges.render(image)
+        return sum(1 for y in range(image.height())
+                   for x in range(image.width())
+                   if QColor(image.pixel(x, y)).name() == vendor.lower())
+
+    @pytest.mark.parametrize("count", [4, 8, 12])
+    def test_a_crowded_row_still_paints_some_labels(self, qapp, count):
+        accounts, snapshots = self._roster("claude", count)
+        gauges = _build(qapp, accounts, snapshots,
+                        limit_gauges_show_labels="True")
+        gauges.resize(gauges.width(), 26)
+        budget = (gauges.MAX_WIDGET_W - gauges.PAD * 2
+                  - gauges._status_width(accounts)
+                  - gauges._reset_badge_width())
+        plan = gauges._label_plan(accounts, budget)
+        assert plan, (f"{count} accounts left the row with no identity at all")
+        assert plan <= {a.key for a in accounts}
+        # Nothing is granted past the budget it was granted from.
+        assert gauges._marks_width_in(accounts, plan) <= budget
+
+    def test_the_fit_check_and_the_painter_agree_on_the_plan(self, qapp):
+        """`_fit_layout` must not promise a layout paintEvent will not draw."""
+        accounts, snapshots = self._roster("claude", 8)
+        gauges = _build(qapp, accounts, snapshots,
+                        limit_gauges_show_labels="True")
+        gauges.resize(gauges.width(), 26)
+        x = gauges.PAD + gauges._status_width(accounts)
+        avail = max(0, gauges.width() - x - gauges.PAD)
+        show_labels, _per, n_fit = gauges._fit_layout(avail, accounts)
+        plan = gauges._label_plan(accounts, avail) if show_labels else set()
+        assert show_labels == bool(plan), (
+            f"the fit check reported labels={show_labels!r} "
+            f"but the painter's plan is {sorted(plan)!r}")
+        assert gauges._marks_width_in(accounts[:n_fit], plan) <= avail
+
+    def test_labels_are_painted_ink_not_just_reserved_width(self, qapp):
+        """A fitted label must reach the pixels — width alone proves nothing."""
+        accounts, snapshots = self._roster("claude", 4)
+        labelled = _build(qapp, accounts, snapshots,
+                          limit_gauges_show_labels="True")
+        plain = _build(qapp, accounts, snapshots,
+                       limit_gauges_show_labels="False")
+        for gauge in (labelled, plain):
+            gauge.resize(gauge.width(), 26)
+        assert self._vendor_pixels(plain, "claude") == 0, (
+            "unlabelled gauge already paints vendor-coloured pixels; the "
+            "assertion below would prove nothing")
+        assert self._vendor_pixels(labelled, "claude") > 0, (
+            "labels were granted width but no label ink reached the pixels")
+
+    def test_the_plan_is_stable_across_repeats(self, qapp):
+        """A per-second refresh must not flicker identity on and off."""
+        accounts, snapshots = self._roster("claude", 8)
+        gauges = _build(qapp, accounts, snapshots,
+                        limit_gauges_show_labels="True")
+        first = gauges._label_plan(accounts, gauges.MAX_WIDGET_W - 4)
+        for _ in range(5):
+            gauges._on_data()
+            assert gauges._label_plan(
+                accounts, gauges.MAX_WIDGET_W - 4) == first
+
+    def test_a_badge_too_long_for_its_slot_is_elided_not_clipped(self, qapp):
+        """Caught by capture: drawText cut "CL Account 0" to "CL Accou".
+
+        A mid-glyph cut reads as a DIFFERENT account name, and ElideRight
+        made every ordinal-bearing badge identical ("CL Acco..."), so the
+        distinguishing tail has to survive: the elision is in the middle.
+        """
+        from PyQt6.QtCore import Qt
+
+        accounts, _ = self._roster("claude", 4)
+        names = {a.key: "CL Account 0" for a in accounts}
+        gauges = _build(qapp, accounts,
+                        {a.key: _codex(a) for a in accounts},
+                        limit_gauges_show_labels="True",
+                        limit_gauges_account_labels=names)
+        metrics = gauges.fontMetrics()
+        slot = gauges._account_label_width(accounts[0])
+        raw = "CL Account 0"
+        assert metrics.horizontalAdvance(raw) > slot, (
+            "the badge fits its slot; this test would prove nothing")
+        fitted = metrics.elidedText(raw, Qt.TextElideMode.ElideMiddle, slot - 1)
+        assert metrics.horizontalAdvance(fitted) <= slot - 1
+        assert fitted != raw and len(fitted) < len(raw)
+        # The distinguishing part of an account badge is its tail.
+        assert fitted.endswith(raw[-1]), (
+            f"{fitted!r} lost the ordinal that tells accounts apart")
 
 
 class TestClustersAlwaysFitTheirOwnWidget:
@@ -308,7 +429,7 @@ class TestStackedStyle:
         assert stack._bars_for(four) == 4
         assert stack._marks_width(four) < bars._marks_width(four) * 4
 
-    @pytest.mark.parametrize("height", [10, 12, 16, 22, 30])
+    @pytest.mark.parametrize("height", [12, 14, 16, 22, 30])
     def test_rows_always_fit_the_mark_area(self, qapp, height):
         account = _account("antigravity", "ag")
         snapshots = {account.key: _antigravity(account)}

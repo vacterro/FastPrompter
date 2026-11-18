@@ -70,6 +70,11 @@ def test_close_save_contract():
             [sys.executable, "-c", _SCRIPT],
             env=env, capture_output=True, text=True,
             cwd=os.path.dirname(__file__),
+            # BOUNDED: an unbounded child that hangs would block communicate()
+            # until the pytest-timeout thread method kills the whole process
+            # and the suite dies without a summary.  A timeout turns that into
+            # one bounded test failure.
+            timeout=120,
         )
         last = proc
         if proc.returncode == 0 and "OK" in proc.stdout:

@@ -265,6 +265,7 @@ EXCLUDED_KEYS: frozenset[str] = frozenset((
     "recent_files", "recent_replace_terms", "recent_search_terms",
     "silo_bundle_defaults", "silo_bundle_history", "silo_bundle_meta_retry",
     "silo_category", "silo_children", "silo_children_all", "silo_collapsed",
+    "silo_chest_order",
     "silo_collapsed_all", "silo_colors", "silo_colors_all", "silo_done_marks",
     "silo_folders", "silo_folders_all", "silo_folders_order",
     "silo_gap_names", "silo_gap_names_all", "silo_gaps", "silo_gaps_all",

@@ -295,20 +295,6 @@ def _start_app_server(codex_home: str, label: str,
         raise
 
 
-def _handshake_and_read_rates(session: AppServerSession) -> dict:
-    init = session.call("initialize", {
-        "clientInfo": {"name": "fastprompter", "version": "1.0.0"},
-        "capabilities": None,
-    }, timeout=RESPONSE_WINDOW_S)
-    if "error" in init:
-        raise JsonRpcError(f"initialize error: {init['error']}")
-    session.notify("initialized")
-    rl = session.call("account/rateLimits/read", timeout=RESPONSE_WINDOW_S)
-    if "error" in rl:
-        raise JsonRpcError(f"rateLimits error: {rl['error']}")
-    return rl.get("result") or {}
-
-
 KNOWN_POOL_LABELS = {
     "codex": "Codex",
     "luna": "Luna",
@@ -703,4 +689,3 @@ def consume_codex_reset(codex_home: str, credit_id: str | None = None,
     finally:
         if session is not None:
             session.close()
-

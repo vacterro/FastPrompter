@@ -160,11 +160,17 @@ def test_mid_export_failure_leaves_no_truncated_targets(tmp_path, qapp, monkeypa
     dlg.export_silos()
 
     got = _files(tmp_path)
-    assert got[os.path.join("alpha", "Silo_1.txt")] == "first text", \
-        "complete replace before the failure is fine"
+    # SRC-135 W2-003 raised this from per-file to generation atomicity. The old
+    # contract allowed Silo_1 to be published before Silo_3 failed, which left a
+    # directory that was neither the previous export nor the requested one: two
+    # silos new, the rest old, and no record of which. A failed batch now rolls
+    # every touched destination back, so the whole directory is what it was.
+    assert got[os.path.join("alpha", "Silo_1.txt")] == "ORIGINAL-Silo_1.txt", \
+        "a failed batch restores the files it had already republished"
     assert got[os.path.join("alpha", "Silo_3.txt")] == "ORIGINAL-Silo_3.txt", \
         "failed publish must leave the original bytes intact"
     assert not [n for n in got if ".tmp" in n], "orphan temp must be cleaned up"
+    assert not [n for n in got if "exportbak" in n], "orphan backup must be cleaned up"
     assert "Archive_Silo_1.txt" not in got, \
         "files after the failure point must not be published"
     assert "beta" not in got

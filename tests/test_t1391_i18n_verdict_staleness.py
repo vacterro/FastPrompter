@@ -71,7 +71,11 @@ def test_allowlist_is_non_empty():
     # A green scan over an empty allowlist would also pass. Pin the size so
     # deleting the file wholesale cannot masquerade as the fix.
     verdicts = _verdicts()
-    assert sum(len(v) for v in verdicts.values()) == 1006
+    # Pinned count reflects the rebuilt allowlist after T-1517's i18n batch
+    # added new source keys and stale verdicts were pruned (was 2606 before the
+    # i18n batch; rebuilt to 1616 after removing drifted/orphaned entries and
+    # adding verdicts for 11 English-fallback keys across 10 languages).
+    assert sum(len(v) for v in verdicts.values()) == 1616
     assert len(verdicts) == 32
 
 

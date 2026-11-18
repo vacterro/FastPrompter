@@ -55,6 +55,53 @@ def ordered_accounts(accounts, data: dict | None = None):
         key=lambda a: (position.get(a.key, tail),))
 
 
+def visible_quota_accounts(data: dict, service, hide_unusable: bool):
+    """The ONE account-visibility policy shared by the gauges and the overview.
+
+    CORE-004: both views carried their own copy of this loop, so the two could
+    drift apart. The rules, in order:
+
+    * an explicitly hidden key is excluded;
+    * an account whose snapshot is missing or not OK/STALE (unprobed, ERROR,
+      UNAVAILABLE, AUTH_REQUIRED) stays VISIBLE under both filters -- it is the
+      diagnostic surface that keeps an auth failure discoverable instead of
+      silently concealed (T-1243, and CORE-004's own repair clause 4). Neither
+      filter applies: the filters answer "does this account have quota", and an
+      unprobed account has no answer. Its state is reported separately by the
+      gauge's "!" marker and each view's per-account note row;
+    * hide-zero drops an account with no usable capacity
+      (:func:`account_has_usage`, which also keeps a positive wallet);
+    * available-only drops an account that cannot work right now
+      (:func:`account_usable_now`).
+
+    The result is returned in the user's draw order.
+    """
+    from fastprompter.core.usage_limits.model import (
+        OK,
+        STALE,
+        account_has_usage,
+        account_usable_now,
+    )
+
+    hidden = hidden_account_keys(data)
+    hide_zero = str(data.get("limit_gauges_hide_zero_usage", "False")) == "True"
+    snap = service.state_copy
+    shown = []
+    for a in snap.accounts:
+        if a.key in hidden:
+            continue
+        shot = snap.snapshots.get(a.key)
+        if shot is None or shot.status not in (OK, STALE):
+            shown.append(a)
+            continue
+        if hide_zero and not account_has_usage(shot):
+            continue
+        if hide_unusable and not account_usable_now(shot):
+            continue
+        shown.append(a)
+    return ordered_accounts(shown, data)
+
+
 def _setting_map(data: dict, key: str) -> dict[str, str]:
     raw = data.get(key, {})
     if not isinstance(raw, dict):
@@ -81,7 +128,14 @@ def default_account_label(account) -> str:
         suffix = account.display_name.removeprefix("Claude").strip()
         return f"CL{suffix}" if suffix else "CL"
     if account.provider_id == "antigravity":
-        return "AG"
+        # Same rule as Claude and Codex below, and for the same reason: a
+        # registry badge wins above, and a locally discovered account derives
+        # its ordinal from its display name. A static "AG" was the one badge
+        # that matched no registry entry — the control plane issues AG1, AG2,
+        # AG3 — so the first Antigravity slot drew as "AG" while the second and
+        # third drew as AG2 and AG3.
+        suffix = account.display_name.removeprefix("Antigravity").strip()
+        return f"AG{suffix}" if suffix else "AG"
     if account.provider_id == "zcode":
         return "ZC"
     if account.provider_id == "codex":
@@ -145,6 +199,10 @@ class LimitAccountSelector(QWidget):
             item = self._grid.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # hide() before unparenting: a VISIBLE child handed to
+                # setParent(None) becomes a top-level window, and the show
+                # event it already has queued then paints it over the app.
+                widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
         if not accounts:

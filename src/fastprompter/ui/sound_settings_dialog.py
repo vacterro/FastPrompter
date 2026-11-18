@@ -1045,11 +1045,11 @@ class SoundSettingsDialog(QDialog):
         list), then the managed imports, then the user's addon folder. Every
         site that refreshes ``_available`` goes through here, so the three
         roots can never drift apart between the first build, a library rescan
-        and a favourite toggle.
+        and a favourite toggle. The same composition backs the timer and the
+        AI-limit pickers, so an imported sound is selectable everywhere.
         """
-        names = list(self._sound_manager.get_available_sounds())
-        names += sound_library.list_managed_sounds()
-        names += sound_library.list_addon_sounds()
+        names = sound_library.list_selectable_sounds(
+            self._sound_manager.get_available_sounds())
         return self._dedupe_available(names)
 
     def _rebuild_sound_model(self):
@@ -1415,11 +1415,22 @@ class SoundSettingsDialog(QDialog):
         ) != QMessageBox.StandardButton.Yes:
             return
         self._ensure_all_events_built()
-        self._data["sound_events"] = {
-            event: {"file": default, "enabled": "True", "volume": "",
-                    "gain_db": "0.0"}
-            for event, default in _DEFAULT_SOUND_MAP.items()
-        }
+        try:
+            from fastprompter.core.default_profile import DEFAULT_PROFILE
+            _defaults = DEFAULT_PROFILE.get("sound_events")
+        except Exception:
+            _defaults = None
+        if isinstance(_defaults, dict) and _defaults:
+            self._data["sound_events"] = {
+                event: dict(cfg) for event, cfg in _defaults.items()
+                if isinstance(cfg, dict)
+            }
+        else:
+            self._data["sound_events"] = {
+                event: {"file": default, "enabled": "True", "volume": "",
+                        "gain_db": "0.0"}
+                for event, default in _DEFAULT_SOUND_MAP.items()
+            }
         self._load_settings()
         self._touch()
 

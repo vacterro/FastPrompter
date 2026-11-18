@@ -1,4 +1,5 @@
 import os
+import shutil
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -207,24 +208,76 @@ class BackupDialog(QDialog):
             # export never truncates an existing file (its old bytes survive)
             # and a partially written temp is discarded — the export is never
             # left half-published with truncated targets.
+            #
+            # W2-003: per-file atomicity was not EXPORT atomicity. If the
+            # third of ten files failed, the first two stayed new and the rest
+            # stayed old -- a mixed generation that is neither the previous
+            # export nor the requested one. The publish is now a rollback
+            # transaction: an existing destination is SNAPSHOT-COPIED before it
+            # is replaced, and any failure restores every file the loop had
+            # already republished, so the directory is exactly as it was found.
+            #
+            # The snapshot is a copy, not a rename. A rename would take the old
+            # bytes out of the destination, so a failure right after the rename
+            # (or a failing restore) would leave the user with no file at all.
+            # Copying keeps the original in place until the atomic replace
+            # supersedes it, which means an unpublished destination needs no
+            # restoration in the first place.
             created_dirs = set()
-            for dst, text in plan:
-                cat_dir = os.path.dirname(dst)
-                if cat_dir not in created_dirs:
-                    os.makedirs(cat_dir, exist_ok=True)
-                    created_dirs.add(cat_dir)
-                from fastprompter.utils.path_safety import unique_temp_path
-                tmp = unique_temp_path(dst, "export")
-                try:
-                    with open(tmp, 'w', encoding='utf-8') as f:
-                        f.write(text)
-                    os.replace(tmp, dst)
-                except OSError:
+            published: list[str] = []          # destinations written this run
+            backups: dict[str, str] = {}       # dest -> saved copy of old bytes
+            try:
+                for dst, text in plan:
+                    cat_dir = os.path.dirname(dst)
+                    if cat_dir not in created_dirs:
+                        os.makedirs(cat_dir, exist_ok=True)
+                        created_dirs.add(cat_dir)
+                    from fastprompter.utils.path_safety import unique_temp_path
+                    tmp = unique_temp_path(dst, "export")
                     try:
-                        os.remove(tmp)
+                        with open(tmp, 'w', encoding='utf-8') as f:
+                            f.write(text)
+                        if os.path.exists(dst) and dst not in backups:
+                            saved = unique_temp_path(dst, "exportbak")
+                            shutil.copy2(dst, saved)
+                            backups[dst] = saved
+                        os.replace(tmp, dst)
+                        published.append(dst)
+                    except OSError:
+                        try:
+                            os.remove(tmp)
+                        except OSError:
+                            pass
+                        raise
+            except BaseException:
+                # Roll back in reverse order so a destination restored from a
+                # backup is the last thing that happened to it.
+                for dst in reversed(published):
+                    saved = backups.get(dst)
+                    try:
+                        if saved is not None:
+                            os.replace(saved, dst)
+                            backups.pop(dst, None)
+                        else:
+                            os.remove(dst)
+                    except OSError:
+                        # Keep the snapshot: it is the only copy of the old
+                        # bytes for a destination we failed to restore.
+                        pass
+                for dst, saved in list(backups.items()):
+                    try:
+                        os.remove(saved)
                     except OSError:
                         pass
-                    raise
+                    backups.pop(dst, None)
+                raise
+            # Success: the snapshots are no longer needed.
+            for saved in backups.values():
+                try:
+                    os.remove(saved)
+                except OSError:
+                    pass
+            backups.clear()
             QMessageBox.information(self, tr("Success", self.lang), tr("Silos exported to:\n{}", self.lang).format(path))
         except Exception as e:
             QMessageBox.critical(self, tr("Error", self.lang), tr("Failed to export:\n{}", self.lang).format(e))

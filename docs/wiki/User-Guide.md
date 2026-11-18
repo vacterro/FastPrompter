@@ -62,7 +62,7 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 
 - Shift+click — range select
 - Ctrl+click — toggle selection
-- Right-click selection — batch Save, Delete, Clear (deletes high-index-first to avoid slot shift issues)
+- Right-click selection — batch Save, Delete, Clear (deletes high-index-first to avoid slot shift issues; single sound + deferred UI rebuild prevents Not-Responding freezes on Windows)
 
 ### 7. Snippet Macros (F1-F10)
 
@@ -78,6 +78,8 @@ User-defined spacer bars in silo list. Help organise silos into groups. Ctrl+dra
 
 **Features:**
 - Live syntax highlighting — headings, bold, italic, links, code fences, checkboxes, blockquotes
+- Huge document mode (>=500k chars / >=2000 blocks): structural-only highlighting (headings, lists, blockquotes); inline markup skipped for responsiveness; folds restore incrementally to avoid freezes
+- Category-scoped document cache — switching projects reuses warm documents instead of rebuilding from scratch
 - Line gutter — numbers + fold arrows (▾)
 - Section folding — click ▾ to collapse headers
 - Code fence copy button — hover fence, click copy icon
@@ -129,17 +131,20 @@ folder per slot; the root can be moved in Settings).
 - Ctrl+Shift+S — export the active silo as .md (format filter remembered in `last_save_format`, no confirmation box, T-1082)
 - Ctrl+click 📁 — export silo text as .md
 
-### 13. Watcher Engine (Alt+C)
+### 13. Watcher Engine — retired in T-1183
 
-Prompt drainage + auto-send to target app.
+The watcher subsystem (queue the current line, auto-send it to a target app,
+rate limits, skill/prompt wrappers) **was removed from the product in T-1183**.
+Nothing in the shipped app implements it:
 
-- Alt+C — queue current line under caret (block-anchored)
-- Alt+Shift+C — Queue Master dialog (inspect/reorder/clear queues)
-- Arming: target app (CDP for Electron, Win32 for native), skill/prompt wrapper
-- Rate limits: settle=2.5s, min gap=4s, max 25 sends per session
-- Skills: `/review`, `/refactor`, custom prompt templates
-
-See [Watcher Engine Architecture](Watcher-Engine-Architecture) for full details.
+- **Alt+C and Alt+Shift+C are unbound** — the queue actions resolve to no-ops,
+  so both keys are free for other bindings;
+- the Queue Master dialog is gone; the legacy action remains only as a stub;
+- the watcher `[limits]` settings block (`min_gap_ms`, `max_sends`,
+  `dry_run_new`, `blocker_pattern`) and its `adapters.toml` no longer exist, and
+  leftover `watcher_*` settings rows are deleted on start;
+- prompt drainage is done with ordinary features: silos, F1-F10 snippets, the
+  file container, and Send-selection to another silo.
 
 ### 14. Hashtag System
 
@@ -218,6 +223,12 @@ When header < 700px: hidden buttons collected in » popup. Every action still re
 
 Settings → **Sound** toggles the master switch, UI clicks and typewriter sounds. The **Sound Settings** dialog lists every sound event — including the **hotkey events** added in T-735: undo, redo, select-all, settings, help, new, save, and a generic `hotkey` fallback that every shortcut without a named event of its own resolves to. Each event can be enabled, re-mapped to any `.wav` from the shipped library, and have its volume previewed. Undo/redo are a two-pitch pair, so the direction is audible without looking (and a single Ctrl+Z plays exactly one sound on any route). The generic `hotkey` event ships **switched ON** by default (T-742) — all possible hotkeys make a sound, including native Qt ones like Ctrl+A/C/V/X. Existing custom mappings survive an upgrade. Since v0.8.26 every event row carries a small painted pictogram (drawn, not emoji) and the table reads as a zebra-striped, gridless table so the list is scannable at a glance. The pictograms stay in the active theme's colour family: a v0.8.28 experiment that gave every event its own rainbow hue was reverted in v0.8.29 (it read as a broken theme), and distinction now comes from the glyph shape instead — 13 new pictograms split the confusable pairs (untick↔success, select-all↔copy, escape↔keyboard, hover↔click↔release cursor variants, …). Since v0.8.30 the zebra rows are never white: the theme table sheet sets an alternate-background-color blended from the table background toward the theme's text colour — dark themes get a subtly lighter dark row, pale themes (Vintage Classic) a subtly darker one.
 
+**Master mute (hotkey Ctrl+M, T-1244).** One switch that rules every channel: the tray icon's **Master Mute** checkbox, the hotkey, and the Sound panel toggle all call the same hub state, so muting from anywhere is reflected everywhere. Mute is *not* the same thing as STOP ALL: it flips the master state (unmute restores exactly what was muted before) and every later sound stays allowed while remaining silent.
+
+**STOP ALL SOUND (tray, T-1238-G).** Silences every channel, queue, sequence and ambience layer right now — a panic button, not a preference: it does **not** change the master mute state, and new sounds stay allowed. Each channel's own playing/queued work is dropped, so the next cue starts clean.
+
+**Appearance sounds (T-1245).** Separate from hotkey sounds, these fire when a user-visible surface *appears*: the app window itself, the Settings panel, the Sound Hub, the Problip pages, ordinary dialogs and panels, notifications, and the AI-limit hover card each report one semantic appearance event. The contract is deliberately narrow — construction, re-layout, repaint, language change, re-delivery of the same show signal and internal refreshes never fire one, and a surface that owns a specific event (the Sound Hub) is excluded from the generic dialog event so one appearance can never play two sounds.
+
 **Hide on Click-Out** (checkbox in Settings → Window, hotkey **Alt+A**, setting `close_on_focus_loss`) hides the window when it loses focus, the classic always-visible-on-top behaviour. Restored in v0.8.32 after a v0.8.24 removal: a 2s launch grace means the window does not disappear while the app is still starting, and clicking into the app's own undocked panels (file container, pie menu, zone overlay, Help, dialogs, combo popups) does not count as click-out.
 
 ### 24. Backup
@@ -259,10 +270,10 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 **How it works:** Each rule defines a sound, volume, interval (in minutes), and optional active hours (start/end minute of day). Rules fire when the clock reaches the aligned minute (clock mode) or after the interval elapses (elapsed mode). Only the highest-priority rule fires per tick when multiple collide.
 
 **Default presets:**
-- Morning (07:00–11:00) — every 60 min, newday.wav
-- Noon (12:00) — every 60 min, success_levelup.wav
-- Day & Evening (13:00–21:00) — every 60 min, newday.wav
-- Night (22:00–06:00) — every 60 min, menu1.wav
+- Morning (07:00–11:00) — every 60 min, NEWDAY.wav
+- Noon (12:00) — every 60 min, GENIE.wav
+- Day & Evening (13:00–21:00) — every 60 min, NEWDAY.wav
+- Night (22:00–06:00) — every 60 min, alert_owl2.wav
 
 **Sound Quick Bar:** 10 favorite sound slots shown as buttons below the sound picker. Click to select and preview; right-click to store the current sound into that slot.
 
@@ -270,8 +281,257 @@ Time-of-day scheduled reminders that fire automatically on a 24-hour clock. Mana
 
 **Top-Bar Countdown (W2-005):** A rule with **Show in top bar** enabled renders its next-occurrence countdown beside the clock — the same boundary the scheduler fires on, so the countdown and the actual reminder never disagree. Temp Timer and a running work/break phase outrank interval countdowns; a disabled rule, a rule outside its active hours, or one with the toggle off shows nothing. After a rule fires, the displayed countdown rolls to the same next occurrence the scheduler will use (clock rules up to a day, >24h rules at midnight).
 
+**My Presets (T-1517):** The presets menu in the Timer Dialog manages your own reminder library alongside the four factory presets. **Save current rules as preset…** stores the rules you have now under a name you choose; **Add my preset…** merges a saved preset's rules into the current set, while **Replace all with my preset…** swaps the whole set after a confirmation dialog. **Rename a preset…**, **Duplicate a preset…** and **Delete a preset…** manage the library; **Restore configuration before last reset** brings back the rules as they were before the last replace. Presets are single-rule or collections of rules, stored as one JSON document per preset in the `interval_presets/` folder of the app data dir — writes go through a journal with per-directory locking, so an interrupted save is recovered automatically instead of leaving a half-written preset.
+
 ### 30. Temp Timer
 
 A temporary countdown timer with configurable increment, color mode, and sound rules. Created from the Timer Dialog (Ctrl+Shift+T) under the **Temp** tab.
 
 **Features:** set increment in minutes, choose temperature-based or fixed color, enable/disable delete-after-fire. In **Random Pool** sound mode, multiple sounds can be assigned with time windows (e.g., different sounds for morning vs night).
+
+### 31. Sound Hub, Ambience & Voice
+
+The **Sound Hub** is the managed library view over one audio authority with six
+buses (UI / ALERT / VOICE / PROBLIP / AMBIENCE / PREVIEW). Each source plays in
+one of three modes — **Overlay** (default), **Stack**, or **Replace** — and every
+bus is bounded, so a burst of cues can never pile up an unbounded queue. Its
+pages are **Presets** (factory + portable import/export), **Playback** (per-event
+enabled/file/volume/`gain_db`/mode), **Voice** (VOX / FVOX / G-Man packs) and
+**Ambience** (start, pause, resume, stop). Every transient cue is pre-rendered to
+the output device's own rate and levelled by the loudness analysis behind Auto
+Level, so a cue sounds the same on any device.
+
+Shipped WAV assets are release-gated: the build's sound allowlist
+(`tools/verify_sound_allowlist.py`) verifies every bundled WAV before a
+release artifact is produced, so unknown or corrupted audio files cannot ship.
+
+- **Ambience** layers sound under your work: schedule rules (time-of-day, day of
+  week) and weather rules driven by a key-free provider that stays **off until you
+  opt in** — no account, no API key. Layers fade in and out on their own, and the
+  Ambience tab's explicit **Start / Pause / Resume / Stop** controls are the only
+  transport you need; STOP ALL from the tray silences ambience immediately.
+- **Voice** announces countdowns. It observes the deadlines the app already
+  knows — running timers and resolved AI-limit reset windows — recomputes the one
+  nearest target and speaks thresholds before they pass; it never polls a
+  provider and never announces the same threshold twice, even after a restart.
+
+### 32. AI Limits (Gauges, Reset Queue & Accounts)
+
+FastPrompter can track your AI usage/limit windows per account, provider-neutral:
+Claude, Codex, zcode, Antigravity and Freebuff each ship a probe, and every
+account of every provider is listed separately.
+
+- **Top-bar gauges** show the used share per window, tinted by vendor, with the
+  reset countdown beside them; a window whose usage reads zero can be hidden
+  (`limit_gauges_hide_zero_usage`).
+- **Hover the countdown** for the reset queue: one row per account/window with
+  fixed columns (`# | Account | Pool | Window | Left`), soonest first, so the
+  time you actually care about — how long until this one refills — is aligned
+  and never pushed out by a long pool name.
+- **Several accounts of one provider are kept apart**, not merged: the limit
+  settings state plainly how many Claude accounts were detected ("2 Claude
+  accounts detected" — shown even when the answer is one, so a missing second
+  account is diagnosable), and each Claude
+  account gets its own labelled row (the account, its plan, whether its
+  credential file is present, its state) and its own gauge, so an exhausted
+  account never hides a fresh one. The account rows are descriptive and
+  secret-free — a credential file is reported as present or absent, never read.
+- **Notifications** on limit events (reset detected, threshold crossed) use
+  `limit_notif_color`, `limit_notif_duration_sec` and `limit_notif_symbol`.
+
+### 33. Backup & Restore Layers
+
+Beyond the daily Markdown mirror and the portable ZIP in §24, the backup
+pipeline is generation-based: a new export is built in a **fresh** scratch
+folder, validated, marked complete, and only then published as the day's
+canonical backup. A half-written or blocked generation can never be mixed into
+an archive or mistaken for a good one, and recovery always picks the newest
+provably complete generation — never a folder the operating system merely
+listed last.
+
+### 34. Typing & Paste Reliability (T-1269)
+
+Two long-standing annoyances are handled explicitly now instead of being left to
+chance:
+
+- **Clipboard shortcuts work on every keyboard layout.** Ctrl+A/C/V/X are
+  matched on the physical key, so Cyrillic, Greek, Hebrew and CJK layouts behave
+  exactly like a US layout — and the editor keeps ownership of its own reserved
+  commands (mark toggles, folding, hide-markup) instead of losing them to a
+  layout-specific binding.
+- **A paste into a read-only silo is refused, never silently dropped.** Reading
+  mode / a locked editor records the refusal together with the MIME the
+  clipboard actually offered, so "nothing happened" always has an explanation
+  instead of a mystery. When several MIME flavours are on the clipboard the app
+  falls back to the one it can actually use rather than giving up.
+- **Clipboard events are counted, never copied.** The app counts the OS
+  clipboard generation counter and Qt's `changed`/`dataChanged` notifications
+  and records them beside the paste attempt. Those records hold counters and
+  process names — **never the clipboard's text**.
+
+### 35. Reading Mode — Rendered Documents (T-1484)
+
+The view selector — and the Vision button, which cycles — has three modes:
+**Source View** (plain editor), **Live Preview** (editor with live markdown
+highlighting, the default) and **Reading**, a read-only rendered surface for the
+silo on screen.
+
+- **Syntax.** *Auto* recognises BBCode only when the document shows real
+  structure (two recognised tags, or one recognised block tag); everything else
+  renders as Markdown. Pin **Markdown** or **BBCode** in the syntax selector
+  when Auto guesses wrong — a paragraph with `[1]` in it stays Markdown.
+- **What renders.** Headings, nested bold/italic/strike, ordered and unordered
+  lists, block quotes, fenced code, real tables with header and body cells,
+  links, and the BBCode block set (`[table]`/`[tr]`/`[td]`/`[th]`, `[list]`,
+  `[quote]`, `[code]`, `[center]`, `[hr]`, `[h1]-[h4]`) with inline
+  `[b]/[i]/[u]/[s]/[url]/[img]/[color]/[size]`. A mixed document renders
+  BBCode blocks and still honours inline Markdown emphasis inside them.
+- **Safety.** The rendered HTML is rebuilt through an allowlist: scripts,
+  event handlers, iframes and `javascript:` / `data:` / `vbscript:` links are
+  refused, and an unknown tag is shown as literal text instead of being
+  silently deleted. Reading mode never edits the silo: the text, its line
+  endings and the undo stack are untouched.
+- **Images.** Local files and `file:` images render as scaled pictures, and an
+  animated GIF animates. Remote images are **off by default**: the `IMG`
+  toolbar toggle becomes `IMG+`, and only then is an HTTPS image fetched.
+- **Remote policy.** HTTPS only, no credentials in the URL, no
+  loopback/private/link-local hosts, 2048-character limit, at most three
+  redirects (revalidated after the last hop), an 8 MB cap enforced **while the
+  bytes arrive**, an 8-second transfer timeout, three requests in flight with
+  the rest queued, and a 24-image / 48 MB decoded-payload cache.
+- **When an image does not appear**, the placeholder names the cause — external
+  images off, URL refused by policy, transfer failed, payload too large,
+  payload not decodable, local file missing — and keeps the URL clickable. The
+  log line carries the URL **without** its query or fragment, so a signed link
+  never leaks into a log.
+- **Leaving and returning.** Leaving Reading stops every animation and cancels
+  in-flight requests; coming back re-renders and replays what was already
+  decoded instead of downloading it again, and restores your scroll position
+  when the text has not changed.
+
+### 36. Smart Code Runner (T-1456)
+
+- **Detection.** A fenced code block, a shebang, the whole document, the
+  selection, or the code under the caret.
+- **Approval.** The ⚡ *Run Code* toolbar control appears when code is detected,
+  and running always goes through a review dialog that names the detected
+  language — nothing executes until you approve it there.
+- **Interpreters.** PowerShell 5.1, PowerShell 7+, CMD/Batch, Python, Node.js,
+  AutoHotkey v1 and v2, cscript (VBScript/JScript) and Bash. Execution is
+  argument-vector based (never `shell=True`), and the working directory follows
+  the adapter (project root, script directory or temp).
+- **Encoding.** A script is staged to a temp file in its adapter's own
+  encoding and its output is decoded the same way — PowerShell `utf-16-le`,
+  CMD `cp437`, the rest UTF-8 — so non-ASCII output is not mangled into
+  replacement characters.
+
+### 37. Table Editing, Both Surfaces (T-1462, T-1466, T-1467)
+
+- **Table silo.** The interactive grid: rectangle selection, clipboard TSV
+  copy/paste (a multiline cell survives the trip), column/row resize, insert
+  row/column, and grid-level undo/redo.
+- **Text silo.** *Edit Table* opens the **same** grid over the table at the
+  caret — never the first table in the document. Apply replaces exactly that
+  table's lines in one undo step, and the dialog refuses if the document
+  changed while it was open (your uncommitted grid stays put). The silo stays a
+  text silo; markdown remains the source of truth.
+- **Default layout.** `table_default_layout` saves columns, visible rows,
+  column widths, row heights, the manual-sizing flags and word wrap; every new
+  table is seeded from it, with a 7-column × 10-row fallback when the stored
+  template is malformed.
+
+### 38. Chest Interactions (T-1477, T-1478, T-1479)
+
+- **Sparse slots are real.** Empty slots are disabled placeholders, so a file
+  dropped into slot 12 stays in slot 12 across a refresh or restart.
+- **Mouse.** A single click selects; holding and moving drags the selection; a
+  drop on an empty slot moves it there and a drop on an occupied slot swaps the
+  two; a group keeps its order when it lands.
+- **Shift and Ctrl+Shift.** Shift+press starts a rectangular range selection
+  and Shift+drag grows it **without moving anything**; Ctrl+Shift adds the
+  swept cells to the selection you already had.
+- **Feedback.** The drag highlight names the pending operation (move/swap, or
+  an invalid no-op target) instead of a generic hover.
+
+### 39. Remember Scroll & View State (T-1459)
+
+`silo_remember_scroll` (default on) restores each silo's scroll position when
+you return to it, keyed by the silo's category/slot/arch identity and stored in
+`silo_view_state_all`; turn it off to always open a silo at the top. It replaces
+the older "Silos at Start" switch.
+
+### 40. Pack Silo — Portable Bundles (T-1409…T-1417)
+
+- **One chord per gesture.** **Ctrl+Shift+P** packs the active silo;
+  **Ctrl+Shift+C** packs the selection plus every media file it references
+  (Fast Pack Selection — disabled, not hidden, in the editor's context menu
+  when nothing is selected).
+- **The header Pack control is the same feature with a mouse.** Its hover
+  cheat sheet lists the whole vocabulary: `Pack Silo (Ctrl+Shift+P)`,
+  `Fast Pack Selection: Ctrl+Shift+C`, `Export Silo to file: Ctrl+Shift+S`,
+  then Click: Smart Quick Pack (reuses identical bundle), Shift+Click: Pack
+  With Options, Ctrl+Click: Force Repack, Ctrl+Shift+Click: Copy Last Bundle,
+  Alt+Click: Open Last Bundle Folder, Right-click: more bundle actions
+  (T-1409/T-1428).
+- **What lands on disk.** One ZIP: the portable Markdown, the referenced media
+  re-linked to archive-relative members, `silo.index.json` (a deterministic
+  requirement/media index at `INDEX_SCHEMA_VERSION = 4`), a README written for
+  a reader that has only the archive, and `manifest.json` — member hashes,
+  `bundle_kind: silo_bundle`, scope, included/missing counts, capabilities and
+  build provenance.
+- **Options dialog (Shift+Click).** Include silo text (`.md`); Select All /
+  Select None / Invert; sort by Newest first, Oldest first, Document order or
+  Name; destination Silo folder / Desktop / Documents / Choose folder…; *Make
+  exported Markdown portable* (Hide local path or Keep original links);
+  Include non-media Silo Files; **Keep last versions in exports** (default 5);
+  Remember these choices for Quick Pack.
+- **Smart reuse.** Bundle identity is a SHA256 over the logical payload only —
+  created-at, output paths and archive timestamps are excluded — so packing the
+  same content again reuses the existing archive (the toast says "Existing
+  archive copied to clipboard"). Ctrl+Click forces a fresh one.
+- **Retention never eats the archive you just received.** Pruning touches only
+  bundles inside the canonical exports folder, verifies FastPrompter ownership
+  of every candidate before deleting it, keeps the newest
+  `silo_bundle_keep_versions` (default 5), and always protects the archive of
+  the operation in flight.
+- **Publication is atomic.** The ZIP is built in a unique temp sibling and
+  published into a destination that does not exist yet: an existing file is
+  never clobbered.
+- **Privacy.** Generated share text has absolute workstation paths
+  deterministically redacted, while remote URLs and relative paths are left
+  exactly as written.
+- **Coverage overlay (T-1415).** Settings → *Show pack coverage*
+  (`show_pack_coverage`, default off) marks which requirements of the active
+  silo are already inside a published bundle; `pack_coverage_fade` (default on)
+  fades them instead of flagging them forever. Clearing the coverage history
+  deletes no ZIP and edits no text.
+- **It did not replace the old exports.** Ctrl+Shift+S still writes the active
+  silo to a plain `.md`, and the Files drawer still exports per silo.
+- **In very large documents** the header control stops being hit-tested above
+  2000 blocks, so use Ctrl+Shift+P there instead of aiming at the glyph.
+
+### 41. Smart Links (T-1494)
+
+Links are recognised everywhere a note is shown — bare URLs, `www.` hosts,
+`mailto:` addresses, Markdown links and local file paths — in Source, Live
+Preview, Reading Mode and the editor's context menu. Recognition runs through
+one shared tokenizer (`core/link_tokens.py`), so every surface agrees on what
+is a link.
+
+**Gestures:**
+
+- **Live Preview / Reading:** a plain click opens the link.
+- **Source:** follows the `source_link_click` setting — `Single-click` (the
+  default) opens on a plain click, `Ctrl+Click` reserves plain clicks for the
+  caret. Alt+click always places the caret and never opens, in every surface.
+- **Hover:** the destination shows in a tooltip (`smart_links_tooltip`), with a
+  small Copy button beside it (`smart_links_copy_hover`) that copies the
+  destination only — query string and fragment included.
+- **Context menu:** Open Link, Copy Link, Copy Markdown Link, Copy Link Text;
+  local files also get Open Containing Folder, and Markdown links get
+  Edit Link….
+- **Feedback:** the short confirmation sound plays when a link action runs
+  (`smart_links_feedback`).
+
+All four switches (plus `smart_links_enabled`, which turns recognition on or
+off) live in Settings; see [Configuration](Configuration).

@@ -57,6 +57,7 @@ _ALLOWED_MISSING = {
 def _normalize(token: str) -> str:
     """Turn one cheatsheet token into something grep-able in the code."""
     token = token.replace("\\`", "`")          # markdown-escaped backtick
+    token = token.replace("~", "")             # ~~struck-through~~ retirements
     for glyph, name in _ARROW_GLYPHS.items():
         token = token.replace(glyph, name)
     return token.strip()
@@ -68,13 +69,23 @@ def _code_text() -> str:
 
 def _cheatsheet_tokens() -> list[str]:
     tokens = []
+    hotkey_column: int | None = None
     for line in CHEATSHEET.read_text(encoding="utf-8").splitlines():
         if not line.startswith("|"):
+            hotkey_column = None
             continue
         cells = [c.strip() for c in line.split("|")]
         if len(cells) < 4:
+            hotkey_column = None
             continue
-        hotkey = cells[2]
+        # The document holds more than one table: the Pack-control gesture
+        # table has no Hotkey column, so its rows are not hotkey rows.
+        if hotkey_column is None:
+            hotkey_column = cells.index("Hotkey") if "Hotkey" in cells else -1
+            continue
+        if hotkey_column < 0:
+            continue
+        hotkey = cells[hotkey_column]
         if hotkey in ("Hotkey", "---"):
             continue
         # grab every **...** emphasis span; each is a hotkey or hotkey part

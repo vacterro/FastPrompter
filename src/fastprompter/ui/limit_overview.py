@@ -32,8 +32,6 @@ from fastprompter.core.usage_limits.model import (
     OK,
     STALE,
     UsageWindow,
-    account_has_usage,
-    account_usable_now,
     banked_reset_count,
     current_reset_offers,
     display_windows,
@@ -43,15 +41,16 @@ from fastprompter.core.usage_limits.model import (
 )
 from fastprompter.ui.limit_account_selector import (
     account_display_name,
-    hidden_account_keys,
-    ordered_accounts,
+    visible_quota_accounts,
 )
 from fastprompter.ui.limit_colors import limit_palette, reset_color
 from fastprompter.ui.limit_gauges import _win_label
 from fastprompter.utils.fonts import no_aa
 
 _PROVIDER_LABEL = {"codex": "Codex", "claude": "Claude",
-                   "antigravity": "Antigravity", "zcode": "ZCode"}
+                   "antigravity": "Antigravity", "zcode": "ZCode",
+                   "commandcode": "CommandCode",
+                   "opencode-go": "OpenCode Go"}
 
 
 class LimitOverview(QWidget):
@@ -84,25 +83,8 @@ class LimitOverview(QWidget):
             "limit_gauges_hide_unusable_5h", "False")) == "True"
 
     def _accounts(self):
-        hidden = hidden_account_keys(self.main_win.data)
-        hide_zero = str(self.main_win.data.get(
-            "limit_gauges_hide_zero_usage", "False")) == "True"
-        hide_unusable = self._hide_unusable()
-        snap = self._service.state_copy
-        shown = []
-        for a in snap.accounts:
-            if a.key in hidden:
-                continue
-            shot = snap.snapshots.get(a.key)
-            if shot is None or shot.status not in (OK, STALE):
-                shown.append(a)
-                continue
-            if hide_zero and not account_has_usage(shot):
-                continue
-            if hide_unusable and not account_usable_now(shot):
-                continue
-            shown.append(a)
-        return ordered_accounts(shown, self.main_win.data)
+        return visible_quota_accounts(self.main_win.data, self._service,
+                                      self._hide_unusable())
 
     def refresh(self):
         """Rebuild the row model and resize to fit it exactly.
@@ -150,7 +132,17 @@ class LimitOverview(QWidget):
                 for window in live:
                     if window.group_label and window.group not in emitted:
                         emitted.add(window.group)
-                        rows.append(("pool", window.group_label, shot))
+                        p_lbl = window.group_label
+                        is_ag = (getattr(shot.account, "provider_id", "") == "antigravity"
+                                 or "antigravity" in str(getattr(shot.account, "key", "")).lower())
+                        if is_ag:
+                            if p_lbl.strip().lower() in ("pool 1", "pool1"):
+                                p_lbl = "Gemini Models"
+                            elif p_lbl.strip().lower() in ("pool 2", "pool2"):
+                                p_lbl = "Claude and GPT models"
+                            elif p_lbl.strip().lower() in ("pool 3", "pool3"):
+                                p_lbl = "Gemini 4 Argon"
+                        rows.append(("pool", p_lbl, shot))
                     rows.append(("window", window, shot))
                 # A proven named-model reserve that outlives the ordinary
                 # capacity is exactly the account the user should reach for,
@@ -175,7 +167,7 @@ class LimitOverview(QWidget):
             hiding = (str(self.main_win.data.get(
                 "limit_gauges_hide_zero_usage", "False")) == "True"
                 or self._hide_unusable())
-            msg = (tr("All AI accounts hidden (0% usage or no usable 5h window)")
+            msg = (tr("All AI accounts hidden — none with usable capacity")
                    if hiding else tr("No AI accounts detected"))
             rows.append(("note", msg, None))
         self._rows = rows

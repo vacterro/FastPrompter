@@ -3,6 +3,7 @@ import re
 from PyQt6 import sip
 from PyQt6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextFormat
 
+from fastprompter.core.link_tokens import tokenize_block
 from fastprompter.theme.themes import blend_hex
 
 # Block-state bit layout (block.userState is shared with the editor's
@@ -250,22 +251,18 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         quote_format.setFontItalic(True)
         self._highlighting_rules.append((re.compile(r'^>(\s+.*)?$'), quote_format))
 
-        # Links: [text](url) — clickable via anchor href
-        link_format = QTextCharFormat()
-        link_format.setForeground(QColor("#61afef"))
-        link_format.setFontUnderline(True)
-        link_format.setAnchor(True)
-        self._link_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
-        self._highlighting_rules.append((self._link_pattern, link_format))
-
-        # Bare http(s) URLs — clickable without markdown syntax. The lookbehind
-        # skips the URL inside [text](url), which the rule above owns.
-        url_format = QTextCharFormat()
-        url_format.setForeground(QColor("#61afef"))
-        url_format.setFontUnderline(True)
-        url_format.setAnchor(True)
-        self._url_pattern = re.compile(r'(?<![\w(])https?://[^\s<>"\')\]]+')
-        self._highlighting_rules.append((self._url_pattern, url_format))
+        # T-1494: link recognition has ONE authority -- the shared,
+        # Qt-free tokenizer in core/link_tokens.py.  The highlighter used
+        # to keep its own link/URL regexes, and they disagreed with the
+        # Source editor about what a link is (ftp://, bare www hosts and
+        # mailto: addresses were invisible here).  The tokenizer now
+        # drives the anchors, so Live Preview, Source and Reading agree.
+        # The anchor href is set per token, so a destination with an
+        # unsupported scheme keeps the link LOOK but never becomes a
+        # click target.
+        self._anchor_format = QTextCharFormat()
+        self._anchor_format.setForeground(QColor("#61afef"))
+        self._anchor_format.setFontUnderline(True)
 
         # Markdown Images: ![alt](url) — visually collapse to a tiny invisible dot
         # 1. The '!' keeps normal height (preventing vertical overlap) and gets 150px letter spacing
@@ -330,6 +327,7 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         strat = QFont.StyleStrategy.NoAntialias | QFont.StyleStrategy.NoSubpixelAntialias
         for _, fmt in self._highlighting_rules:
             fmt.setFontStyleStrategy(strat)
+        self._anchor_format.setFontStyleStrategy(strat)
         self._code_block_format.setFontStyleStrategy(strat)
         self._code_fence_format.setFontStyleStrategy(strat)
         for _, fmt in self._code_sub_rules:
@@ -355,8 +353,6 @@ class MarkdownHighlighter(QSyntaxHighlighter):
             r'(?<!\*)\*(?!\*)[^*\n]+\*(?!\*)',
             r'(?<![a-zA-Z0-9])_(?!_)[^_\n]+(?<!_)_(?![a-zA-Z0-9])',
             r'`[^`\n]+`',
-            r'\[([^\]]+)\]\(([^)]+)\)',
-            r'(?<![\w(])https?://[^\s<>"\')\]]+',
             r'^\s*\[\s\]\s', r'^\s*\[[xX]\]\s',
             # T-1337: image concealment is STRUCTURAL, not decorative. The
             # editor paints an image pill over the ![](target) markup, so the
@@ -421,25 +417,33 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         for pattern, format in rules:
             for match in pattern.finditer(text):
                 start, length = match.start(), match.end() - match.start()
-                if format.isAnchor():
-                    url_match = self._link_pattern.match(match.group())
-                    if url_match:
-                        link_fmt = QTextCharFormat(format)
-                        link_fmt.setAnchorHref(url_match.group(2))
-                        self._apply(start, length, link_fmt)
-                    else:
-                        url_match = self._url_pattern.match(match.group())
-                        if url_match:
-                            link_fmt = QTextCharFormat(format)
-                            link_fmt.setAnchorHref(url_match.group(0))
-                            self._apply(start, length, link_fmt)
-                        else:
-                            self._apply(start, length, format)
-                else:
-                    self._apply(start, length, format)
+                self._apply(start, length, format)
+
+        if not self._huge:
+            self._apply_anchors(text)
 
         if not self._degraded:
             self._conceal_markers(text)
+
+    def _apply_anchors(self, text):
+        """T-1494: anchor every link the SHARED tokenizer recognises.
+
+        The tokenizer -- not a private regex -- decides what a link is, so
+        Live Preview recognises exactly the same tokens as the Source
+        editor and Reading mode (bare URLs, www hosts, mailto addresses,
+        Markdown links and images, BBCode).  A destination with an
+        unsupported scheme (``javascript:``, ``data:``, ...) keeps the
+        link look but never becomes a click target: the href is only set
+        for a destination the central router would accept.
+        """
+        for token in tokenize_block(text):
+            if token.is_image or not token.destination:
+                continue
+            fmt = QTextCharFormat(self._anchor_format)
+            if token.is_supported:
+                fmt.setAnchor(True)
+                fmt.setAnchorHref(token.normalized)
+            self._apply(token.span[0], token.span[1] - token.span[0], fmt)
 
     def _conceal_markers(self, text):
         """Hide the emphasis markers themselves (Obsidian-style preview).

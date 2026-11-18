@@ -1,5 +1,4 @@
 import json
-import re
 from pathlib import Path
 
 root = Path("V:/___VAC/__K/__CODE/_PY/_FastPrompter")

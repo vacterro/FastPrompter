@@ -196,3 +196,53 @@ def test_w2_001_worker_publication_goes_through_the_cas_gate():
     assert "compare_and_publish_text" in src
     assert "read_text_file_with_identity" in src
     assert "ps.write_text_file(" not in src
+
+
+# --- T-1506: write failure must not masquerade as a conflict ----------
+
+def test_w2_001_write_failure_is_not_a_conflict(tmp_path):
+    p = tmp_path / "f.txt"
+    p.write_text("BASE\n", encoding="utf-8")
+    accepted = ps.disk_identity(str(p))
+
+    # Turn the destination into a directory so the atomic replace fails.
+    p.unlink()
+    p.mkdir()
+
+    written, conflict = ps.compare_and_publish_text(str(p), "APP\n", accepted)
+
+    assert written is None
+    assert conflict is None
+    # the on-disk content (now a directory) is never handed back as a
+    # "conflict" payload that could replace the silo text.
+
+
+def test_w2_001_worker_reports_write_failure_as_error_not_conflict(
+        tmp_path, monkeypatch):
+    path = tmp_path / "f.txt"
+    path.write_bytes(b"BASE\n")
+    worker, gate, results = _worker_and_gate()
+    job = _job(path, "APP\n", _baseline("BASE\n"))
+
+    # Make the destination a directory during the publish window so the
+    # atomic replace raises OSError instead of an identity mismatch.
+    real = ps.compare_and_publish_text
+
+    def patched(path, text, expected, eol="\n", write_bom=False,
+                before_publish=None):
+        # remove the file and create a directory in its place, then delegate
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        os.makedirs(path, exist_ok=True)
+        return real(path, text, expected, eol=eol, write_bom=write_bom,
+                    before_publish=before_publish)
+
+    monkeypatch.setattr(ps, "compare_and_publish_text", patched)
+    worker._run([job], _leases(job), gate)
+
+    assert len(results) == 1
+    _key, _path, _text, status, detail = results[0][0]
+    assert status == "error", status
+    assert detail is None

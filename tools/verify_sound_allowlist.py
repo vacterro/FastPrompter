@@ -25,12 +25,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import sys
+import zipfile
 from pathlib import Path
 
 SOUNDS_REL = Path("src/fastprompter/sound")
 MANIFEST_REL = Path("sounds-redistributable.manifest")
 AUDIO_SUFFIXES = {".wav", ".mp3", ".ogg", ".flac"}
+ARCHIVE_SUFFIXES = {".zip"}
+MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
+MAX_ARCHIVE_DEPTH = 4
+MAX_ARCHIVE_ENTRIES = 20000
 # Directories only consulted when the tree is not under Git control.  A git
 # checkout is enumerated by Git itself (see published_audio), which is exact:
 # ignored scratch trees are not coverage, but anything a push would publish is.
@@ -110,6 +116,64 @@ def stray_audio(root: Path) -> list[str]:
         except ValueError:
             found.append(rel.as_posix())
     return sorted(found)
+
+
+def _archive_contains_audio(data: bytes, depth: int = 0) -> bool:
+    """True if ``data`` (an archive) contains any audio entry, recursively."""
+    if depth > MAX_ARCHIVE_DEPTH or not data or len(data) > MAX_ARCHIVE_BYTES:
+        return False
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except (zipfile.BadZipFile, OSError, ValueError):
+        return False
+    count = 0
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        count += 1
+        if count > MAX_ARCHIVE_ENTRIES:
+            break
+        name = info.filename
+        if Path(name).suffix.lower() in AUDIO_SUFFIXES:
+            return True
+        if (Path(name).suffix.lower() in ARCHIVE_SUFFIXES
+                and info.file_size <= MAX_ARCHIVE_BYTES):
+            try:
+                nested = zf.read(info)
+            except (OSError, RuntimeError, zipfile.BadZipFile):
+                continue
+            if _archive_contains_audio(nested, depth + 1):
+                return True
+    return False
+
+
+def archive_audio_leaks(root: Path) -> list[str]:
+    """Published archives that carry audio (directly or nested)."""
+    published = git_published_audio(root)
+    if published is None:
+        found_paths: list[str] = []
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in ARCHIVE_SUFFIXES:
+                continue
+            rel = path.relative_to(root)
+            if any(part in SKIP_DIRS for part in rel.parts):
+                continue
+            found_paths.append(rel.as_posix())
+        published = found_paths
+    leaks: list[str] = []
+    for rel in published:
+        if Path(rel).suffix.lower() not in ARCHIVE_SUFFIXES:
+            continue
+        full = root / rel
+        try:
+            if full.stat().st_size > MAX_ARCHIVE_BYTES:
+                continue
+            data = full.read_bytes()
+        except OSError:
+            continue
+        if _archive_contains_audio(data):
+            leaks.append(rel.replace("\\", "/"))
+    return sorted(set(leaks))
 
 
 def verify_sound_allowlist(root: Path | str = ".") -> int:

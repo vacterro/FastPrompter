@@ -250,13 +250,21 @@ class AmbienceStore:
             ).fetchall()
         rules: list[AmbienceRule] = []
         for (payload,) in rows:
-            try:
-                raw = json.loads(payload)
-            except (TypeError, ValueError):
-                continue  # a corrupt row is skipped, never guessed at
-            if isinstance(raw, dict) and raw.get("id"):
-                rules.append(AmbienceRule.from_dict(raw))
+            rule = self._decode(payload)
+            if rule is not None:
+                rules.append(rule)
         return rules
+
+    @staticmethod
+    def _decode(payload: str) -> AmbienceRule | None:
+        """One stored row, or None when its bytes are not a readable rule."""
+        try:
+            raw = json.loads(payload)
+        except (TypeError, ValueError):
+            return None
+        if isinstance(raw, dict) and raw.get("id"):
+            return AmbienceRule.from_dict(raw)
+        return None
 
     def save_rules(self, rules: list[AmbienceRule]) -> None:
         """Replace the whole rule set in one transaction (stable ids kept)."""
@@ -275,34 +283,88 @@ class AmbienceStore:
                 conn.rollback()
                 raise
 
+    def _mutate(self, apply):
+        """One atomic read-decide-write over the authoritative rows.
+
+        W2-002 (audit/18) found two data-loss mechanisms sharing one root
+        cause: the read-modify-write helpers called ``load_rules`` (which
+        released the store lock and dropped unreadable rows) and then replaced
+        the ENTIRE table through ``save_rules``. Two stores over one file each
+        held a private RLock, so a second writer's stale snapshot deleted the
+        first writer's accepted update; and an unrelated edit converted a
+        corrupt row into a deletion, destroying its recovery evidence.
+
+        ``BEGIN IMMEDIATE`` makes this the single writer for the duration, the
+        authoritative rows are read INSIDE it, and rows whose bytes do not
+        decode are re-published verbatim instead of being dropped.
+        """
+        with self._lock, self._connect() as conn:
+            conn.isolation_level = None
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = conn.execute(
+                    f"SELECT id, position, payload FROM {AMBIENCE_TABLE} "  # nosec B608 - closed table constant
+                    "ORDER BY position, id").fetchall()
+                rules: list[AmbienceRule] = []
+                # (id, position, payload) for rows that cannot be decoded.
+                damaged: list[tuple[str, int, str]] = []
+                for row_id, position, payload in rows:
+                    rule = self._decode(payload)
+                    if rule is None:
+                        damaged.append((row_id, position, payload))
+                    else:
+                        rules.append(rule)
+
+                updated = apply(rules)
+
+                payloads = [(rule.id, index, json.dumps(rule.to_dict(),
+                                                        separators=(",", ":")))
+                            for index, rule in enumerate(updated)]
+                # Damaged rows keep their own position value: their contents
+                # are unreadable, so the ordinal carries no meaning, but the
+                # bytes must survive untouched. ID is the tie-breaker in the
+                # ordering query, so a shared position is harmless.
+                payloads.extend(damaged)
+
+                conn.execute(f"DELETE FROM {AMBIENCE_TABLE}")  # nosec B608 - closed table constant
+                if payloads:
+                    conn.executemany(
+                        f"INSERT INTO {AMBIENCE_TABLE}(id, position, payload) "
+                        "VALUES(?, ?, ?)", payloads)  # nosec B608 - closed table constant
+                conn.execute("COMMIT")
+                return updated
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+
     def upsert_rule(self, rule: AmbienceRule) -> list[AmbienceRule]:
-        rules = self.load_rules()
-        for index, existing in enumerate(rules):
-            if existing.id == rule.id:
-                rules[index] = rule
-                break
-        else:
+        def apply(rules: list[AmbienceRule]) -> list[AmbienceRule]:
+            for index, existing in enumerate(rules):
+                if existing.id == rule.id:
+                    rules[index] = rule
+                    return rules
             rules.append(rule)
-        self.save_rules(rules)
-        return rules
+            return rules
+
+        return self._mutate(apply)
 
     def delete_rule(self, rule_id: str) -> list[AmbienceRule]:
-        rules = [rule for rule in self.load_rules() if rule.id != rule_id]
-        self.save_rules(rules)
-        return rules
+        return self._mutate(
+            lambda rules: [rule for rule in rules if rule.id != rule_id])
 
     def duplicate_rule(self, rule_id: str) -> list[AmbienceRule]:
-        rules = self.load_rules()
-        for rule in list(rules):
-            if rule.id == rule_id:
-                clone = AmbienceRule.from_dict(rule.to_dict())
-                clone.id = new_rule_id()
-                clone.name = f"{rule.name} (copy)"
-                clone.enabled = False
-                rules.append(clone)
-                break
-        self.save_rules(rules)
-        return rules
+        def apply(rules: list[AmbienceRule]) -> list[AmbienceRule]:
+            for rule in list(rules):
+                if rule.id == rule_id:
+                    clone = AmbienceRule.from_dict(rule.to_dict())
+                    clone.id = new_rule_id()
+                    clone.name = f"{rule.name} (copy)"
+                    clone.enabled = False
+                    rules.append(clone)
+                    break
+            return rules
+
+        return self._mutate(apply)
 
     # -- weather opt-in --------------------------------------------------------
 

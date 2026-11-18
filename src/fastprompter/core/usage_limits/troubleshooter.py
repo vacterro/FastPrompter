@@ -43,7 +43,7 @@ from fastprompter.core.usage_limits.providers import (
     zcode as zcode_prov,
 )
 
-VENDOR_KEYS = ("codex", "claude", "antigravity", "zcode")
+VENDOR_KEYS = ("codex", "claude", "antigravity", "zcode", "freebuff")
 
 VENDOR_TITLES = {
     "codex": "Codex (OpenAI)",
@@ -356,11 +356,18 @@ def _diagnose_freebuff(title: str, data: dict) -> dict[str, Any]:
 
     state_found = status.get("state_found", False)
     signed_in = status.get("signed_in", False)
+    candidates = status.get("candidate_states", [])
     issues = []
     recommendations = []
+    auto_heals = []
     manual_actions = []
 
-    if not state_found:
+    if not state_found and candidates and not state_path:
+        status_code = "relocated"
+        summary = f"Candidate state found at {candidates[0]}"
+        recommendations.append(f"Adopt candidate state path {candidates[0]}.")
+        auto_heals.append("adopt_state_path")
+    elif not state_found:
         status_code = "no_state"
         summary = "Freebuff Desktop state not found"
         issues.append("Freebuff Desktop's own state file was not found; "
@@ -371,7 +378,8 @@ def _diagnose_freebuff(title: str, data: dict) -> dict[str, Any]:
         issues.append("A signed-in Freebuff account was detected, but reading "
                       "Freebuff limits is disabled.")
         recommendations.append("Enable Freebuff limits to begin monitoring "
-                               "the daily Freebucks pool.")
+                               "the daily hours pool.")
+        auto_heals.append("enable_freebuff")
         manual_actions.append({"action": "enable_freebuff",
                                "label": "Enable detected Freebuff account",
                                "key": "freebuff"})
@@ -387,14 +395,14 @@ def _diagnose_freebuff(title: str, data: dict) -> dict[str, Any]:
     return {
         "vendor": "freebuff",
         "title": title,
-        "installed": state_found,
+        "installed": state_found or bool(candidates),
         "authenticated": signed_in,
         "ready": state_found and signed_in and enabled,
         "status_code": status_code,
         "summary": summary,
         "issues": issues,
         "recommendations": recommendations,
-        "auto_heals_available": [],
+        "auto_heals_available": auto_heals,
         "manual_actions": manual_actions,
         "details": status,
     }
@@ -461,7 +469,23 @@ def auto_heal_all(data: dict, service: Any = None) -> dict[str, Any]:
         plan_desc = ", ".join(plans) if plans else "Coding Plan"
         healed.append(f"Enabled detected ZCode limits ({plan_desc})")
 
-    # 4. Auto-enable header gauges if limits are now available
+    # 4. Freebuff candidate path adoption & account enabling
+    fb_diag = diag.get("freebuff", {})
+    if "adopt_state_path" in fb_diag.get("auto_heals_available", []):
+        cands = fb_diag.get("details", {}).get("candidate_states", [])
+        if cands:
+            data["limit_freebuff_state"] = cands[0]
+            healed.append(f"Configured Freebuff state path: {cands[0]}")
+            # Re-diagnose freebuff with adopted path
+            fb_diag = diagnose_vendor("freebuff", data)
+
+    if "enable_freebuff" in fb_diag.get("auto_heals_available", []):
+        data["limit_freebuff_enabled"] = "True"
+        account = fb_diag.get("details", {}).get("account", {})
+        account_name = account.get("name") or account.get("email") or account.get("id") or "Freebuff account"
+        healed.append(f"Enabled detected Freebuff limits ({account_name})")
+
+    # 5. Auto-enable header gauges if limits are now available
     if str(data.get("limit_gauges", "False")) != "True":
         data["limit_gauges"] = "True"
         healed.append("Enabled AI limit gauges in the main window header")
@@ -502,8 +526,3 @@ def launch_vendor_login(vendor: str) -> None:
         # must not make background refresh retry the rejected token.
         from fastprompter.core.usage_limits.providers import _antigravity_cli
         _antigravity_cli.clear_rejected_auth()
-
-
-def launch_vendor_install(vendor: str) -> None:
-    """Launch official installer for the given vendor."""
-    cli_tools.launch_installer(vendor)

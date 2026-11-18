@@ -725,6 +725,33 @@ class ThemeMixin:
         except Exception:
             return False
 
+    def _preview_smart_links(self) -> tuple[bool, bool]:
+        """The Smart Links switches for Reading mode: (enabled, copy on hover).
+
+        T-1494: Reading honours the SAME settings as Source, so the switch
+        that turns Smart Links off turns them off everywhere.
+        """
+        try:
+            enabled = str(self.data.get("smart_links_enabled", "True")) == "True"
+            copy = str(self.data.get("smart_links_copy_hover", "True")) == "True"
+        except Exception:
+            enabled, copy = True, True
+        return enabled, copy
+
+    def refresh_preview_link_settings(self) -> None:
+        """Push the Smart Links switches into the Reading surface at once.
+
+        ``configure()`` only stores, so this is cheap: no document is
+        re-rendered and no block is rebuilt.
+        """
+        view = getattr(self, "preview_area", None)
+        if view is None or not hasattr(view, "configure"):
+            return
+        smart_links, smart_links_copy = self._preview_smart_links()
+        view.configure(smart_links=smart_links,
+                       smart_links_copy=smart_links_copy,
+                       lang=getattr(self, "_current_lang", "EN"))
+
     def _preview_tokens(self):
         """The active theme as rich-preview colour tokens.
 
@@ -769,8 +796,12 @@ class ThemeMixin:
         # configure() only stores; the single set_rendered_document() below is
         # what rebuilds the blocks, so a settings change does not render twice.
         if hasattr(view, "configure"):
+            smart_links, smart_links_copy = self._preview_smart_links()
             view.configure(tokens=self._preview_tokens(),
-                           external_media=self._preview_external_media)
+                           external_media=self._preview_external_media,
+                           smart_links=smart_links,
+                           smart_links_copy=smart_links_copy,
+                           lang=getattr(self, "_current_lang", "EN"))
         view.set_rendered_document(doc)
 
     # ---- SiloTable / SiloKanban skin ------------------------------------

@@ -47,6 +47,37 @@ class MarkdownRef:
 _LINK_PREFIX_RE = re.compile(r"(!?)\[([^\]\n]*)\]\(")
 
 
+def _paren_pairs(text: str) -> dict[int, int]:
+    """Escape-aware ``(`` -> ``)`` pairing, ignoring quote state.
+
+    PERF-001: this is a FAIL-FAST FILTER, not a parser. A candidate whose
+    opening ``(`` has no entry here cannot close at depth 1 in the quote-aware
+    walk either (quotes only ever swallow a ``)``, so they can only make
+    closing harder), which lets a hopeless candidate be refused in O(1)
+    instead of rescanning the rest of the document. It is deliberately
+    permissive: an entry that the walk would not have used costs one bounded
+    walk, never a lost reference.
+    """
+    pairs: dict[int, int] = {}
+    stack: list[int] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "(":
+            stack.append(index)
+        elif char == ")" and stack:
+            pairs[stack.pop()] = index
+        index += 1
+    return pairs
+
+
+def _positions(text: str, char: str) -> list[int]:
+    return [i for i, value in enumerate(text) if value == char]
+
+
 def find_markdown_refs(text: str) -> list[MarkdownRef]:
     """Find all Markdown image and link references in ``text``.
 
@@ -63,6 +94,24 @@ def find_markdown_refs(text: str) -> list[MarkdownRef]:
     doc_index = 0
     pos = 0
     text_len = len(text)
+
+    # PERF-001: both maps are built at most once per call and only when a
+    # candidate actually needs them, so link-free text pays nothing.
+    _maps: dict[str, object] = {}
+
+    def _pairs() -> dict[int, int]:
+        pairs = _maps.get("pairs")
+        if pairs is None:
+            pairs = _paren_pairs(text)
+            _maps["pairs"] = pairs
+        return pairs  # type: ignore[return-value]
+
+    def _gt_positions() -> list[int]:
+        positions = _maps.get("gt")
+        if positions is None:
+            positions = _positions(text, ">")
+            _maps["gt"] = positions
+        return positions  # type: ignore[return-value]
 
     while pos < text_len:
         m = _LINK_PREFIX_RE.search(text, pos)
@@ -86,7 +135,13 @@ def find_markdown_refs(text: str) -> list[MarkdownRef]:
         raw_target_end = curr
 
         if text[curr] == "<":
-            # Angle-bracket destination: scan until matching '>'
+            # Angle-bracket destination: scan until matching '>'.
+            # PERF-001: with no '>' anywhere ahead the walk can only run to
+            # '\n'/end and refuse, so refuse now instead of rescanning.
+            gt_positions = _gt_positions()
+            if not gt_positions or gt_positions[-1] < curr:
+                pos = dest_start
+                continue
             curr += 1
             while curr < text_len and text[curr] != ">" and text[curr] != "\n":
                 if text[curr] == "\\" and curr + 1 < text_len:
@@ -102,6 +157,13 @@ def find_markdown_refs(text: str) -> list[MarkdownRef]:
         else:
             # Standard destination: tolerate balanced parentheses
             # Destination ends at closing ')' or whitespace before an optional title
+            # PERF-001: an opening '(' with no escape-aware closing ')' can never
+            # reach depth 0 in the walk below (quote state only ever suppresses a
+            # ')'), so a hopeless candidate is refused in O(1) instead of
+            # rescanning an already-traversed suffix.
+            if (dest_start - 1) not in _pairs():
+                pos = dest_start
+                continue
             paren_depth = 1
             in_quotes = None  # None, '"', "'"
 

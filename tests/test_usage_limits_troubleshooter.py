@@ -26,6 +26,9 @@ from fastprompter.core.usage_limits.providers import (
     codex as codex_prov,
 )
 from fastprompter.core.usage_limits.providers import (
+    freebuff as freebuff_prov,
+)
+from fastprompter.core.usage_limits.providers import (
     zcode as zcode_prov,
 )
 
@@ -165,14 +168,55 @@ class TestTroubleshooterDiagnosis(unittest.TestCase):
             self.assertEqual(len(diag["manual_actions"]), 1)
             self.assertEqual(diag["manual_actions"][0]["action"], "login")
 
+    def test_diagnose_freebuff_disabled_with_account(self):
+        with patch.object(freebuff_prov, "source_status", return_value={
+            "state_found": True,
+            "signed_in": True,
+            "account": {"id": "acc-1", "name": "Tester", "email": "tester@example.com"},
+            "candidate_states": [],
+        }):
+            diag = troubleshooter.diagnose_vendor("freebuff", {"limit_freebuff_enabled": "False"})
+            self.assertEqual(diag["status_code"], "disabled_with_account")
+            self.assertIn("enable_freebuff", diag["auto_heals_available"])
+            self.assertEqual(len(diag["manual_actions"]), 1)
+            self.assertEqual(diag["manual_actions"][0]["action"], "enable_freebuff")
+
+    def test_diagnose_freebuff_no_state(self):
+        with patch.object(freebuff_prov, "source_status", return_value={
+            "state_found": False,
+            "signed_in": False,
+            "candidate_states": [],
+        }):
+            diag = troubleshooter.diagnose_vendor("freebuff", {})
+            self.assertEqual(diag["status_code"], "no_state")
+            self.assertFalse(diag["ready"])
+
     def test_diagnose_all(self):
         res = troubleshooter.diagnose_all()
-        for k in ("codex", "claude", "antigravity", "zcode"):
+        for k in ("codex", "claude", "antigravity", "zcode", "freebuff"):
             self.assertIn(k, res)
             self.assertIn("ready", res[k])
 
 
 class TestTroubleshooterAutoHeal(unittest.TestCase):
+    def test_auto_heal_enables_freebuff_and_adopts_path(self):
+        data = {"limit_freebuff_enabled": "False", "limit_gauges": "False"}
+        with patch.object(freebuff_prov, "source_status", side_effect=[
+            # First call without path -> relocated
+            {"state_found": False, "signed_in": False, "candidate_states": [r"C:\fake\state.json"]},
+            # Second call after adopt_state_path -> disabled_with_account
+            {"state_found": True, "signed_in": True, "candidate_states": [r"C:\fake\state.json"],
+             "account": {"id": "fb-1", "name": "FreebuffUser"}},
+            # Post-diag call
+            {"state_found": True, "signed_in": True, "candidate_states": [r"C:\fake\state.json"],
+             "account": {"id": "fb-1", "name": "FreebuffUser"}},
+        ]):
+            res = troubleshooter.auto_heal_all(data)
+            self.assertEqual(data["limit_freebuff_state"], r"C:\fake\state.json")
+            self.assertEqual(data["limit_freebuff_enabled"], "True")
+            self.assertTrue(any("Freebuff state path" in h for h in res["healed"]))
+            self.assertTrue(any("Freebuff limits" in h for h in res["healed"]))
+
     def test_auto_heal_enables_zcode_and_gauges(self):
         data = {"limit_zcode_enabled": "False", "limit_gauges": "False"}
         with patch.object(zcode_prov, "source_status", return_value={

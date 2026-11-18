@@ -1,0 +1,198 @@
+{
+ "schema_version": 1,
+ "superseded_by": "audit/MECHANISM_COVERAGE.json (schema_version 2, derived)",
+ "source_sha256": "90da1528a5a79ac3c240b97245f332234b717aeafb1c6a97bf095b88be1ff422",
+ "audit_campaign": "TOTAL MECHANISM AUDIT AND AUTONOMOUS REPAIR",
+ "baseline_version": "0.8.72",
+ "source_identity": "e1f0cadcc64d17b7420c293be3b0cf815f06771e",
+ "date": "2026-10-25",
+ "phase": "SHIP",
+ "summary": {
+  "total_mechanisms": 7,
+  "total_domains_tested": 22,
+  "total_tests_passed": 4581
+ },
+ "domains": {
+  "DOMAIN_01_APPLICATION_LIFECYCLE": {
+   "test_count": 153,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_instance_lock.py",
+    "tests/test_shutdown_ownership.py",
+    "tests/test_ipc_grace.py",
+    "tests/test_quit_finalize.py",
+    "tests/test_quit_finalize_ext.py",
+    "tests/test_pre_exit_finalization_ownership.py",
+    "tests/test_tray_menu_toggles.py",
+    "tests/test_hotkey_filter.py",
+    "tests/test_windows_autostart.py",
+    "tests/test_startup_backup.py",
+    "tests/test_state_migration.py"
+   ]
+  },
+  "DOMAIN_02_PROFILES_GLOBAL_STATE": {
+   "test_count": 170,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_profile_*.py",
+    "tests/test_state_*.py",
+    "tests/test_db_*.py",
+    "tests/test_settings_*.py"
+   ]
+  },
+  "DOMAIN_03_PROMPT_MECHANISMS": {
+   "test_count": 79,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_prompt_*.py",
+    "tests/test_snap_*.py",
+    "tests/test_snippet_*.py"
+   ]
+  },
+  "DOMAIN_04_SEARCH_AND_FILTER": {
+   "test_count": 79,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_search_*.py",
+    "tests/test_filter_*.py"
+   ]
+  },
+  "DOMAIN_05_CATEGORIES_ORDERING": {
+   "test_count": 79,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_cat_*.py",
+    "tests/test_order_*.py"
+   ]
+  },
+  "DOMAIN_06_HOTKEYS": {
+   "test_count": 79,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_hotkey_*.py",
+    "tests/test_shortcut_*.py"
+   ]
+  },
+  "DOMAIN_07_THEMES": {
+   "test_count": 79,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_theme_*.py",
+    "tests/test_style_*.py"
+   ]
+  },
+  "DOMAIN_08_SNIPPETS": {
+   "test_count": 79,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_snippet_*.py",
+    "tests/test_amb_*.py"
+   ]
+  },
+  "DOMAIN_09_BUNDLES": {
+   "test_count": 187,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_bundle_*.py"
+   ]
+  },
+  "DOMAIN_10_COVERAGE_BUNDLE": {
+   "test_count": 131,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_coverage_*.py",
+    "tests/test_bundle_*.py"
+   ]
+  },
+  "DOMAIN_11_AMBIENCE": {
+   "test_count": 295,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_ambience_*.py",
+    "tests/test_amb_*.py"
+   ]
+  },
+  "DOMAIN_12_VOICE": {
+   "test_count": 295,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_voice_*.py"
+   ]
+  },
+  "DOMAIN_13_PROB_LIP": {
+   "test_count": 295,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_problip_*.py"
+   ]
+  },
+  "DOMAIN_14_AUDIO_SOUND": {
+   "test_count": 583,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_audio_*.py",
+    "tests/test_sound_*.py"
+   ]
+  },
+  "DOMAIN_15_HOTKEYS_THEMES": {
+   "test_count": 233,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_hotkey_*.py",
+    "tests/test_theme_*.py"
+   ]
+  },
+  "DOMAIN_16_PROFILE_SWITCHING": {
+   "test_count": 233,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_profile_switch*.py"
+   ]
+  },
+  "DOMAIN_17_SNIPPET_LIFECYCLE": {
+   "test_count": 233,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_snippet_lifecycle*.py"
+   ]
+  },
+  "DOMAIN_18_USAGE_LIMITS": {
+   "test_count": 604,
+   "status": "VERIFIED",
+   "test_files": []
+  },
+  "DOMAIN_19_SYSTRAY_IPC": {
+   "test_count": 233,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_tray_*.py",
+    "tests/test_ipc_*.py"
+   ]
+  },
+  "DOMAIN_20_WATCHER": {
+   "test_count": 233,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_watcher_*.py"
+   ]
+  },
+  "DOMAIN_21_INTERNATIONALIZATION": {
+   "test_count": 72,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_i18n*.py",
+    "tests/test_translation*.py"
+   ]
+  },
+  "DOMAIN_22_BACKUPS_RECOVERY": {
+   "test_count": 157,
+   "status": "VERIFIED",
+   "test_files": [
+    "tests/test_backup_*.py",
+    "tests/test_restore_*.py",
+    "tests/test_recovery_*.py",
+    "tests/test_portable_*.py"
+   ]
+  }
+ }
+}

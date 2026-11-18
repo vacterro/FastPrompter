@@ -61,3 +61,47 @@ def test_sync_tool_reports_no_drift(canonical):
     pyproject_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert len(sync_release_version._PYW_RE.findall(pyw_text)) == 1
     assert len(sync_release_version._PYPROJECT_RE.findall(pyproject_text)) == 1
+
+
+def test_readme_source_badge_matches_canonical(canonical):
+    """T-1454: the badge is hand-written, so it sat at 0.8.72 while VERSION
+    said 0.8.73 and nothing in the tree noticed."""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    line = (
+        f'<a href="VERSION"><img src="https://img.shields.io/badge/'
+        f'source-{canonical}-D4B86A?style=flat-square" '
+        f'alt="source version {canonical}"></a>'
+    )
+    assert text.count(line) == 1, (
+        f"README.md must carry exactly one source badge line naming {canonical}"
+    )
+
+
+def test_every_release_surface_carries_exactly_one_pinned_badge(canonical):
+    """The ship parity gate proves a release surface by finding exactly one
+    literal ``**vX.Y.Z**`` in it (saipen_engine.release_contract.version_badges).
+
+    That set is VERSION, README.md, the three root README mirrors, CHANGELOG.md
+    and every non-ignored locale README under the translation kitchen. The
+    pinned literal is easy to lose: commit 88b420c6 replaced README.md's with a
+    shields badge alone, which left ``version_badges(README.md) == []`` and made
+    `saipen ship` unsatisfiable until 64661de put it back. These five files are
+    the badge-bearing half of that surface, so the same loss cannot recur here.
+    """
+    surfaces = ("README.md",) + sync_release_version._README_TRANSLATED_FILES
+    for name in surfaces:
+        text = (ROOT / name).read_text(encoding="utf-8")
+        found = sync_release_version._README_TRANSLATED_RE.findall(text)
+        assert found == [f"**v{canonical}**"], (
+            f"{name} must carry exactly one pinned **v{canonical}** badge, got {found}"
+        )
+
+
+def test_changelog_head_is_the_canonical_version(canonical):
+    """A release ships one version, so the newest changelog entry names it."""
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    head = re.search(r"^## (\d+\.\d+\.\d+)", text, re.MULTILINE)
+    assert head is not None, "CHANGELOG.md carries no version heading"
+    assert head.group(1) == canonical, (
+        f"CHANGELOG.md starts at {head.group(1)} while VERSION says {canonical}"
+    )

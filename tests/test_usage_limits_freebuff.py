@@ -119,10 +119,10 @@ class TestFreebucks:
         _account, snapshot = probed
         window = snapshot.windows[0]
         assert window.key == DAILY_AMOUNT
-        assert window.unit == "FB"
-        assert window.limit_amount == 100.0
+        assert window.unit == "hrs"
+        assert window.limit_amount == 20.0
         assert window.remaining_amount == 0.0
-        assert window.used_amount == 100.0
+        assert window.used_amount == 20.0
 
     def test_the_percentage_matches_the_amounts(self, tmp_path):
         reading = {"mode": "freebucks",
@@ -143,8 +143,8 @@ class TestFreebucks:
     def test_the_wallet_is_an_amount_not_a_meter(self, probed):
         _account, snapshot = probed
         meta = snapshot.provider_metadata
-        assert meta["wallet_balance"] == 30.0
-        assert meta["wallet_monthly_bonus"] == 300.0
+        assert meta["wallet_balance"] == 6.0
+        assert meta["wallet_monthly_bonus"] == 60.0
         # The wallet never becomes a window: a balance has no reset to meter.
         assert all(w.key != "wallet" for w in snapshot.windows)
 
@@ -462,6 +462,55 @@ class TestStatePath:
     def test_source_status_never_returns_the_token(self, tmp_path):
         path = _state_file(tmp_path)
         assert FAKE_TOKEN not in repr(source_status(path, enabled=True))
+
+    def test_bak_file_is_never_used_after_an_explicit_sign_out(self, tmp_path):
+        """CORE-002: an intact primary with no allowed session is the desktop
+        app's own signed-out evidence, so the backup must not resurrect it."""
+        empty_state = tmp_path / "state.json"
+        empty_state.write_text(json.dumps({"authSessions": {}}), encoding="utf-8")
+        bak_file = tmp_path / "state.json.bak"
+        bak_payload = {
+            "authSessions": {
+                "https://www.codebuff.com": {
+                    "token": FAKE_TOKEN,
+                    "user": FAKE_USER,
+                }
+            }
+        }
+        bak_file.write_text(json.dumps(bak_payload), encoding="utf-8")
+
+        assert _freebuff_http.read_token(str(empty_state)) == ""
+        assert _freebuff_http.read_account_user(str(empty_state)) == {}
+
+    def test_the_bak_file_still_recovers_a_corrupt_primary(self, tmp_path):
+        """CORE-002: the fallback stays for the state it exists for -- a
+        primary that cannot be read as usable auth state at all."""
+        broken_state = tmp_path / "state.json"
+        broken_state.write_text("{ not json", encoding="utf-8")
+        bak_file = tmp_path / "state.json.bak"
+        bak_file.write_text(json.dumps({
+            "authSessions": {
+                "https://www.codebuff.com": {
+                    "token": FAKE_TOKEN,
+                    "user": FAKE_USER,
+                }
+            }
+        }), encoding="utf-8")
+
+        assert _freebuff_http.read_token(str(broken_state)) == FAKE_TOKEN
+        user = _freebuff_http.read_account_user(str(broken_state))
+        assert user.get("id") == FAKE_USER["id"]
+
+    def test_candidate_state_paths_finds_state(self, tmp_path, monkeypatch):
+        mock_cfg = tmp_path / ".config" / "freebuff-desktop"
+        mock_cfg.mkdir(parents=True)
+        mock_state = mock_cfg / "state.json"
+        mock_state.write_text("{}", encoding="utf-8")
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        cands = _freebuff_http.candidate_state_paths()
+        assert str(mock_state) in cands
 
 
 # --------------------------------------------------------------------------

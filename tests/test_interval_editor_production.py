@@ -520,6 +520,55 @@ def test_snapshot_strips_runtime_history():
         assert "last_fired_minute" not in rule
 
 
+def test_an_unfinished_preset_batch_is_reported_to_the_user(tmp_path, monkeypatch):
+    """SRC-138/R05: a mixture of two generations must not be presented as the
+    user's library without a word.
+
+    The store knows it could not finish an interrupted batch; the dialog is
+    where that knowledge has to become a message, because it is the only place
+    the user ever meets the preset library.
+    """
+    from fastprompter.core.interval_preset_store import IntervalPresetStore
+
+    m = _ProdMain()
+    store = IntervalPresetStore(directory=str(tmp_path / "presets"))
+    m._interval_preset_store = store
+    d = TimerDialog(m)
+
+    reported = []
+    monkeypatch.setattr(d, "_interval_preset_report_error",
+                        lambda message: reported.append(message))
+
+    # The store now carries an unresolved transaction.
+    store._recovery_problem = "an interrupted preset batch could not be finished"
+    d._interval_preset_store()
+    assert reported, (
+        "the dialog handed the store over without mentioning that the library "
+        "may be a mixture of two generations")
+    assert "could not be finished" in reported[0]
+
+    # Reported once, not on every menu open.
+    d._interval_preset_store()
+    assert len(reported) == 1
+    d.close()
+
+
+def test_a_healthy_preset_store_says_nothing(tmp_path, monkeypatch):
+    """The warning is only useful if it is rare: a clean library must be silent."""
+    from fastprompter.core.interval_preset_store import IntervalPresetStore
+
+    m = _ProdMain()
+    m._interval_preset_store = IntervalPresetStore(
+        directory=str(tmp_path / "presets"))
+    d = TimerDialog(m)
+    reported = []
+    monkeypatch.setattr(d, "_interval_preset_report_error",
+                        lambda message: reported.append(message))
+    d._interval_preset_store()
+    assert reported == []
+    d.close()
+
+
 def test_save_current_persists_a_user_preset(tmp_path, monkeypatch):
     m = _ProdMain()
     from fastprompter.core.interval_preset_store import IntervalPresetStore

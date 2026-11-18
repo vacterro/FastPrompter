@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
+from fastprompter.core import sound_library  # noqa: E402
 from fastprompter.core.sound_manager import SoundManager  # noqa: E402
 from fastprompter.core.timers import (  # noqa: E402
     KIND_ALARM,
@@ -292,6 +293,9 @@ def test_real_dialog_editors_offer_library_files_from_one_inventory():
     The shipped set is deliberately small: it holds only the redistributable
     fallback voices. A personal library reaches the picker through the addon
     folder, so the invariant is "a usable palette exists", not a fixed count.
+
+    T-1510: the palette is the ONE canonical inventory -- packaged, managed
+    and addon -- so an imported sound is selectable for the timer too.
     """
     d = _dlg()
     inventory = d.main_win.sound_manager.get_available_sounds()
@@ -301,10 +305,11 @@ def test_real_dialog_editors_offer_library_files_from_one_inventory():
         return [ref for _disp, ref in editor._sound_choices
                 if isinstance(ref, str) and ref.startswith("file:")]
 
+    expected = {f"file:{rel}" for rel in
+                sound_library.list_selectable_sounds(inventory)}
     alarm_files = file_refs(d._behavior)
     cal_files = file_refs(d._cal_behavior)
-    assert len(alarm_files) == len(inventory)
-    assert set(alarm_files) == {f"file:{rel}" for rel in inventory}
+    assert set(alarm_files) == expected
     assert set(cal_files) == set(alarm_files)   # same SoundManager inventory
 
 

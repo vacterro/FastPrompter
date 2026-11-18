@@ -324,7 +324,7 @@ def test_silogapbar_i18n_keys_registered_and_translated():
     for fname in os.listdir(i18n_dir):
         if not fname.endswith(".py") or fname in (
                 "__init__.py", "_compat.py", "_container.py",
-                "_context.py", "_engine.py"):
+                "_engine.py"):
             continue
         mod = importlib.import_module(
             "fastprompter.core.i18n." + fname[:-3])

@@ -15,7 +15,14 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class RunnerAdapter:
-    """How to run one language."""
+    """How to run one language.
+
+    Two encodings, deliberately distinct (W2-006/W2-007): ``encoding`` is how
+    the staged SCRIPT FILE is written, ``output_encoding`` is how the
+    interpreter writes to its stdout/stderr pipes. They are not the same
+    thing -- PowerShell 5.1 reads a ``-File`` script as UTF-16 when it carries
+    a BOM, yet emits console text in the active code page.
+    """
 
     key: str                  # registry key
     display: str              # UI label
@@ -23,9 +30,27 @@ class RunnerAdapter:
     args_template: tuple[str, ...]  # e.g. ("-NoProfile", "-ExecutionPolicy", "Bypass", "-File")
     cwd_policy: str           # "project" | "script_dir" | "temp"
     encoding: str = "utf-8"
+    #: Emit a BOM when staging the script file. Required by Windows
+    #: PowerShell 5.1: without it the interpreter cannot tell UTF-16LE from a
+    #: legacy code page and mangles non-ASCII source (W2-006).
+    script_bom: bool = False
+    #: Encoding of the interpreter's stdout/stderr pipes. ``None`` means "the
+    #: platform console code page", resolved at decode time.
+    output_encoding: str | None = None
     extensions: tuple[str, ...] = ()
     available_check: Callable[[], bool] | None = None
     unavailable_reason: str | None = None
+
+    @property
+    def pipe_encoding(self) -> str:
+        """The encoding to decode this adapter's output with."""
+        if self.output_encoding:
+            return self.output_encoding
+        import locale
+        try:
+            return locale.getpreferredencoding(False) or "utf-8"
+        except Exception:
+            return "utf-8"
 
 
 class RunnerRegistry:
@@ -36,7 +61,10 @@ class RunnerRegistry:
         self._register_builtins()
 
     def _register_builtins(self) -> None:
-        # PowerShell 5.1 (Windows built-in)
+        # PowerShell 5.1 (Windows built-in). W2-006: the script is UTF-16LE and
+        # MUST carry a BOM -- 5.1 uses the BOM to identify the encoding, and
+        # without one it decodes UTF-16 bytes through the legacy code page.
+        # Its pipes are not UTF-16, though; they carry console text.
         self.register(RunnerAdapter(
             key="powershell",
             display="PowerShell",
@@ -44,9 +72,11 @@ class RunnerRegistry:
             args_template=("-NoProfile", "-File"),
             cwd_policy="script_dir",
             encoding="utf-16-le",  # PS prefers UTF-16 for -File
+            script_bom=True,
             extensions=(".ps1",),
         ))
-        # PowerShell 7+ (pwsh)
+        # PowerShell 7+ (pwsh). Reads UTF-8 scripts with or without a BOM, and
+        # in fact prefers no BOM; its output is UTF-8 by default.
         self.register(RunnerAdapter(
             key="pwsh",
             display="PowerShell 7+",
@@ -54,6 +84,7 @@ class RunnerRegistry:
             args_template=("-NoProfile", "-File"),
             cwd_policy="script_dir",
             encoding="utf-8",
+            output_encoding="utf-8",
             extensions=(".ps1",),
         ))
         # CMD / Batch
@@ -64,6 +95,7 @@ class RunnerRegistry:
             args_template=("/c",),
             cwd_policy="script_dir",
             encoding="cp437",  # legacy console codepage
+            output_encoding="cp437",
             extensions=(".bat", ".cmd"),
         ))
         # Python
@@ -74,6 +106,7 @@ class RunnerRegistry:
             args_template=("-u",),  # unbuffered
             cwd_policy="project",
             encoding="utf-8",
+            output_encoding="utf-8",  # -u + PYTHONIOENCODING on modern builds
             extensions=(".py",),
             available_check=lambda: bool(shutil.which("python")),
         ))
@@ -85,6 +118,7 @@ class RunnerRegistry:
             args_template=(),
             cwd_policy="script_dir",
             encoding="utf-8",
+            output_encoding="utf-8",
             extensions=(".js", ".mjs"),
             available_check=lambda: bool(shutil.which("node")),
         ))
@@ -189,7 +223,13 @@ def stage_script(
     *,
     working_dir: Path | None = None,
 ) -> StagedScript:
-    """Write source to a temp file with correct encoding. Returns StagedScript."""
+    """Write source to a temp file with correct encoding. Returns StagedScript.
+
+    W2-006: the script encoding is chosen for the INTERPRETER THAT READS IT,
+    and adapters that need a byte-order mark get one. ``utf-16-le`` alone does
+    not emit a BOM, so Windows PowerShell 5.1 could not recognise the file as
+    UTF-16 and decoded it through the legacy code page.
+    """
     adapter = REGISTRY.get(language_key)
     if not adapter:
         raise ValueError(f"No adapter for language: {language_key}")
@@ -197,7 +237,15 @@ def stage_script(
     ext = adapter.extensions[0] if adapter.extensions else ".txt"
     temp_dir = Path(tempfile.mkdtemp(prefix="fp_run_"))
     script_path = temp_dir / f"script{ext}"
-    script_path.write_text(source, encoding=adapter.encoding)
+    # ``utf-16`` writes the BOM; ``utf-16-le`` does not. Ask for the parent
+    # codec when the adapter needs a marker, never hand-assemble the bytes.
+    encoding = adapter.encoding
+    if adapter.script_bom and encoding.replace("_", "-") in (
+            "utf-16-le", "utf-16-be", "utf16-le", "utf16-be"):
+        encoding = "utf-16" if encoding.lower().startswith("utf-16-le") else "utf-16-be"
+    elif adapter.script_bom and encoding.lower().replace("_", "-") == "utf-8":
+        encoding = "utf-8-sig"
+    script_path.write_text(source, encoding=encoding)
     return StagedScript(
         path=script_path,
         language_key=language_key,

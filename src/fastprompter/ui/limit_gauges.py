@@ -66,8 +66,6 @@ from fastprompter.core.usage_limits.model import (
     STALE,
     WEEKLY,
     UsageWindow,
-    account_has_usage,
-    account_usable_now,
     base_key,
     display_windows,
     format_offer_expiry,
@@ -82,6 +80,7 @@ from fastprompter.ui.limit_account_selector import (
     hidden_account_keys,
     ordered_accounts,
     short_account_label,
+    visible_quota_accounts,
 )
 from fastprompter.ui.limit_colors import limit_palette, reset_color
 from fastprompter.ui.qt_lifetime import weak_qt_callback
@@ -101,15 +100,17 @@ _PROVIDER_LABEL = {
     "claude": "Claude",
     "antigravity": "Antigravity",
     "zcode": "ZCode",
+    "commandcode": "CommandCode",
+    "opencode-go": "OpenCode Go",
 }
 
 # Bars per account cluster — see LimitGauges.MIN_BARS/MAX_BARS.
 _MIN_BARS = 2
-# An Antigravity account alone reports three live windows across two pools
-# (Gemini weekly + Gemini 5h + Claude/GPT weekly), and a Codex Plus account
-# two. Four keeps the widest real cluster complete instead of silently
-# dropping a limit the user is actually spending.
-_MAX_BARS = 4
+# An Antigravity account alone reports up to six live windows across three
+# pools (Gemini 5h/weekly + Claude/GPT 5h/weekly + Gemini 4 Argon weekly/5h),
+# and a Codex Plus account two. Six keeps the widest real cluster complete
+# instead of silently dropping a limit the user is actually spending.
+_MAX_BARS = 6
 
 # The three header styles, in Ctrl+Click cycle order.
 _STYLES = ("bars", "dots", "stack")
@@ -305,18 +306,26 @@ class LimitGauges(QWidget):
         else:
             card.schedule_hide()
 
-    def refresh_hover_card(self):
+    def refresh_hover_card(self, shift_down: bool | None = None):
         """Re-render an OPEN card from the newest snapshot; no-op otherwise.
 
         T-1242 spec 18/21: a content/countdown refresh must NOT reposition
         the card and must NOT call the ordinary ``reposition()`` -- the
         session geometry was pinned when the card was shown.  Only a real
         window move re-anchors (handled inside the card's own event filter).
+
+        ``shift_down`` is the caller's key-SEQUENCE answer, and it outranks
+        ``_shift_held()`` when given: T-1449 -- the ambient modifier state is
+        one event behind exactly while a modifier key event is being
+        delivered, so the key route must never read it.
         """
         card = getattr(self, "_hover_card", None)
         if card is None or sip_deleted(card) or not card.isVisible():
             return
-        ignore_filters = self._shift_held()
+        if shift_down is None:
+            shift_down = getattr(card, "_shift_down", None)
+        ignore_filters = (
+            self._shift_held() if shift_down is None else bool(shift_down))
         card.set_html(self._build_tooltip(ignore_filters=ignore_filters),
                       ignore_filters=ignore_filters)
         # No reposition(): horizontal geometry is frozen for the session;
@@ -530,25 +539,10 @@ class LimitGauges(QWidget):
             "limit_gauges_hide_unusable_5h", "False")) == "True"
 
     def _visible_accounts(self):
-        hidden = hidden_account_keys(self.main_win.data)
-        hide_zero = str(self.main_win.data.get(
-            "limit_gauges_hide_zero_usage", "False")) == "True"
-        hide_unusable = self._hide_unusable()
-        snap = self._service.state_copy
-        shown = []
-        for a in snap.accounts:
-            if a.key in hidden:
-                continue
-            shot = snap.snapshots.get(a.key)
-            if shot is None or shot.status not in (OK, STALE):
-                shown.append(a)
-                continue
-            if hide_zero and not account_has_usage(shot):
-                continue
-            if hide_unusable and not account_usable_now(shot):
-                continue
-            shown.append(a)
-        return ordered_accounts(shown, self.main_win.data)
+        # CORE-004: the policy lives in ONE place (visible_quota_accounts) so
+        # the gauges, the overview and the settings preview cannot drift apart.
+        return visible_quota_accounts(self.main_win.data, self._service,
+                                      self._hide_unusable())
 
     # -- manual reset offers (T-1360) --------------------------------------
     # Reset offers are exceptional state the user can ACT on: they stay
@@ -707,6 +701,73 @@ class LimitGauges(QWidget):
         return enabled and not bool(
             getattr(self.main_win, "_header_ultra", False))
 
+    def _label_plan(self, accounts, budget: int | None = None) -> set[str]:
+        """Which accounts get an identity label, in roster order.
+
+        The old rule was all-or-nothing: either every cluster carried its
+        ``CL/C1/...`` badge or NONE did. With eight or more accounts the
+        labelled row exceeded ``MAX_WIDGET_W``, so the gauge fell back to a
+        strip of anonymous 3-pixel bars -- the operator's "account identity is
+        hard to determine" report. Dropping identity for the whole row is a
+        much bigger loss than dropping it for the overflow tail, so labels are
+        now granted greedily in roster order until the budget runs out.
+
+        Greedy-from-the-front is also what keeps the layout from oscillating:
+        the decision is a pure function of the roster and the budget, so a
+        per-second refresh repaints the same plan.
+        """
+        accounts = list(accounts)
+        if not accounts or not self._prefer_account_labels():
+            return set()
+        if any(account is None for account in accounts):
+            # Anonymous slots: the overflow arithmetic reasons about a count,
+            # not about identities, so no label has a key to attach to.
+            return set()
+        if budget is None:
+            budget = (self.MAX_WIDGET_W - self.PAD * 2
+                      - self._status_width(accounts) - self._reset_badge_width())
+        # Reserve the UNLABELLED baseline FIRST. Charging as we go let the
+        # plan grant three labels and then still owe the trailing clusters
+        # their marks, so the row measured 240 px inside a 220 px widget and
+        # the last labels were clipped -- the same class of error as the
+        # historical GAP_ACC double-count. What a label may spend is only
+        # what is left after every cluster's marks are already paid for.
+        baseline = sum(self._marks_width(account) + self.GAP_ACC
+                       for account in accounts) - self.GAP_ACC
+        spare = budget - baseline
+        if spare <= 0:
+            return set()
+        plan: set[str] = set()
+        for account in accounts:
+            label = self._account_label_width(account)
+            if label <= 0:
+                continue
+            if label > spare:
+                break
+            plan.add(account.key)
+            spare -= label
+        return plan
+
+    def _cluster_width_in(self, account, plan) -> int:
+        """Pixels one cluster occupies under a label plan, gap included."""
+        labelled = account is not None and account.key in plan
+        return ((self._account_label_width(account) if labelled else 0)
+                + self._marks_width(account) + self.GAP_ACC)
+
+    def _marks_width_in(self, accounts, plan) -> int:
+        """Cluster-row width for a roster plus a label plan.
+
+        ONE definition shared by the width reservation and paintEvent. When
+        they disagreed by the last cluster's ``GAP_ACC`` the widget reserved
+        20 px, the fit check demanded 22, concluded nothing fitted, and
+        painted the overflow marker ``+2`` where the bars should have been.
+        """
+        widths = [self._cluster_width_in(account, plan)
+                  for account in accounts]
+        if not widths:
+            return 0
+        return sum(widths) - self.GAP_ACC
+
     def _clusters_width(self, accounts, with_label) -> int:
         """Pixels the whole cluster row occupies, trailing air excluded.
 
@@ -727,9 +788,14 @@ class LimitGauges(QWidget):
     def _fit_layout(self, available_width: int, accounts_or_count):
         """Return ``(labels, cluster_width, count_fit)`` for current pixels.
 
-        Labels are the first thing shed.  An overflow marker is reserved only
-        when even unlabeled clusters cannot all fit, so a marker never replaces
-        an account that would fit after dropping ``CL/C1/...``.
+        ``labels`` is True when the plan grants ANY identity badge. The plan is
+        computed against the same ``available_width`` the caller asks about, so
+        the fit decision and the paint decision cannot disagree: whatever this
+        method says fits is what ``paintEvent`` draws, badge for badge.
+
+        An overflow marker is reserved only when even the UNLABELLED clusters
+        cannot all fit, so a marker never replaces an account that would fit
+        after dropping ``CL/C1/...``.
 
         Clusters are measured individually: they are no longer all the same
         width (an account reporting four windows is wider than one reporting
@@ -743,15 +809,13 @@ class LimitGauges(QWidget):
         account_count = len(accounts)
         plain_widths = [self._cluster_width(False, account)
                         for account in accounts]
-        labeled = max((self._cluster_width(True, account)
-                       for account in accounts),
-                      default=self._cluster_width(True))
         plain = max(plain_widths, default=self._cluster_width(False))
-        show_labels = (self._prefer_account_labels()
-                       and self._clusters_width(accounts, True) <= available_width)
-        per_cluster = labeled if show_labels else plain
-        if self._clusters_width(accounts, show_labels) <= available_width:
-            return show_labels, per_cluster, account_count
+        plan = self._label_plan(accounts, available_width)
+        if self._marks_width_in(accounts, plan) <= available_width:
+            per_cluster = max(
+                (self._cluster_width_in(account, plan) for account in accounts),
+                default=self._cluster_width(False))
+            return bool(plan), per_cluster, account_count
         marker_width = 16  # enough for +1..+99 in the compact header font
         budget = available_width - marker_width
         count_fit = 0
@@ -785,7 +849,7 @@ class LimitGauges(QWidget):
             # Only the painted neutral indicator owns width when filtered.
             clusters = self._placeholder_width()
         else:
-            clusters = self._clusters_width(accounts, self._last_prefer_labels)
+            clusters = self._marks_width_in(accounts, self._label_plan(accounts))
         w = (self.PAD * 2 + self._status_width(accounts) + clusters
              + self._reset_badge_width())
         w = min(w, self.MAX_WIDGET_W)
@@ -1104,7 +1168,12 @@ class LimitGauges(QWidget):
             )
 
             if s.status in (OK, STALE):
-                windows = _cluster_windows(s, False if ignore_filters else self._hide_unusable())
+                raw_w = [w for w in (getattr(s, "windows", None) or ())
+                         if isinstance(w, UsageWindow)]
+                if (not ignore_filters) and self._hide_unusable():
+                    windows = display_windows(raw_w)
+                else:
+                    windows = resolved_windows(raw_w)
                 readable = False
                 for b in windows:
                     if b is not None and b.reset_pending:
@@ -1121,7 +1190,16 @@ class LimitGauges(QWidget):
                             if b.group_label else "")
                     w_lbl = html.escape(_win_label(b, a.provider_id))
                     if pool:
-                        clean_pool = pool.replace(" and ", " & ").replace(" models", "").replace(" Models", "")
+                        is_ag = (getattr(a, "provider_id", "") == "antigravity"
+                                 or "antigravity" in str(getattr(a, "key", "")).lower())
+                        if is_ag and pool.strip().lower() in ("pool 1", "pool1"):
+                            clean_pool = "Gemini"
+                        elif is_ag and pool.strip().lower() in ("pool 2", "pool2"):
+                            clean_pool = "Claude & GPT"
+                        elif is_ag and pool.strip().lower() in ("pool 3", "pool3"):
+                            clean_pool = "Gemini 4 Argon"
+                        else:
+                            clean_pool = pool.replace(" and ", " & ").replace(" models", "").replace(" Models", "")
                         lbl_text = f"{clean_pool} {w_lbl}:"
                     else:
                         lbl_text = f"{w_lbl}:"
@@ -1160,13 +1238,30 @@ class LimitGauges(QWidget):
                 if isinstance(wallet, (int, float)) and wallet > 0:
                     # Wallet is a BALANCE badge: no meter, no reset — it never
                     # expires, so a progress bar would be a lie.
+                    #
+                    # The unit is a property of the DATA, not of this
+                    # renderer: the provider normalizes Freebucks to hours
+                    # (5 FB = 1 h) in ``wallet_balance`` and reports that
+                    # choice in ``provider_metadata["unit"]``. Hardcoding a
+                    # word here silently relabels the number whenever the
+                    # provider's unit changes -- which is exactly how the
+                    # wallet row came to promise hours over a Freebucks
+                    # number. Both spellings already exist as translated
+                    # keys, so the renderer SELECTS one instead of inventing
+                    # a third (no new locale key, no partial translation).
+                    unit = str(meta.get("unit") or "").strip().lower()
+                    if unit in ("fb", "freebucks"):
+                        bonus_key = " (adds {n}/month)"
+                        wallet_key = "Wallet: <b>{n} FB</b> · never expires{hint}"
+                    else:
+                        bonus_key = " (adds {n} hrs/month)"
+                        wallet_key = "Wallet: <b>{n} hrs</b> · never expires{hint}"
                     bonus = meta.get("wallet_monthly_bonus")
-                    hint = (tr(" (adds {n}/month)").format(n=int(bonus))
+                    hint = (tr(bonus_key).format(n=int(bonus))
                             if isinstance(bonus, (int, float)) and bonus > 0 else "")
                     parts.append(
                         "<tr><td colspan='4' style='color:#d8ccaa; padding-left:4px; font-size:10px; padding-top:2px;'>"
-                        + tr("Wallet: <b>{n} FB</b> · never expires{hint}").format(
-                            n=int(wallet), hint=hint) + "</td></tr>"
+                        + tr(wallet_key).format(n=int(wallet), hint=hint) + "</td></tr>"
                     )
                 prices = meta.get("model_prices") or {}
                 if isinstance(prices, dict) and prices:
@@ -1264,19 +1359,36 @@ class LimitGauges(QWidget):
             avail_w = max(0, w - x - self.PAD)
             show_labels, _per_cluster, n_fit = self._fit_layout(
                 avail_w, accounts)
+            # Same plan the fit check measured. Recomputing it over a SLICE of
+            # the roster would grant badges the fit check never paid for.
+            plan = (self._label_plan(accounts, avail_w) if show_labels
+                    else set())
             overflow = len(accounts) > n_fit
             for a in accounts[:n_fit]:
                 s = snap.snapshots.get(a.key)
-                if show_labels:
+                if a.key in plan:
                     account_label = short_account_label(a, self.main_win.data)
                     label_width = self._account_label_width(a)
                     if label_width:
                         v_col = reset_color(self.main_win, getattr(a, "provider_id", ""))
                         pen_col = QColor(v_col) if v_col else pal["dim"]
                         p.setPen(QPen(pen_col, 1))
+                        # A user-supplied badge can be longer than the width
+                        # this cluster was granted. drawText clips such a
+                        # string MID-GLYPH -- the capture showed "CL Accou",
+                        # which reads as a different account rather than as a
+                        # shortened name. Elide instead, and elide the MIDDLE:
+                        # an account badge's distinguishing part is usually its
+                        # trailing ordinal ("... 1" vs "... 2"), so ElideRight
+                        # turned three different accounts into three identical
+                        # "CL Acco..." labels -- identity lost a second way.
+                        metrics = self.fontMetrics()
+                        fitted = metrics.elidedText(
+                            account_label, Qt.TextElideMode.ElideMiddle,
+                            max(1, label_width - 1))
                         p.drawText(x, 2, label_width - 1, bar_h,
                                    Qt.AlignmentFlag.AlignVCenter,
-                                   account_label)
+                                   fitted)
                         x += label_width
                 if self._style() == "stack":
                     self._draw_stack(p, x, 2, bar_h, s, pal, a)
@@ -1497,9 +1609,16 @@ def _win_label(b, provider_id: str = "") -> str:
         # Antigravity quotes only the remaining delay, never a window length.
         return tr("quota")
     if key == "daily_amount":
-        # Freebuff Freebucks: an amount pool with a daily refill, not an
-        # hours-long percent window — the label must not read "5h" or "1d".
-        return tr("daily FB")
+        # Freebuff: daily hours quota pool (migrated from legacy FB branding)
+        return f"{tr('Daily')} {tr('hours')}"
+    if key in ("plan_day", "free_day"):
+        return tr("Daily")
+    if key == "plan_five_day":
+        return "5d"
+    if key == "free_week":
+        return tr("weekly")
+    if key in ("plan_month", "free_month"):
+        return tr("monthly")
     if mins:
         if mins < 60:
             return f"{int(mins)}m"

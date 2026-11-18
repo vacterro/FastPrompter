@@ -169,11 +169,13 @@ def _read_owner_record() -> dict | None:
             if isinstance(data, dict) and "pid" in data:
                 return data
         except Exception:
-            pass
+            logger.warning("could not parse owner record in %s; treating as "
+                           "no owner recorded", path, exc_info=True)
         if raw.isdigit():
             return {"pid": int(raw), "create_time": 0, "exe": ""}
     except Exception:
-        pass
+        logger.warning("could not read owner record %s; treating as no owner "
+                       "recorded", path, exc_info=True)
     return None
 
 

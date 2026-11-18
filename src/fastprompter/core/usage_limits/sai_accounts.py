@@ -427,7 +427,7 @@ def _pool_indices(windows: object) -> list[int]:
     return out
 
 
-def _windows_from_plane(windows: object, source: str) -> list:
+def _windows_from_plane(windows: object, source: str, provider: str = "") -> list:
     """Translate the plane's window list into this application's windows.
 
     The two vocabularies are kept apart deliberately: the plane speaks in
@@ -472,6 +472,26 @@ def _windows_from_plane(windows: object, source: str) -> list:
                     resets_at.replace("Z", "+00:00")).timestamp()
             except (ValueError, OSError):
                 epoch = None
+
+        # Resolve pool / group label
+        raw_label = str(item.get("group_label") or item.get("pool_name")
+                        or item.get("group_name") or item.get("pool_label") or "").strip()
+        is_ag = (provider == "antigravity"
+                 or "antigravity" in str(source).lower()
+                 or "antigravity" in str(item.get("account_id") or "").lower())
+        if is_ag:
+            if not raw_label or raw_label.lower() in ("pool 1", "pool1"):
+                if pool == 0:
+                    raw_label = "Gemini Models"
+            if not raw_label or raw_label.lower() in ("pool 2", "pool2"):
+                if pool == 1:
+                    raw_label = "Claude and GPT models"
+            if not raw_label or raw_label.lower() in ("pool 3", "pool3"):
+                if pool == 2:
+                    raw_label = "Gemini 4 Argon"
+        elif not raw_label and group:
+            raw_label = f"Pool {pool + 1}"
+
         out.append(UsageWindow(
             key=key, duration_minutes=duration,
             available=item.get("disabled") is not True,
@@ -479,7 +499,7 @@ def _windows_from_plane(windows: object, source: str) -> list:
             remaining_percent=None if used is None else 100.0 - used,
             resets_at_epoch=epoch, source=source,
             group=group,
-            group_label=f"Pool {pool + 1}" if group else "",
+            group_label=raw_label if group else "",
         ))
     return out
 
@@ -517,7 +537,8 @@ def probe_shared(account: AccountRef, deadline: float,
                              error_summary="SAI Accounts did not answer")
 
     identity = _identity_from_plane(payload)
-    windows = _windows_from_plane(payload.get("windows"), "sai-accounts-usage")
+    windows = _windows_from_plane(payload.get("windows"), "sai-accounts-usage",
+                                  provider=account.provider_id)
     if windows:
         return UsageSnapshot(account=account, status=OK, windows=windows,
                              fetched_at=time.time(),

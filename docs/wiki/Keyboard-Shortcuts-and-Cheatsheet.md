@@ -17,14 +17,15 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Window** | **Alt+A** | Toggle hide-on-focus-loss | Main |
 | **Window** | **Alt+F** | Toggle Files asset drawer | Main |
 | **Window** | **Alt+\`** | Open Mini Settings | Main |
-| **Watcher** | **Alt+C** | Queue current line for watcher | Main |
-| **Watcher** | **Alt+Shift+C** | Open Queue Master dialog | Main |
+| **Retired** | ~~Alt+C~~ / ~~Alt+Shift+C~~ | Watcher queue (removed T-1183; unbound, `open_queue_master` is a no-op stub) | — |
 | **Navigation** | **Ctrl+1**…**Ctrl+0** | Jump to Silo 1–10 | App |
 | **Navigation** | **Alt+↑** / **Alt+↓** | Walk silos | App |
 | **Navigation** | **Ctrl+N** | New empty silo | App |
 | **Navigation** | **Ctrl+F** | Find in silo | Editor |
 | **Navigation** | **Ctrl+H** | Find and replace | Editor |
 | **Navigation** | **Ctrl+Shift+S** | Export active silo to .md | App |
+| **Packing** | **Ctrl+Shift+P** | Pack Silo — one portable ZIP of the active silo | App |
+| **Packing** | **Ctrl+Shift+C** | Fast Pack Selection — selection + referenced media (needs a selection) | Editor |
 | **Formatting** | **Ctrl+E** | Header format (configurable) | Editor |
 | **Formatting** | **Ctrl+Return** | Toggle checkbox `- [ ]` / `- [x]` | Editor |
 | **Formatting** | **Ctrl+W** | Insert divider `---` (smart split) | Editor |
@@ -38,7 +39,7 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 | **Formatting** | **Alt+Backspace** | Delete previous word | Editor |
 | **Formatting** | **Ctrl+Z** | Smart Undo (per silo) | Editor |
 | **Formatting** | **Ctrl+Y** / **Ctrl+Shift+Z** | Smart Redo (mirror of undo) | Editor |
-| **Editor** | **Ctrl+MiddleButton** | Delete the whole clicked line | Editor |
+| **Editor** | **Ctrl+MiddleButton** | Toggle random colored line mark (click again to remove; never deletes text) | Editor |
 | **Silos** | **Ctrl+MiddleButton** | Toggle random silo color box (click again to remove) | Silos |
 | **Silos** | **MiddleButton** | Move silo to Trash | Silos |
 | **Silos** | **Shift+MiddleButton** | Clear silo text | Silos |
@@ -70,8 +71,8 @@ Full keyboard-driven operation. Layout-independent VK dispatch — works on QWER
 ### Window Management
 **Ctrl+D** — 3-stage: Zen (minimal editor only) → Solo (minimise all other windows) → back to normal. **Ctrl+Q** — cycle through 7 snap zones, FancyZone picker, and user presets. **Alt+E/S/D/A** — lock geometry, pin-on-top, show sidebar, toggle focus-loss hide.
 
-### Watcher Queue
-**Alt+C** — queue current line under caret. Block-anchored, survives edits above it. **Alt+Shift+C** — Queue Master: inspect/reorder/clear queues across all silos.
+### Watcher Queue — retired in T-1183
+**Alt+C** and **Alt+Shift+C** are **unbound**: the watcher subsystem and its Queue Master dialog were removed from the product, the legacy action is a no-op stub, and both keys are free for other bindings. Old `watcher_*` settings rows are deleted on start.
 
 ### Markdown Formatting
 All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+I → `*italic*`, Ctrl+U → `<u>underline</u>`, Ctrl+T → `~~strike~~`, Ctrl+Shift+Q → `> quote`.
@@ -82,7 +83,7 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 
 **Ctrl+E** — format current line as header. Configurable: rule type, bullet, timestamp stamp, alignment. Open Settings → Dividers & headers to customize.
 
-**Ctrl+MiddleButton (in editor text)** — delete the whole line under the pointer, from anywhere on the line. Colored line marks now live on the gutter: left/right click in the gutter's mark zone cycles the mark colors (OFF included). **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
+**Ctrl+MiddleButton (in editor text)** — toggle a random colored line mark on the clicked line: first click adds a random colored box, second click removes it (text is never touched; to re-roll the color, remove and apply again). Left/right click in the gutter's mark zone cycles the mark colors (OFF included). **Alt+MiddleButton** — turn every selected line into a bullet. **MiddleButton** — cycle the clicked line: plain → checked+struck → unchecked.
 
 **Ctrl+Shift+drag** — grab the line under the pointer (or the whole selection) and move it to the drop indicator; bold, checkboxes and image pills survive the trip.
 
@@ -93,7 +94,21 @@ All formatting shortcuts toggle inline markers: **Ctrl+B** → `**bold**`, Ctrl+
 **F1-F10** paste pre-configured text templates. Bind content via Snippet Manager (**Ctrl+S**) or right-click on F-button.
 
 ### Clear + Timers
-**Ctrl+Shift+C** — clear the current silo text. **Ctrl+Shift+T** — open timer dialog. **Alt+Shift+T** — open hashtag search.
+**Ctrl+Shift+T** — open timer dialog. **Alt+Shift+T** — open hashtag search. Clearing a silo has no default chord: it lives in the silo row's context menu, because Ctrl+Shift+C became Fast Pack Selection in T-1409.
+
+### Pack Silo Gestures (T-1409/T-1428)
+The header Pack control carries the whole vocabulary on hover, so nothing here has to be memorised:
+
+| Gesture on the Pack control | Action |
+|---|---|
+| Click | Smart Quick Pack — reuses a content-identical bundle |
+| Shift+Click | Pack With Options… dialog |
+| Ctrl+Click | Force Repack (bypasses reuse) |
+| Ctrl+Shift+Click | Copy the last bundle for this silo |
+| Alt+Click | Open the last bundle's folder |
+| Right-click | Bundle menu: Quick Pack, Pack With Options…, Force Repack, Copy Last Bundle, Open Last Bundle Folder, Open Silo Exports Folder, Media-Only Quick Pack |
+
+Above 2000 blocks the control is no longer hit-tested — use **Ctrl+Shift+P** there.
 
 ### Kanban & Table (T-630)
 Inside a kanban silo: **Alt+arrows** move cards. Inside a table silo: **Tab/Shift+Tab** walk cells, **Enter** adds row.

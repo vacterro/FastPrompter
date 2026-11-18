@@ -65,13 +65,6 @@ def emit_dialog_show(main_win, dialog) -> None:
     _emit(main_win, "dialog_show")
 
 
-def emit_panel_show(main_win, panel) -> None:
-    """An eligible panel transitioned hidden -> visible."""
-    if getattr(panel, SPECIFIC_APPEARANCE_ATTR, None):
-        return
-    _emit(main_win, "panel_show")
-
-
 def emit_notification_show(main_win) -> None:
     """A notification surface became visible."""
     _emit(main_win, "notification_show")

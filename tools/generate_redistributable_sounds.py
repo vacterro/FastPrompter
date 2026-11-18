@@ -223,7 +223,7 @@ def voice_whoosh(seed: int) -> list[float]:
     shape = []
     for i in range(n):
         x = i / n
-        shape.append((math.sin(math.pi * x) ** 1.6))
+        shape.append(math.sin(math.pi * x) ** 1.6)
     return _limit([v * s for v, s in zip(noise, shape)])
 
 

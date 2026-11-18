@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from fastprompter.core import sound_library
 from fastprompter.core.translations import tr
 from fastprompter.core.usage_limits.cli_tools import (
     INSTALLERS,
@@ -37,8 +38,6 @@ from fastprompter.core.usage_limits.model import (
     FIVE_HOUR,
     MONTHLY,
     WEEKLY,
-    account_has_usage,
-    account_usable_now,
     base_key,
 )
 from fastprompter.core.usage_limits.notifications import (
@@ -48,7 +47,7 @@ from fastprompter.core.usage_limits.notifications import (
 from fastprompter.ui.limit_account_selector import (
     LimitAccountSelector,
     account_display_name,
-    hidden_account_keys,
+    visible_quota_accounts,
 )
 from fastprompter.ui.limit_colors import (
     ROLES,
@@ -128,6 +127,10 @@ def _window_name(window) -> str:
     """
     key = base_key(window.key)
     pool = getattr(window, "group_label", "") or ""
+    if pool.strip().lower() in ("pool 1", "pool1") and "antigravity" in str(getattr(window, "key", "")).lower():
+        pool = "Gemini Models"
+    elif pool.strip().lower() in ("pool 2", "pool2") and "antigravity" in str(getattr(window, "key", "")).lower():
+        pool = "Claude and GPT models"
     prefix = f"{pool} · " if pool else ""
     if key == FIVE_HOUR:
         return f"{prefix}" + tr("5 hours")
@@ -139,6 +142,16 @@ def _window_name(window) -> str:
         return f"{prefix}" + tr("spend limit")
     if key == "quota":
         return f"{prefix}" + tr("quota")
+    if key == "daily_amount":
+        return f"{prefix}{tr('Daily')} {tr('hours')}"
+    if key in ("plan_day", "free_day"):
+        return f"{prefix}" + tr("Daily")
+    if key == "plan_five_day":
+        return f"{prefix}5 " + tr("days")
+    if key == "free_week":
+        return f"{prefix}" + tr("7 days")
+    if key in ("plan_month", "free_month"):
+        return f"{prefix}" + tr("30 days")
     mins = window.duration_minutes
     if isinstance(mins, (int, float)) and mins > 0:
         if mins < 1440:
@@ -150,6 +163,10 @@ def _window_name(window) -> str:
 def _desktop_window_name(key: str) -> str:
     """Window label from a bare key (no UsageWindow to read a duration from)."""
     return {FIVE_HOUR: "5h", WEEKLY: "7d", MONTHLY: "30d",
+            "daily_amount": "Daily Hours",
+            "plan_day": "Daily", "free_day": "Daily",
+            "plan_five_day": "5d", "free_week": "7d",
+            "plan_month": "30d", "free_month": "30d",
             "spend_limit": tr("spend"), "quota": tr("quota")}.get(
                 base_key(key), tr("window"))
 
@@ -357,19 +374,20 @@ class LimitSettingsDialog(QDialog):
             tr('Remaining: a full bar means quota is available, the bar empties as you spend it, and the caption reads "24% left".\nUsed: an empty bar means nothing is spent, the bar fills up, and the same window reads "76% used".\nApplies to these bars, their captions, and the header gauge.'))
         self.cmb_fill.currentIndexChanged.connect(self._set_fill_mode)
         fill_row.addWidget(self.cmb_fill)
-        self.cb_overview_hide_zero = QCheckBox(tr('Hide 0% usage accounts'))
+        self.cb_overview_hide_zero = QCheckBox(
+            tr('Hide exhausted accounts (0% left)'))
         self.cb_overview_hide_zero.setChecked(
             self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
         self.cb_overview_hide_zero.setToolTip(
-            tr('Completely hide accounts that have 0% usage across both 5h and weekly windows.\nThey will appear only when they actually have usage (> 0%).'))
+            tr('Keep accounts that still have spendable capacity. A full, untouched quota (0% used, 100% left) is healthy and stays visible; only a genuinely exhausted quota (0% left) is hidden.\nA positive wallet balance also counts as capacity. Unknown or reset-pending readings are never treated as zero.'))
         self.cb_overview_hide_zero.toggled.connect(self._set_hide_zero_usage)
         fill_row.addWidget(self.cb_overview_hide_zero)
         self.cb_overview_hide_unusable = QCheckBox(
-            tr('Only available 5h windows'))
+            tr('Only currently available accounts'))
         self.cb_overview_hide_unusable.setChecked(
             self.data.get("limit_gauges_hide_unusable_5h", "False") == "True")
         self.cb_overview_hide_unusable.setToolTip(
-            tr('Hide accounts whose 5-hour window is exhausted, even when the weekly pool still has quota — they cannot do work right now.\nFor Antigravity: a quota pool whose windows are all spent is hidden; only pools that still have quota are shown.'))
+            tr('Show accounts with evidence of spendable capacity right now. Where a 5-hour window is reported it governs immediate work; plans without one are judged by their real governing window (weekly, monthly or other).\nAn exhausted longer window still blocks its shorter windows. An unreadable optional window never hides an otherwise live pool.'))
         self.cb_overview_hide_unusable.toggled.connect(
             self._set_hide_unusable_5h)
         fill_row.addWidget(self.cb_overview_hide_unusable)
@@ -551,24 +569,20 @@ class LimitSettingsDialog(QDialog):
             parts.append(snap.status.lower())
         label.setText(" · ".join(parts))
 
-        # Surface hidden accounts that have banked resets available
+        # Surface hidden accounts that have banked resets available. Use the
+        # SAME filtering authority as gauges/overview/hover (T-1462): a
+        # duplicate predicate list here would drift the moment the visibility
+        # rules change, and would otherwise call a diagnostic account "hidden"
+        # although the shared filter deliberately keeps it discoverable.
         hb_label = getattr(self, "lbl_hidden_banked", None)
         if hb_label is not None:
-            hidden_keys = hidden_account_keys(self.data)
-            hide_zero = str(self.data.get(
-                "limit_gauges_hide_zero_usage", "False")) == "True"
-            hide_unusable = str(self.data.get(
-                "limit_gauges_hide_unusable_5h", "False")) == "True"
+            shown_keys = {a.key for a in visible_quota_accounts(
+                self.data, self.service,
+                str(self.data.get("limit_gauges_hide_unusable_5h", "False"))
+                == "True")}
             hidden_banked: list[str] = []
             for a in snap.accounts:
-                is_hidden = a.key in hidden_keys
-                if not is_hidden and hide_zero:
-                    is_hidden = not account_has_usage(
-                        snap.snapshots.get(a.key))
-                if not is_hidden and hide_unusable:
-                    is_hidden = not account_usable_now(
-                        snap.snapshots.get(a.key))
-                if not is_hidden:
+                if a.key in shown_keys:
                     continue
                 s = snap.snapshots.get(a.key)
                 from fastprompter.core.usage_limits.model import (
@@ -643,11 +657,11 @@ class LimitSettingsDialog(QDialog):
 
         row3 = QHBoxLayout()
         self.cb_hide_zero = QCheckBox(
-            literal_label(tr('Hide accounts with 0% usage (5h & weekly)')))
+            literal_label(tr('Hide exhausted accounts (0% left)')))
         self.cb_hide_zero.setChecked(
             self.data.get("limit_gauges_hide_zero_usage", "False") == "True")
         self.cb_hide_zero.setToolTip(
-            tr('Completely hide accounts that have 0% usage across both 5h and weekly windows.\nThey will appear only when they actually have usage (> 0%).'))
+            tr('Keep accounts that still have spendable capacity. A full, untouched quota (0% used, 100% left) is healthy and stays visible; only a genuinely exhausted quota (0% left) is hidden.\nA positive wallet balance also counts as capacity. Unknown or reset-pending readings are never treated as zero.'))
         self.cb_hide_zero.toggled.connect(self._set_hide_zero_usage)
         row3.addWidget(self.cb_hide_zero)
         row3.addStretch(1)
@@ -655,11 +669,11 @@ class LimitSettingsDialog(QDialog):
 
         row3b = QHBoxLayout()
         self.cb_hide_unusable = QCheckBox(
-            tr('Only available 5h windows'))
+            tr('Only currently available accounts'))
         self.cb_hide_unusable.setChecked(
             self.data.get("limit_gauges_hide_unusable_5h", "False") == "True")
         self.cb_hide_unusable.setToolTip(
-            tr('Hide accounts whose 5-hour window is exhausted, even when the weekly pool still has quota — they cannot do work right now.\nFor Antigravity: a quota pool whose windows are all spent is hidden; only pools that still have quota are shown.'))
+            tr('Show accounts with evidence of spendable capacity right now. Where a 5-hour window is reported it governs immediate work; plans without one are judged by their real governing window (weekly, monthly or other).\nAn exhausted longer window still blocks its shorter windows. An unreadable optional window never hides an otherwise live pool.'))
         self.cb_hide_unusable.toggled.connect(self._set_hide_unusable_5h)
         row3b.addWidget(self.cb_hide_unusable)
         row3b.addStretch(1)
@@ -1063,14 +1077,24 @@ class LimitSettingsDialog(QDialog):
         self.main_win._check_limit_notifications()
 
     def _sound_inventory(self):
+        """The ONE inventory the AI-limit rule combos offer (T-1510).
+
+        The packaged snapshot, the managed library and the addon folder -- the
+        same set Sound Settings and the timer offer, so a sound imported into
+        the library can be picked for a limit rule too. The ``file:`` prefix
+        is the storage form ``SoundManager.play_sound_ref`` plays back; the
+        namespace inside it is kept, so ``file:user:imported/x.wav`` resolves
+        to the managed root.
+        """
         if hasattr(self, "_sound_inventory_cache"):
             return self._sound_inventory_cache
         items = [(tr("Notification event"), "notify")]
         try:
-            for rel in self.main_win.sound_manager.get_available_sounds() or ():
-                items.append((rel, f"file:{rel}"))
+            files = self.main_win.sound_manager.get_available_sounds() or ()
         except Exception:
-            pass
+            files = ()
+        for rel in sound_library.list_selectable_sounds(list(files)):
+            items.append((rel, f"file:{rel}"))
         self._sound_inventory_cache = items
         return items
 

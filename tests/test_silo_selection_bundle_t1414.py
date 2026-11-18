@@ -371,7 +371,9 @@ def test_fast_pack_selection_with_selection(qapp, tmp_path):
         "_silo_bundle_title": staticmethod(FastPrompter._silo_bundle_title),
         "active_silo_title": FastPrompter.active_silo_title,
         "get_current_category": lambda self: "TestCat",
-        "VERSION": "0.8.71",
+        # T-1458: the entry point asks _bundle_app_version (the VERSION-file
+        # reader), so a bare stub answers it instead of carrying a VERSION attr.
+        "_bundle_app_version": lambda self: "0.8.71",
         "_show_in_app_toast": MagicMock(),
         "_last_bundle_path": None,
     })()

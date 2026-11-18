@@ -86,6 +86,7 @@ _ALIGN_FLAGS = {
     "right": Qt.AlignmentFlag.AlignRight,
     "justify": Qt.AlignmentFlag.AlignJustify,
 }
+from fastprompter.core import interval_schedule as _interval_schedule
 from fastprompter.core.i18n import NATIVE_NAMES as _LANG_NATIVE_NAMES
 from fastprompter.core.ipc_server import IpcServer
 from fastprompter.core.profile_flags import profile_default, profile_flag
@@ -1044,6 +1045,14 @@ class _SyncPushWorker(QObject):
                             path, text, ps.MISSING_ON_DISK, eol,
                             write_bom=had_bom)
                         if written is None and conflict_id is not None:
+                            if ps.is_unreadable_identity(conflict_id):
+                                # CORE-001: something occupies the path and
+                                # cannot be read. There is no readable revision
+                                # to hand to conflict resolution, so this is an
+                                # unsafe target, not an external edit.
+                                results.append(
+                                    (key, path, text, "error", None))
+                                continue
                             # W2-001: hand the conflict resolution the content
                             # that actually defeated the gate.
                             observed = ps.read_text_file(path, max_bytes)
@@ -1087,6 +1096,10 @@ class _SyncPushWorker(QObject):
                     written, conflict_id = ps.compare_and_publish_text(
                         path, text, disk_id, eol, write_bom=had_bom)
                     if written is None and conflict_id is not None:
+                        if ps.is_unreadable_identity(conflict_id):
+                            results.append(
+                                (key, path, text, "error", None))
+                            continue
                         observed = ps.read_text_file(path, max_bytes)
                         results.append(
                             (key, path, text, "conflict", observed))
@@ -2823,64 +2836,31 @@ class FastPrompter(
         """Seconds until the next eligible occurrence of an interval rule, or
         None when the rule must not appear in the top bar (W2-005).
 
-        Uses the same clock/elapsed boundary contract as the scheduler
-        (`_check_interval_notifs`), so the countdown and the firing can never
-        disagree about the next boundary. Clock rules with minutes > 1440 fire
-        only at midnight (minute_of_day == 0), exactly as the scheduler does.
-        """
-        import datetime as _dt
-        import time as _time
+        CORE-006: the countdown and the scheduler now share ONE calculator
+        (``fastprompter.core.interval_schedule``). The old version inspected
+        only the nearest mathematical boundary and returned None when that
+        boundary fell outside the active window -- so a morning-only rule
+        disappeared from the top bar for the whole rest of the day even though
+        tomorrow morning was a perfectly valid occurrence. Elapsed rules also
+        ignored the active window entirely, advertising a moment the scheduler
+        would suppress.
 
+        None is returned only when the rule cannot appear at all (disabled,
+        not shown in the top bar, or no eligible occurrence inside the search
+        horizon).
+        """
         if not rule.get("enabled"):
             return None
         if not rule.get("show_in_top_bar"):
             return None
         try:
-            minutes = max(1, int(rule.get("minutes") or 60))
-        except (TypeError, ValueError):
+            return _interval_schedule.seconds_until_next(rule, now_dt)
+        except Exception:
+            from fastprompter.core.logging import logger
+
+            logger.debug("interval top-bar countdown failed for %s",
+                         rule.get("id", "<no-id>"), exc_info=True)
             return None
-        align_mode = str(rule.get("align_mode", "clock"))
-
-        if align_mode != "clock":
-            last = float(rule.get("last_fired") or 0.0)
-            if last <= 0.0:
-                return minutes * 60.0
-            return max(0.0, last + minutes * 60.0 - _time.time())
-
-        mod = now_dt.hour * 60 + now_dt.minute
-        minute_key = now_dt.strftime("%Y-%m-%d %H:%M")
-        if minutes <= 1440:
-            boundary_now = mod % minutes == 0
-        else:
-            boundary_now = mod == 0
-        if boundary_now and rule.get("last_fired_minute") != minute_key:
-            return 0.0
-        if minutes <= 1440:
-            nxt_mod = ((mod // minutes) + 1) * minutes
-            if nxt_mod >= 1440:
-                day = now_dt.date() + _dt.timedelta(days=1)
-                nxt_mod %= 1440
-            else:
-                day = now_dt.date()
-        else:
-            day = now_dt.date() + _dt.timedelta(days=1)
-            nxt_mod = 0
-        nxt = _dt.datetime.combine(day, _dt.time(nxt_mod // 60, nxt_mod % 60))
-        # active-hour gate: an occurrence outside the window is impossible, so
-        # it must not be advertised as a countdown.
-        if not rule.get("all_day", True):
-            try:
-                start_m = int(rule.get("start_minute", 0))
-                end_m = int(rule.get("end_minute", 1439))
-            except (TypeError, ValueError):
-                start_m, end_m = 0, 1439
-            if start_m <= end_m:
-                if not (start_m <= nxt_mod <= end_m):
-                    return None
-            else:
-                if not (nxt_mod >= start_m or nxt_mod <= end_m):
-                    return None
-        return max(0.0, (nxt - now_dt).total_seconds())
 
     def _interval_top_bar_candidate(self, now_dt):
         """First enabled show_in_top_bar interval rule with a valid next
@@ -4113,6 +4093,84 @@ class FastPrompter(
         "show_notification", "show_in_top_bar",
     )
 
+    def voice_countdown_sources(self):
+        """The deadlines this window already knows (W2-002).
+
+        The voice-countdown controller calls this on its tick. It is the
+        producer side that the audit found missing entirely: ``VoiceController``
+        looked for ``host.voice_countdown_sources``, nothing in the application
+        defined it, so every tick collected empty collections and the feature
+        could never acquire a target.
+
+        Returns ``(timers, limits)`` in the shape the existing helpers expect
+        (``nearest_timer_due`` / ``nearest_ai_reset_due``). This READS state and
+        never polls a provider: the AI-limit snapshots are whatever the
+        already-running UsageLimitService last resolved.
+
+        Excluded here rather than downstream: completed, disabled and fired
+        timers, and timers whose due date is already behind us. A deadline the
+        user cancelled must stop being a countdown target the same tick.
+        """
+        timers: list[dict] = []
+        try:
+            now_epoch = __import__("datetime").datetime.now().timestamp()
+        except Exception:
+            now_epoch = 0.0
+        try:
+            for timer in list(self.timers or ()):
+                if not getattr(timer, "enabled", True):
+                    continue
+                if getattr(timer, "fired", False):
+                    continue
+                target = getattr(timer, "target", None)
+                due = getattr(target, "timestamp", None)
+                if not callable(due):
+                    continue
+                try:
+                    due_epoch = float(due())
+                except (TypeError, ValueError, OSError):
+                    continue
+                if due_epoch <= now_epoch:
+                    continue
+                timers.append({
+                    "id": str(getattr(timer, "id", "")),
+                    "due": due_epoch,
+                    "active": True,
+                })
+        except Exception:
+            from fastprompter.core.logging import logger as _logger
+            _logger.debug("voice countdown timer collection failed", exc_info=True)
+
+        limits: list[dict] = []
+        try:
+            # ``limit_service`` is the attribute the window actually creates;
+            # reading a differently named attribute would silently collect
+            # nothing, which is the exact failure this method exists to fix.
+            service = getattr(self, "limit_service", None)
+            snap = getattr(service, "state_copy", None) if service else None
+            snapshots = getattr(snap, "snapshots", None)
+            # An EMPTY mapping is the normal "no accounts configured" state, so
+            # it must not be replaced by a tuple: reset_candidates takes the
+            # mapping and calls .items() on it. Only a missing/odd value falls
+            # back, and it falls back to an empty DICT.
+            if not isinstance(snapshots, dict):
+                snapshots = {}
+            from fastprompter.core.usage_limits.model import reset_candidates
+
+            for candidate in reset_candidates(snapshots, set()):
+                reset_epoch = getattr(candidate, "resets_at_epoch", None)
+                if not reset_epoch:
+                    continue
+                limits.append({
+                    "key": str(getattr(candidate, "provider_id", "") or ""),
+                    "reset": float(reset_epoch),
+                    "enabled": True,
+                })
+        except Exception:
+            from fastprompter.core.logging import logger as _logger
+            _logger.debug("voice countdown limit collection failed", exc_info=True)
+        return timers, limits
+
     def _interval_notifs(self):
         """Return the AUTHORITATIVE stored interval-notif rule list.
 
@@ -4305,14 +4363,15 @@ class FastPrompter(
 
                 would_fire = False
                 if align_mode == "clock":
-                    # Fire on the clock crossing: the current minute-of-day is a
-                    # multiple of the interval. NOT gated on second==0, so a late
-                    # or missed 1Hz sample still catches the boundary on its next
-                    # tick (once) — last_fired_minute dedups by minute, so there
-                    # are no replay storms and no same-boundary duplicates. This
-                    # also makes arbitrary clock intervals (45m, 90m, ...) valid
-                    # instead of silently never firing.
-                    if minute_of_day % minutes == 0:
+                    # CORE-004: the boundary test is the canonical calculator,
+                    # not ``minute_of_day % minutes``. That expression measured
+                    # the interval inside one calendar day and reset at
+                    # midnight, so a 100-minute rule fired 40 minutes after its
+                    # 23:20 occurrence and a 48-hour rule became daily.
+                    # ``inclusive=True`` keeps the late-tick behaviour: a
+                    # sample landing anywhere in the boundary minute still
+                    # sees it, and last_fired_minute dedups the minute.
+                    if _interval_schedule.is_due_now(rule, now_dt):
                         if rule.get("last_fired_minute") != minute_key:
                             would_fire = True
                 else:
@@ -6414,7 +6473,7 @@ class FastPrompter(
                 "target_dir": target_dir,
                 "silo_dir": silo_dir,
                 "category": category,
-                "app_version": getattr(self, "VERSION", "0.8.72"),
+                "app_version": self._bundle_app_version(),
                 "line_start": line_start,
                 "line_end": line_end,
             },
@@ -10526,11 +10585,19 @@ class FastPrompter(
             # memory).
             presets = self._ensure_temp_presets()
             free_count = max(0, 100 - len(mapping))
+            # CORE-002 (audit/18): the bound has to be applied AFTER excluding
+            # paths that are already mapped, or it silently changes the
+            # question. With 99 of 100 slots used, the bound kept the
+            # lexicographically smallest single path -- always one of the 99
+            # mapped files -- so the only eligible new file was never
+            # discovered and discovery starved permanently. Exclusion first
+            # makes "the K smallest ELIGIBLE paths" mean what it says.
             files = ps.scan_folder(
                 root, self._sync_include(), self._sync_exclude(),
                 recursive=self._sync_recursive(),
                 max_bytes=self._sync_max_bytes(),
-                limit=free_count if free_count > 0 else 100)
+                limit=free_count if free_count > 0 else 100,
+                exclude_paths=set(mapping.values()))
             # W2-003: existing bindings are classified separately from new-file
             # discovery. `files` only contains CURRENTLY syncable entries — a
             # file that is temporarily over max_bytes, caught mid-write as
@@ -16684,6 +16751,15 @@ class FastPrompter(
                 # exactly that list calling styleSheet()/unpolish/polish, and
                 # touching a destroyed object there is an access violation,
                 # not an exception: the process dies with no traceback.
+                #
+                # hide() FIRST is what keeps this a retirement instead of a
+                # promotion: ``setParent(None)`` on a VISIBLE child makes it a
+                # top-level window, and the queued show it already had is then
+                # delivered to the new top level, so the removed buttons float
+                # over the app as stray "1 2 3" windows until they are
+                # destroyed. A hidden widget unparents into a hidden window and
+                # nothing is ever painted on the desktop.
+                w.hide()
                 w.setParent(None)
                 w.deleteLater()
         self._cat_num_buttons = []
@@ -17745,11 +17821,29 @@ class FastPrompter(
         self._update_last_geometry()
         super().moveEvent(event)
 
+    def _release_owned_toasts(self):
+        """Close every toast that belongs to this window.
+
+        T-1441: a toast is a top-level Tool window with no Qt parent, so it is
+        NOT owned by the window it belongs to. It survives that window's
+        destruction as a floating rectangle whose Snooze/Dismiss callbacks
+        point into a dead window. Profile switch already closes them
+        (``close_for_main``); the window close is the other exit and had no
+        owner at all.
+        """
+        try:
+            from fastprompter.ui.timer_toast import TimerToast
+            TimerToast.close_for_main(self)
+        except Exception:
+            from fastprompter.core.logging import logger
+            logger.debug("toast release on close failed")
+
     def closeEvent(self, event):
         # never exit leaving the user's desktop minimised on our account
         self.exit_zen_solo()
         # W2-002: during post-loop physical teardown, skip logical save fallback.
         if getattr(self, "_in_physical_teardown", False):
+            self._release_owned_toasts()
             super().closeEvent(event)
             return
         # P0-6: the ONE finalization path is _pre_quit_logical_finalize --
@@ -17779,6 +17873,7 @@ class FastPrompter(
         # reopened resident process permanently retired. Worker retirement
         # belongs exclusively to _shutdown_application, which runs the same
         # close as part of the single canonical quiesce path.
+        self._release_owned_toasts()
         super().closeEvent(event)
         self.quit_app()
 
@@ -22817,7 +22912,26 @@ class FastPrompter(
             weight = 4.0
 
         if mode == "words":
-            word_count = self.text_area.document_word_count()
+            # PERF-004: the top bar is repainted from inside textChanged, so it
+            # must not force the O(block count) recount there. Ask for the
+            # cached aggregate and, while a structural edit has it marked
+            # stale, publish NOTHING rather than a number we already know to be
+            # wrong — the editor's settle timer calls back into this method
+            # with the reconciled count a moment later.
+            word_count = getattr(
+                self.text_area, "word_count_if_known", None)
+            word_count = word_count() if word_count is not None else None
+            if word_count is None:
+                if lbl.text():
+                    lbl.setText("")
+                pending_tip = tr(
+                    "Recalculating the word and token estimate for the open silo",
+                    getattr(self, "_current_lang", "EN")
+                )
+                if lbl.toolTip() != pending_tip:
+                    lbl.setToolTip(pending_tip)
+                self._set_topbar_semantic("lbl_token_count", False)
+                return
 
             weight = max(0.1, min(10.0, weight))
             tokens = int(round(word_count * weight))
@@ -23285,6 +23399,13 @@ class FastPrompter(
                 self.tray_icon.hide()
         except Exception:
             pass
+        # The quit is committed: nothing can re-show these, and leaving them up
+        # would paint orphan toasts after the process drops its window.
+        # Guarded like the tray above: the exit-order contract drives this
+        # method on a stub window that carries only the attributes it asserts.
+        _release_toasts = getattr(self, "_release_owned_toasts", None)
+        if _release_toasts is not None:
+            _release_toasts()
         self._quit_in_progress = True
         try:
             try:

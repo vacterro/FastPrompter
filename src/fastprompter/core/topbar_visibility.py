@@ -7,7 +7,6 @@ can be tested without constructing the application window.
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
 
 VERSION = 1
@@ -209,7 +208,3 @@ def requested_tokens(config: dict, effective_width: float,
             if rule != "hide":
                 requested[item.token] = rule
     return rid, requested
-
-
-def clone_config(config: dict) -> dict:
-    return copy.deepcopy(normalize_topbar_visibility(config))

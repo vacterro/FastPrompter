@@ -256,19 +256,6 @@ def capture_current_scheme():
     return name, paths
 
 
-def clear_bundle():
-    """Forget the copy, so the program falls back to stock shapes."""
-    folder = bundle_dir()
-    if not os.path.isdir(folder):
-        return False
-    try:
-        shutil.rmtree(folder)
-        return True
-    except OSError:
-        logger.exception("could not remove the cursor folder")
-        return False
-
-
 def build_cursor_map(paths=None):
     """{Qt.CursorShape: QCursor} for every role Qt can actually load.
 

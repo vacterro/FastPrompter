@@ -147,24 +147,6 @@ def _is_playable_wav(path: str) -> bool:
         return False
 
 
-def _normalize_selected(value: Any) -> tuple[str, ...]:
-    if isinstance(value, str):
-        # The store normally decodes JSON before this boundary; accepting a
-        # comma-separated fallback makes this helper safe for direct callers
-        # without introducing a second persistence format.
-        value = [part.strip() for part in value.split(",") if part.strip()]
-    if not isinstance(value, (list, tuple, set, frozenset)):
-        value = ()
-    result: list[str] = []
-    for token in value:
-        if not isinstance(token, str) or not token or token in result:
-            continue
-        if token in SOUND_IDS or token.startswith(BUILTIN_ID_PREFIX) \
-                or token.startswith(USER_PREFIX):
-            result.append(token)
-    return tuple(result)
-
-
 def inspect_sound_pool(
     selected_ids: Any,
     base_dir: str | os.PathLike[str] | None = None,

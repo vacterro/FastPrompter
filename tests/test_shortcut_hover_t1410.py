@@ -312,7 +312,6 @@ def test_t1428_audit_table_covers_all_toolbar_buttons():
         "btn_files": "toggle_files_hotkey",
         "btn_sidebar_toggle": "toggle_sidebar_hotkey",
         "btn_copy": "copy",
-        "btn_help": "help",
         "btn_silo_up": "prev_silo",
         "btn_silo_down": "next_silo",
         "btn_home": "home",

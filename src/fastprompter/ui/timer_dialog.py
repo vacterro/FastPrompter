@@ -187,8 +187,16 @@ DEFAULT_INTERVAL_RULES = DAYPART_CHIME_RULES
 class _TimerBehaviorEditor(QWidget):
     """Reusable timer-behaviour editor: notify / top-bar / colour / sound."""
 
-    # (sound_ref, volume) the host should audition immediately — volume 0.0-1.0
+    # (sound_ref, volume) the host should audition immediately — volume 0.0-1.0.
+    # CORE-005: EXPLICIT gestures only (Test button, quick-sound click, a
+    # deliberate combo activation). Those must never be debounced.
     previewRequested = pyqtSignal(str, float)
+
+    # (sound_ref, volume) the selection moved — a wheel tick, arrow-key
+    # navigation, or the currentIndexChanged half of a mouse pick. The host
+    # COALESCES these through one dialog-wide audition policy so a single
+    # gesture can never request two overlapping previews.
+    soundSelected = pyqtSignal(str, float)
 
     def __init__(self, main_win, lang, parent=None):
         super().__init__(parent)
@@ -252,7 +260,10 @@ class _TimerBehaviorEditor(QWidget):
 
         self.btn_preview_sound = QPushButton(tr("Test", lang))
         self.btn_preview_sound.setToolTip(tr("Preview currently selected sound", lang))
-        self.btn_preview_sound.clicked.connect(self._preview_single)
+        # A lambda, not a bare slot: clicked emits ``checked`` and a bare
+        # connection would land that False in the ``explicit`` parameter.
+        self.btn_preview_sound.clicked.connect(
+            lambda _checked=False: self._preview_single(explicit=True))
         sound_row.addWidget(self.btn_preview_sound)
         lay.addLayout(sound_row)
 
@@ -292,14 +303,30 @@ class _TimerBehaviorEditor(QWidget):
 
         self.cb_pool.toggled.connect(self._on_pool_toggled)
         self._suppress_preview = False
+        # CORE-005: ONE gesture, ONE audition. A mouse pick emits
+        # currentIndexChanged AND activated, and the old wiring sent both
+        # straight to the sound manager -- two overlapping previews for one
+        # click, and a chorus while wheel-scrolling. The selection signal is
+        # the coalesced route (debounced, replace-latest) and the activation
+        # signal is the immediate route; the dialog runs both through a single
+        # IntervalPreviewController, whose immediate() preempts the queued one.
+        # The Test button below stays immediate on purpose.
         self.cb_sound.currentIndexChanged.connect(self._on_sound_index_changed)
-        self.cb_sound.activated.connect(lambda _i: self._preview_single())
+        self.cb_sound.activated.connect(lambda _i: self._preview_single(explicit=True))
         lay.addStretch(1)
 
     def _on_sound_index_changed(self, index):
         if getattr(self, "_suppress_preview", False):
             return
         self._preview_single()
+
+    def _emit_pool_preview(self, sound, vol):
+        """Route one pool-row audition through the coalescing route."""
+        if not self.cb_pool.isChecked():
+            return
+        v = vol.value()
+        ref = sound.currentData() or "tick"
+        self.soundSelected.emit(ref, self.spin_vol.value() if v < 0 else v)
 
     def _quick_bar_slots(self):
         saved = getattr(self.main_win, "data", {}).get("sound_quick_bar") if hasattr(self.main_win, "data") else None
@@ -335,7 +362,9 @@ class _TimerBehaviorEditor(QWidget):
         if 0 <= idx < len(slots):
             ref = slots[idx]
             self.select_sound(ref)
-            self._preview_single()
+            # CORE-005: a quick-sound click is an explicit gesture -- one
+            # immediate audition, never a debounced one.
+            self._preview_single(explicit=True)
 
     def _quick_store(self, idx):
         ref = self.cb_sound.currentData()
@@ -474,7 +503,10 @@ class _TimerBehaviorEditor(QWidget):
     def _on_pool_sound_changed(self, sound, vol):
         if getattr(self, "_suppress_preview", False):
             return
-        self._preview_pool_widgets(sound, vol)
+        # CORE-005: a pool row's selection change coalesces, exactly like the
+        # single-sound combo. The row's own `activated` connection above still
+        # delivers the immediate audition for a deliberate pick.
+        self._emit_pool_preview(sound, vol)
 
     def _read_pool_rules(self):
         out = []
@@ -501,11 +533,23 @@ class _TimerBehaviorEditor(QWidget):
         return out
 
     # -- preview (user activation only) -------------------------------------
-    def _preview_single(self):
+    def _preview_single(self, explicit=False):
+        """One audition request for the single-sound combo.
+
+        ``explicit`` marks the routes that must play NOW: the Test button and a
+        deliberate activation (Enter / a mouse pick). Those still go through
+        ``previewRequested``. A bare index change — arrow keys, a wheel tick,
+        or the first half of a mouse pick — goes through ``soundSelected`` so
+        the dialog can coalesce it. CORE-005.
+        """
         if self.cb_pool.isChecked():
             return
-        self.previewRequested.emit(self.cb_sound.currentData() or "tick",
-                                   self.spin_vol.value())
+        ref = self.cb_sound.currentData() or "tick"
+        volume = self.spin_vol.value()
+        if explicit:
+            self.previewRequested.emit(ref, volume)
+        else:
+            self.soundSelected.emit(ref, volume)
 
     def _preview_pool_row(self, row):
         if not self.cb_pool.isChecked():
@@ -514,6 +558,8 @@ class _TimerBehaviorEditor(QWidget):
             return
         sound = self.pool.cellWidget(row, 1)
         vol = self.pool.cellWidget(row, 4)
+        # Explicit route: this is the "play THIS row now" entry point. The
+        # combo's own currentIndexChanged is the coalesced one.
         self._preview_pool_widgets(sound, vol)
 
     def _preview_pool_widgets(self, sound, vol):
@@ -849,6 +895,7 @@ class TimerDialog(QDialog):
 
         self._behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
         self._behavior.previewRequested.connect(self._preview_sound)
+        self._behavior.soundSelected.connect(self._preview_selected)
         sound_lay.addWidget(self._behavior)
 
         form_split.addWidget(group_sound, 1)
@@ -1090,6 +1137,7 @@ class TimerDialog(QDialog):
 
         self._temp_behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
         self._temp_behavior.previewRequested.connect(self._preview_sound)
+        self._temp_behavior.soundSelected.connect(self._preview_selected)
         temp_factory = getattr(self.main_win, "_temp_timer", None)
         existing = temp_factory() if callable(temp_factory) else None
         if existing is not None:
@@ -1589,6 +1637,7 @@ class TimerDialog(QDialog):
 
         self._cal_behavior = _TimerBehaviorEditor(self.main_win, self.lang, self)
         self._cal_behavior.previewRequested.connect(self._preview_sound)
+        self._cal_behavior.soundSelected.connect(self._preview_selected)
         group_sound_lay.addWidget(self._cal_behavior)
         right_col.addWidget(group_sound)
 
@@ -1950,19 +1999,28 @@ class TimerDialog(QDialog):
             tr("Test fires in {} seconds", self.lang).format(_TEST_DELAY_S))
 
     def _preview_sound(self, ref, volume):
-        """Audition a sound immediately, through the real alarm path.
+        """EXPLICIT audition: play now, exactly once (Test, quick-sound, activation).
 
-        The behaviour editor already emitted the EFFECTIVE volume (a pool
-        row's "inherit" resolved against its own volume spin), so the host
-        never guesses which editor a request came from. Never throws; a
-        missing file is the scheduler's problem, not the dialog's.
+        CORE-005: every timer editor's audition now lands on this one dialog-wide
+        policy instead of calling the sound manager directly, so acceptance,
+        rejection and close can all invalidate it in one place.
         """
         if volume is None:
             return
-        try:
-            self.main_win.sound_manager.preview_sound_ref(ref, volume)
-        except Exception:
-            pass
+        self._interval_preview.immediate(ref, volume, source="explicit")
+
+    def _preview_selected(self, ref, volume):
+        """COALESCED audition: a selection moved, audition it once it settles.
+
+        A mouse pick emits ``currentIndexChanged`` and then ``activated``; a
+        wheel drag emits only the former, many times. Debouncing plus
+        replace-latest turns any of those into one preview of the final choice,
+        and the controller's ``immediate`` preempts a still-queued one so the
+        two halves of a single pick cannot overlap.
+        """
+        if volume is None:
+            return
+        self._interval_preview.schedule_selection(ref, volume, source="select")
 
     def _fill_sound_choices(self):
         """Delegates to the shared behaviour editor (built once per dialog)."""
@@ -2406,6 +2464,19 @@ class TimerDialog(QDialog):
         tick = getattr(self, "_tick", None)
         if tick is not None:
             tick.stop()
+        # CORE-005: accept() and reject() only HIDE this dialog, so stopping the
+        # tick alone left a queued audition alive; it could fire minutes later
+        # against a hidden dialog, or against the widgets of a profile the user
+        # had already left. Cancel the pending preview and stop whatever is
+        # still auditioning on the PREVIEW bus. Real timer alerts live on
+        # Bus.ALERT and are untouched.
+        preview = getattr(self, "_interval_preview", None)
+        if preview is not None:
+            preview.cancel()
+        try:
+            self.main_win.sound_manager.cancel_preview()
+        except Exception:
+            pass
 
     def done(self, result):
         """Every finish routes through here: stop the tick, then sync once.
@@ -2429,6 +2500,9 @@ class TimerDialog(QDialog):
                 return
         self._finish_dialog_lifecycle()
         # T-1517: no stale preview callback may fire after the widget is gone.
+        # CORE-005 keeps this explicit (the lifecycle helper above already
+        # cancels too; cancel() is idempotent) so a close can never depend on
+        # which terminal path happened to run first.
         self._interval_preview.cancel()
         super().closeEvent(event)
 
@@ -3582,6 +3656,19 @@ class TimerDialog(QDialog):
                 setattr(self.main_win, "_interval_preset_store", store)
             except (AttributeError, TypeError):
                 pass
+        # SRC-138/R05: an interrupted batch that could not be finished means
+        # the catalog is a mixture of two generations. Reading it silently
+        # would present that mixture as the user's library, so the state is
+        # reported once per dialog instead. The headline reuses an existing
+        # translated key; the sentence after it is the store's own diagnostic,
+        # which is English by construction and is never shown as a headline.
+        problem = getattr(store, "recovery_problem", None)
+        if problem and not getattr(self, "_interval_preset_recovery_reported",
+                                   False):
+            self._interval_preset_recovery_reported = True
+            self._interval_preset_report_error(
+                tr("Could not update this preset.", self.lang)
+                + "\n\n" + problem)
         return store
 
     def _interval_show_presets_menu(self):

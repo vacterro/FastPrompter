@@ -14,7 +14,6 @@ Architecture:
     _engine.py:    core lookup, registry, fallback chain
     _container.py: secured validation, loading, external slot
     _compat.py:    backward-compat shim (matches old API)
-    _context.py:   container for "all other" languages
     en.py:         483 English source keys (master)
     <code>.py:     21 language data modules (ru, de, ja, zh, ...)
 """

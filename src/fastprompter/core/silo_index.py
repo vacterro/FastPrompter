@@ -433,12 +433,19 @@ def build_silo_index(
         if not curr_mb_members:
             curr_mb_caption = None
             return
+        # PERF-002 (audit/18): the block used to snapshot
+        # ``tuple(r.id for r in grp_reqs)``. In a document that alternates
+        # requirements and detached media those tuples grow with position, so
+        # the index stored O(N^2) ids and then tested membership against them
+        # with linear scans -- cubic-like at 400 -> 800 (0.33s -> 2.57s). The
+        # snapshot only ever meant "the requirements BEFORE this block", which
+        # is a prefix of ``grp_reqs`` and therefore one integer.
         grp_detached_blocks.append({
             "members": list(curr_mb_members),
             "line_start": curr_mb_start,
             "line_end": curr_mb_end,
             "caption": curr_mb_caption,
-            "prev_req_ids": tuple(r.id for r in grp_reqs),
+            "prev_req_count": len(grp_reqs),
         })
         curr_mb_members = []
         curr_mb_caption = None
@@ -454,8 +461,13 @@ def build_silo_index(
         extra_req_media: dict[str, list[str]] = {r.id: [] for r in grp_reqs}
 
         for mb in grp_detached_blocks:
-            prev_r = [r for r in grp_reqs if r.id in mb["prev_req_ids"]]
-            next_r = [r for r in grp_reqs if r.id not in mb["prev_req_ids"]]
+            # PERF-002: previous/next are positional facts, so slicing is the
+            # whole association. ``prev_req_count`` is the number of
+            # requirements written before this block, which is exactly the
+            # prefix the old id tuples encoded.
+            split = mb["prev_req_count"]
+            prev_r = grp_reqs[:split]
+            next_r = grp_reqs[split:]
 
             if len(prev_r) == 0:
                 if len(next_r) >= 1:
@@ -686,18 +698,24 @@ def build_silo_index(
     # Close trailing structures at end of document
     close_current_group(len(lines))
 
-    # Filter out empty groups: a serialized group must own at least one requirement
-    non_empty_groups = [
-        g for g in provisional_groups
-        if any(r.group_id == g.id for r in raw_requirements)
-    ]
+    # PERF-001: index the requirements ONCE by group instead of rescanning the
+    # whole collection for every group. The empty-group filter and the
+    # per-group construction below each did a full pass, so G groups over R
+    # requirements cost G*R. Bucket order preserves source order because
+    # ``raw_requirements`` was appended in it.
+    reqs_by_group: dict[str, list[RequirementItem]] = {}
+    for req in raw_requirements:
+        reqs_by_group.setdefault(req.group_id, []).append(req)
+
+    # A serialized group must own at least one requirement.
+    non_empty_groups = [g for g in provisional_groups if reqs_by_group.get(g.id)]
 
     final_groups: list[RequirementGroup] = []
     group_remap: dict[str, str] = {}
     for new_idx, grp in enumerate(non_empty_groups, start=1):
         new_id = f"GROUP-{new_idx:03d}"
         group_remap[grp.id] = new_id
-        reqs_in_group = [r for r in raw_requirements if r.group_id == grp.id]
+        reqs_in_group = reqs_by_group[grp.id]
         min_start = min(r.line_start for r in reqs_in_group)
         max_end = max(r.line_end for r in reqs_in_group)
         effective_grp_start = grp.line_start if grp.line_start <= min_start else min_start
@@ -729,12 +747,19 @@ def build_silo_index(
 
     # Determine unscoped media: valid media members not in any req.media and not in group evidence
     group_ev_members = {e.member for e in final_evidence if e.association == "group"}
+    # PERF-002: the existence check used ``any(...)`` over the accumulated
+    # evidence, so every unscoped member paid a full scan of everything built
+    # so far (1600 -> 0.0616s, 3200 -> 0.2689s). A set answers the same
+    # question in constant expected time and cannot admit duplicates.
+    unscoped_seen = {e.member for e in final_evidence
+                     if e.association == "unscoped"}
     unscoped_set = set()
     for m in valid_media_members:
         if m not in linked_media_set and m not in group_ev_members:
             unscoped_set.add(m)
             # Add unscoped evidence item if not already recorded
-            if not any(e.member == m and e.association == "unscoped" for e in final_evidence):
+            if m not in unscoped_seen:
+                unscoped_seen.add(m)
                 final_evidence.append(
                     MediaEvidenceItem(
                         member=m,
@@ -997,8 +1022,13 @@ def validate_index_structure(
             if contains_absolute_local_path(req_text):
                 return False, f"Requirement {req_id} text leaks absolute local path"
 
-    # Every serialized group must be referenced by at least 1 requirement (if document has requirements)
+    # Every serialized group must be referenced by at least 1 requirement (if document has requirements).
+    # PERF-001: build the membership lists ONCE. Re-scanning ``reqs`` for each
+    # group made validation O(G*R) on large structured documents.
     if reqs:
+        members_by_group: dict[str, list[str]] = {}
+        for req in reqs:
+            members_by_group.setdefault(req.get("group_id"), []).append(req.get("id"))
         for grp in groups:
             gid = grp.get("id")
             if gid not in req_group_ids:
@@ -1007,7 +1037,7 @@ def validate_index_structure(
                 req_ids = grp.get("requirement_ids")
                 if not isinstance(req_ids, list):
                     return False, f"Group {gid} missing requirement_ids list"
-                expected_req_ids = [r.get("id") for r in reqs if r.get("group_id") == gid]
+                expected_req_ids = members_by_group.get(gid, [])
                 if req_ids != expected_req_ids:
                     return False, f"Group {gid} requirement_ids {req_ids} do not match members {expected_req_ids}"
 
@@ -1024,6 +1054,9 @@ def validate_index_structure(
         media_evidence = index_dict.get("media_evidence", [])
         if not isinstance(media_evidence, list):
             return False, "Index media_evidence must be a list"
+        # PERF-001: resolve evidence requirement ids through a by-id index
+        # rather than a linear search per reference (E*R before).
+        reqs_by_id = {r.get("id"): r for r in reqs if isinstance(r, dict)}
         for ev in media_evidence:
             if not isinstance(ev, dict):
                 return False, "Media evidence item must be an object"
@@ -1041,7 +1074,7 @@ def validate_index_structure(
                 if not r_ids:
                     return False, f"Media evidence item {mem} with association {assoc} has no requirement_ids"
                 for rid in r_ids:
-                    target_req = next((r for r in reqs if r.get("id") == rid), None)
+                    target_req = reqs_by_id.get(rid)
                     if not target_req:
                         return False, f"Media evidence item {mem} references non-existent requirement {rid}"
                     if is_missing:

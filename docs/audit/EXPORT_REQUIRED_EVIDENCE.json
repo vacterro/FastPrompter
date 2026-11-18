@@ -1,0 +1,66 @@
+{
+ "schema_version": 1,
+ "kind": "export_required_evidence",
+ "derived_from": "docs/audit/ACCEPTANCE.json",
+ "note": "Every entry must be present in an export that claims ACCEPTANCE_EVIDENCE_COMPLETE. Derived, never hand-listed.",
+ "transient_entries": 0,
+ "references": [
+  {
+   "path": ".saipen/evidence/t1441/captures/gauge_08_accounts_4x.png",
+   "declared_by": [
+    "DOMAIN_18_USAGE_LIMITS.visual"
+   ],
+   "present_in_checkout": true,
+   "sha256": "5b2ad004f9269f904bacb01eec774164dc68afa5077955497be2acc42c354c84",
+   "transient": false
+  },
+  {
+   "path": ".saipen/evidence/t1441/captures/gauge_12_accounts_4x.png",
+   "declared_by": [
+    "DOMAIN_18_USAGE_LIMITS.behavioural",
+    "DOMAIN_18_USAGE_LIMITS.visual"
+   ],
+   "present_in_checkout": true,
+   "sha256": "2a5b3077b505f46584326e0c8ef92fda76b501507113069fe90a397b537e8a04",
+   "transient": false
+  },
+  {
+   "path": ".saipen/evidence/t1441/captures/hover_12_compact.png",
+   "declared_by": [
+    "DOMAIN_18_USAGE_LIMITS.visual"
+   ],
+   "present_in_checkout": true,
+   "sha256": "eedcc9d7d0f5fefd76585d3aa528c76f07c5c14da3ecf8b5926838962e56ad11",
+   "transient": false
+  },
+  {
+   "path": ".saipen/evidence/t1441/captures/hover_12_compact_4x.png",
+   "declared_by": [
+    "DOMAIN_18_USAGE_LIMITS.behavioural",
+    "DOMAIN_18_USAGE_LIMITS.visual"
+   ],
+   "present_in_checkout": true,
+   "sha256": "8d343b5b574e307e9d5d289f56ac267bde0f7bd2027e286c1483a3242f044819",
+   "transient": false
+  },
+  {
+   "path": ".saipen/evidence/t1441/captures/hover_12_expanded_4x.png",
+   "declared_by": [
+    "DOMAIN_18_USAGE_LIMITS.behavioural",
+    "DOMAIN_18_USAGE_LIMITS.visual"
+   ],
+   "present_in_checkout": true,
+   "sha256": "19defbf58acf70ea6765af3b9f3f9ee827ee0ddf38bf7be49466361f69998f0c",
+   "transient": false
+  },
+  {
+   "path": ".saipen/evidence/t1441/measure_hover.py",
+   "declared_by": [
+    "DOMAIN_18_USAGE_LIMITS.behavioural"
+   ],
+   "present_in_checkout": true,
+   "sha256": "95e37d90c849bad12d0ac2a1a3f1a41d585c45c6d4b3dad3c508f8fb8b4d1edc",
+   "transient": false
+  }
+ ]
+}

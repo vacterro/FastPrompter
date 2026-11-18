@@ -12785,6 +12785,36 @@ def test_a_toast_never_lands_off_screen(win):
         TimerToast._open.clear()
 
 
+def test_closing_the_window_takes_its_toasts_with_it(fresh_win):
+    """T-1441 lifecycle: a toast outlived the window that owned it.
+
+    ``TimerToast`` is built with ``super().__init__(None)`` — it is a
+    top-level Tool window with NO Qt parent — so destroying the FastPrompter
+    window destroys nothing about it. A fired timer's toast stayed on screen
+    after its window was gone, with Snooze/Dismiss wired into a dead owner.
+    The profile switch already closed them; the window close did not.
+    """
+    from fastprompter.ui.timer_toast import TimerToast, show_toast
+
+    # a window whose close this test may actually perform: the module-scoped
+    # ``win`` is shared with every other test in this file
+    w = fresh_win
+    toast = show_toast(w, _a_timer())
+    assert toast is not None
+    assert toast.isVisible()
+    assert toast in TimerToast._open
+
+    w.close()
+    _app.processEvents()
+
+    assert toast not in TimerToast._open, \
+        "the window closed but its toast stayed registered"
+    # either destroyed outright (WA_DeleteOnClose) or hidden; both mean the
+    # user is not looking at a notification whose owner no longer exists
+    assert sip.isdeleted(toast) or not toast.isVisible(), \
+        "a toast from a closed window is still on screen"
+
+
 # --- T-738: dragging a silo out to a file manager --------------------------
 
 def test_silo_drag_carries_both_the_internal_ref_and_a_real_file(win, tmp_path, monkeypatch):

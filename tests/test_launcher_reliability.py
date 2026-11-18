@@ -94,6 +94,54 @@ def test_launcher_calls_execv_when_pyqt6_missing_and_venv_exists(
     assert ".venv" in calls[0][0]
 
 
+def test_the_gate_names_tzdata_when_the_zone_payload_is_missing(monkeypatch):
+    """Windows ships no system tz database, so an interpreter without the
+    ``tzdata`` package imports zoneinfo but cannot name a zone -- and every
+    named-zone reset time would be dropped silently.  The certification gate
+    must name that capability as missing."""
+    import zoneinfo
+
+    def _no_zone(*args, **kwargs):
+        raise zoneinfo.ZoneInfoNotFoundError("no tzdata")
+
+    monkeypatch.setattr(zoneinfo, "ZoneInfo", _no_zone)
+    mod = _load_pyw()
+    missing = mod._missing_startup_requirements()
+    assert "tzdata" in missing, missing
+
+
+def test_the_gate_stays_quiet_when_the_zone_payload_is_present(monkeypatch):
+    """The resolvable path must not invent a missing capability."""
+    import zoneinfo
+
+    monkeypatch.setattr(zoneinfo, "ZoneInfo", lambda *args, **kwargs: object())
+    mod = _load_pyw()
+    assert "tzdata" not in mod._missing_startup_requirements()
+
+
+def test_the_refusal_names_tzdata_when_the_venv_is_missing(monkeypatch, tmp_path):
+    """The refusal the user finally reads has to name what is missing, so a
+    missing tzdata payload cannot hide behind a generic interpreter message."""
+    import zoneinfo
+
+    import pytest
+
+    def _no_zone(*args, **kwargs):
+        raise zoneinfo.ZoneInfoNotFoundError("no tzdata")
+
+    _no_pyqt6_import(monkeypatch)
+    monkeypatch.setattr(zoneinfo, "ZoneInfo", _no_zone)
+    mod = _load_pyw()
+    fake_root = str(tmp_path / "project")
+    monkeypatch.setattr(mod, "__file__",
+                        os.path.join(fake_root, "FastPrompter.pyw"))
+    monkeypatch.setattr(sys, "executable",
+                        os.path.join(str(tmp_path), "system", "python.exe"))
+    with pytest.raises(RuntimeError) as exc_info:
+        mod._ensure_venv_python()
+    assert "tzdata" in str(exc_info.value)
+
+
 def test_launcher_calls_execv_when_pyqt6_present_but_markdown_missing(
         monkeypatch, tmp_path):
     """When PyQt6 is available but markdown is missing, the launcher must

@@ -52,6 +52,12 @@ MAX_TIMER_SOUND_RULES = 10
 # much as the period. Five hours is the common one, hence the default.
 DEFAULT_INTERVAL_MINUTES = 5 * 60
 
+#: W2-003: an upper bound for a healed period. It exists so ``_heal_int`` has a
+#: sane clamp for a persisted value like ``1e30`` (a finite float, so not
+#: caught as non-finite, but absurd as a reminder period). One year is far past
+#: any real recurrence and still keeps ``timedelta`` arithmetic in range.
+MAX_INTERVAL_MINUTES = 60 * 24 * 365
+
 DEFAULT_COLOR = "#6aa9ff"
 COLOR_STATIC = "static"
 COLOR_TEMPERATURE = "temperature"
@@ -128,6 +134,35 @@ def _heal_bool(value, default=True):
     return default
 
 
+def _heal_int(raw, lo, hi, default):
+    """Clamp ``raw`` to ``[lo, hi]``, or return ``default`` if it is unusable.
+
+    W2-003: ``int(float("inf"))`` raises ``OverflowError``, which is NOT a
+    subclass of ``TypeError``/``ValueError``, so every ``except (TypeError,
+    ValueError)`` around a persisted number let one non-finite value escape as
+    an uncaught exception. Here, ``int("inf")`` -- the JSON-decoded form, since
+    ``json`` accepts the literal ``Infinity``/``NaN`` tokens -- hits the same
+    hole. Both are refused BEFORE any conversion, so the fallback is the
+    documented healing default in every caller.
+    """
+    if isinstance(raw, bool):
+        return default
+    if isinstance(raw, float) and (raw != raw or raw in (float("inf"),
+                                                         -float("inf"))):
+        return default
+    try:
+        number = int(raw)
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError is the point of this helper, but it is caught the same
+        # way: a value that cannot become an integer heals, never propagates.
+        return default
+    if number < lo:
+        return lo
+    if hi is not None and number > hi:
+        return hi
+    return number
+
+
 def _heal_volume(raw_vol):
     """Volume 0.0-1.0, legacy int 0-10 -> float. None stays None (inherit)."""
     if raw_vol is None:
@@ -171,11 +206,13 @@ def _heal_sound_rules(raw):
         all_day = _heal_bool(entry.get("all_day", True), True)
         start = entry.get("start_minute", 0)
         end = entry.get("end_minute", 0)
-        try:
-            start = max(0, min(1439, int(start)))
-            end = max(0, min(1439, int(end)))
-        except (TypeError, ValueError):
-            start, end = 0, 0
+        start = _heal_int(start, 0, 1439, 0)
+        end = _heal_int(end, 0, 1439, 0)
+        # W2-003: the previous ``except (TypeError, ValueError)`` did not cover
+        # ``OverflowError`` from an infinite bound, which escaped the "malformed
+        # entries are dropped, never fatal" promise and aborted the whole load.
+        # ``_heal_int`` refuses a non-finite number before converting, and
+        # handles "inf"/"nan" (the JSON literal spelling) too.
         vol = _heal_volume(entry.get("volume", None))
         out.append({
             "sound": sound,
@@ -263,11 +300,13 @@ class Timer:
         self.auto_limit_key = auto_limit_key
         self.temporary = _heal_bool(temporary, False)
         self.delete_after_fire = _heal_bool(delete_after_fire, False)
-        try:
-            # a zero or negative period would make advance() spin forever
-            self.interval_minutes = max(1, int(interval_minutes))
-        except (TypeError, ValueError):
-            self.interval_minutes = DEFAULT_INTERVAL_MINUTES
+        # W2-003: a persisted ``interval_minutes = float("inf")`` raised
+        # OverflowError here, which the old ``except (TypeError, ValueError)``
+        # did not catch -- so a single malformed timer aborted the whole load at
+        # startup. ``_heal_int`` refuses non-finite values and heals to the
+        # documented default.
+        self.interval_minutes = _heal_int(
+            interval_minutes, 1, MAX_INTERVAL_MINUTES, DEFAULT_INTERVAL_MINUTES)
         # ---- T-1004 behaviour flags (legacy-safe defaults) -------------
         self.kind = kind if kind in KIND_CHOICES else KIND_ALARM
         # any malformed value heals to the ON default (never a silent flip)
@@ -355,7 +394,11 @@ class Timer:
                 temporary=d.get("temporary", False),
                 delete_after_fire=d.get("delete_after_fire", False),
             )
-        except (TypeError, ValueError, AttributeError):
+        except (TypeError, ValueError, AttributeError, OverflowError):
+            # W2-003: OverflowError is included so the documented contract --
+            # "returns None for anything malformed" -- holds for a persisted
+            # non-finite number anywhere in the constructor, not just for the
+            # two fields healed above.
             return None
 
     # ---- state --------------------------------------------------------

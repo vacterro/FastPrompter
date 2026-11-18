@@ -14,22 +14,21 @@ Portable scratchpad + snippet workspace. Python 3.11+, PyQt6. SQLite WAL persist
 +------------------------------------------------------------------+
 |                        FastPrompter UI (PyQt6)                   |
 |  +------------------+  +--------------------+  +---------------+  |
-|  | SnippetPanel     |  | VaultTextEdit      |  | QueuePanel    |  |
-|  | (F1-F10 Silos)   |  | (Markdown + Mixins)|  | (Watcher Q)   |  |
+|  | SnippetPanel     |  | VaultTextEdit      |  | FileContainer |  |
+|  | (F1-F10 Silos)   |  | (Markdown + Mixins)|  | (Files Drawer)|  |
 |  +------------------+  +--------------------+  +---------------+  |
 +----------------------------+-------------------------------------+
                              | events / state sync
                              v
 +------------------------------------------------------------------+
-|                    FastPrompterState (core)                       |
-|  SQLite WAL DB — silos, snippets, settings, themes, queues       |
+|                    FastPrompterState (core)                       ||SQLite WAL DB — silos, snippets, settings, themes            |
 |  In-memory cache + undo stack + per-silo state (cursor/scroll)   |
 +------------------------------------------------------------------+
       |         |          |          |            |
       v         v          v          v            v
 +--------+ +---------+ +--------+ +---------+ +-----------+
-|Hotkeys | | IPC     | | Sound  | | Watcher | | File      |
-|(Win32  | |(QLocal) | |Manager | |Engine   | | Container |
+|Hotkeys | | IPC     | | Audio  | | Sync    | | File      |
+|(Win32  | |(QLocal) | |Hub     | | Project | | Container |
 | Register| +---------+ +--------+ +---------+ +-----------+
 |HotKey) |
 +--------+
@@ -41,15 +40,15 @@ Portable scratchpad + snippet workspace. Python 3.11+, PyQt6. SQLite WAL persist
 
 Entry point. QApplication init, single-instance IPC check (QLocalServer), DB connect, global exception hooks, UI window build, system tray, hotkey registration. All mixins compose onto FastPrompter (QMainWindow):
 
+- CursorMixin — editor cursor helpers (keep-visible, hover feedback)
 - FormattingMixin — markdown shortcuts (bold, italic, list, code)
 - HotkeyMixin — shortcut binding interface
 - ScalingMixin — DPI/font scaling
 - SearchMixin — multi-word AND search
-- SendSelectionMixin — send text via watcher
+- SendSelectionMixin — copy the selection to a new/child silo, append to a silo, or file it into the archive
 - SnippetOpsMixin — silo ops (trash, duplicate, reorder, clear)
 - ThemeMixin — app stylesheet, 9 built-in themes + custom
 - TrayMixin — systray icon + menu
-- WatcherMixin — watcher engine integration
 - WindowMixin — frameless window, snapping, borderless
 
 ### 2. IPC Single-Instance (`core/ipc_server.py`)
@@ -89,11 +88,9 @@ Up to 100 silos per project tab. Features:
 - File containers — per-silo disk folder (`data/files/<category-slug>/<silo-title-slug>/`, unique per slot)
 - Kanban (Alt+arrows move cards) + Table builder (Tab walk cells) — T-630
 
-### 7. Watcher Engine (`core/watcher/`)
+### 7. Audio Hub (`core/audio_hub.py` + `core/sound_manager.py`)
 
-Prompt drainage + target automation. Finite state machine: DISARMED → ARMED → WATCHING → SENDING. Chrome CDP (Electron apps) + Win32 window probes. Queue pinning per target. Rate limits: settle_ms=2500, min_gap_ms=4000, max_sends=25, max_failures=3.
-
-**v0.8.43 audit hardening (T-1019):** the queue an armed run drains is now pinned to its owning `(category, slot)`, so a project/silo switch mid-session can no longer feed a different silo's backlog. Physical sends are tracked per dispatch, so a stale (slow) completion can't clear the quiesce barrier early. Glob/stat/SQLite probe sampling runs on a dedicated worker thread (`_WatcherProbeWorker`), keeping tens-of-milliseconds file and database I/O out of the GUI timer callback while preserving conservative BUSY semantics.
+One audio authority with six priority buses (UI / ALERT / VOICE / PROBLIP / AMBIENCE / PREVIEW) and four playback modes per source: Overlay (default), Stack, Replace and Queue, with `skip_busy` for polite entry. Every play is an `AudioRequest` resolved by the bus policy engine into a bounded transport channel (16 transient voices, 32-per-bus FIFO queues; `QtSoundTransport` plays transient cues through one fresh QAudioSink per cue fed the source's exact PCM frames — loopback-measured T-1242 fidelity repair, pooled QSoundEffect drops the last ~42.5 ms of every cue and leaks it into the next; `NullTransport` for tests). `SoundManager` stays the facade the app talks to: a named-event policy engine (69 events: clicks, typewriter keys, hotkey events, alarms, appearance transitions, timer/interval/productivity/notification cues) with per-event enable/volume/gain/mode overrides, self-healing settings migration, and **STOP ALL SOUND** — the emergency-silence command that stops every transient channel, clears every queue and cancels voice sequences. Cues are pre-rendered to the device's own rate by `core/audio_render.py` with Auto Level gain from `core/audio_level.py`. Sound references resolve through `core/sound_library.py` (`builtin:` shipped library, `user:` managed library); preset packs travel as portable `.fpsoundpreset`/`.fpsoundpack` via `core/sound_presets.py`.
 
 ### 8. Window Management (`ui/window_mixin.py`, `ui/zen_desktop.py`)
 
@@ -140,3 +137,15 @@ Timer silos whose countdown has elapsed (passed) are highlighted with a configur
 ### 16. Periodic Backup (`core/state.py`)
 
 Off-critical-path `.bak` refresh on a daemon thread (PERF-001). Coalesced per profile: at most one job in flight, a request arriving mid-job marks pending and the finishing job drains it. Each job opens its own short-lived source connection — the caller's live connection is never shared across threads. Publication goes through the existing atomic temp-swap + validate-before-swap path, so the previous good `.bak` survives any failure.
+
+### 17. Pack Silo Pipeline (`core/silo_bundle.py` + `core/silo_index.py` + `core/silo_coverage.py`)
+
+One pipeline, five stages, each with a contract rather than a hope:
+
+1. **Plan.** `plan_bundle` / `plan_selection_bundle` resolve the text's local references into `BundleItem`s and assign archive member names; `portable_markdown` rewrites the copy so it links to members instead of `C:\...` paths.
+2. **Hash.** Per-member SHA256 over stable file stats; a source that moves mid-pack aborts instead of shipping a half-consistent archive.
+3. **Fingerprint & reuse.** The bundle identity hashes the *logical* payload only (no timestamps, no output paths), which is what allows a content-identical re-pack to be served from the existing archive. Ctrl+Click bypasses the check; publication is otherwise the only path that produces a new file.
+4. **Publish.** Built in a unique temp sibling, streamed media first, then Markdown, structured index, README and manifest written from the facts of publication, then an atomic rename into a path that did not exist. There is no window in which a reader sees a partial bundle, and no code path that overwrites an existing file.
+5. **Record.** Success records history (path, title, kind), applies retention (`silo_bundle_keep_versions`, exports folder only, ownership verified, the archive just handed over protected) and mints a coverage event so the overlay can answer "which requirements are already packed?".
+
+The structured index is a derived projection — `INDEX_SCHEMA_VERSION = 4` — of the very Markdown and members that were hashed, so it is validated (`validate_index_structure`) before it is written rather than after it is read.

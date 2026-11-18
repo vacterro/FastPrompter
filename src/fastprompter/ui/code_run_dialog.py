@@ -163,7 +163,13 @@ class CodeRunOutputDialog(QDialog):
         self._max_output_bytes = 512 * 1024
         self._timed_out = False
         self._encoding = "utf-8"
-        self._decoder = None
+        # W2-007: stdout and stderr are independent byte streams. Each keeps
+        # its own incremental decoder and its own pending partial LINE, so a
+        # multibyte character split across a read boundary in one stream can
+        # never be corrupted by bytes arriving from the other.
+        self._decoders: dict[str, object] = {}
+        self._line_buffers: dict[str, str] = {"stdout": "", "stderr": ""}
+        self._closed_once = False
         lang = getattr(main_win, "_current_lang", "EN")
         self.setWindowTitle(tr("Running Code", lang))
         self.setMinimumSize(640, 480)
@@ -220,7 +226,9 @@ class CodeRunOutputDialog(QDialog):
             self._finish()
             return
         exe, args_template = resolved
-        self._encoding = adapter.encoding or "utf-8"
+        # W2-007: decode the PIPES, not the script file. The adapter knows
+        # what its interpreter writes to stdout/stderr.
+        self._encoding = getattr(adapter, "pipe_encoding", None) or "utf-8"
         try:
             self.staged = stage_script(self.candidate.source, adapter_key,
                                        working_dir=self.working_dir)
@@ -259,28 +267,81 @@ class CodeRunOutputDialog(QDialog):
             self._append(data, "stderr")
 
     def _append(self, data, tag: str) -> None:
+        """Append one transport chunk, decoded per stream and line-framed.
+
+        W2-007: the previous version decoded BOTH pipes through ONE shared
+        incremental decoder initialised from ``adapter.encoding``. That was
+        wrong twice: the script-file encoding is not the pipe encoding, and a
+        partial multibyte sequence in stdout could be completed by bytes from
+        stderr. It also called ``appendPlainText`` per chunk, so one logical
+        line arriving in two reads became two paragraphs.
+
+        Now: per-stream decoder, per-stream line buffer, and only complete
+        lines are emitted as paragraphs. A trailing partial line is held back
+        until more bytes arrive or the stream is flushed at termination.
+        """
         payload = bytes(data)
         if self._output_chunks + len(payload) > self._max_output_bytes:
             payload = payload[: max(0, self._max_output_bytes - self._output_chunks)]
             if not payload:
                 return
         self._output_chunks += len(payload)
-        if self._decoder is None:
+
+        # Attribute access goes through ``__dict__`` on purpose: some tests
+        # build this dialog with ``__new__`` to exercise the decoder without a
+        # QApplication, and a bare ``self._decoders`` would raise PyQt's
+        # "super-class __init__ was never called" on such an instance.
+        decoders = self.__dict__.get("_decoders")
+        if decoders is None:
+            decoders = {}
+            self.__dict__["_decoders"] = decoders
+        buffers = self.__dict__.get("_line_buffers")
+        if buffers is None:
+            buffers = {"stdout": "", "stderr": ""}
+            self.__dict__["_line_buffers"] = buffers
+
+        decoder = decoders.get(tag)
+        if decoder is None:
             try:
-                self._decoder = codecs.getincrementaldecoder(
-                    self._encoding)(errors="replace")
+                decoder = codecs.getincrementaldecoder(self._encoding)(errors="replace")
             except LookupError:
-                self._decoder = codecs.getincrementaldecoder(
-                    "utf-8")(errors="replace")
-        self.out_view.appendPlainText(self._decoder.decode(payload))
+                decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            decoders[tag] = decoder
+        text = decoder.decode(payload)
+        if not text:
+            return
+        buffered = buffers.get(tag, "") + text
+        if "\n" in buffered:
+            complete, _, rest = buffered.rpartition("\n")
+            buffers[tag] = rest
+            # rpartition keeps everything before the LAST newline; emit it as
+            # the complete lines it is, preserving internal breaks verbatim.
+            self.out_view.appendPlainText(complete)
+        else:
+            buffers[tag] = buffered
 
     def _flush_decoder(self) -> None:
-        """Emit the tail held back across a chunk boundary."""
-        if self._decoder is not None:
-            tail = self._decoder.decode(b"", final=True)
-            self._decoder = None
-            if tail:
-                self.out_view.appendPlainText(tail)
+        """Emit whatever each stream still holds, exactly once, at termination.
+
+        W2-007: final bytes may end mid-character; ``final=True`` makes the
+        decoder emit a replacement character truthfully rather than silently
+        dropping bytes. Each stream's held-back partial line is then emitted.
+        """
+        decoders = self.__dict__.get("_decoders") or {}
+        buffers = self.__dict__.get("_line_buffers") or {}
+        for tag, decoder in list(decoders.items()):
+            tail = ""
+            try:
+                tail = decoder.decode(b"", final=True)
+            except Exception:
+                tail = ""
+            text = buffers.get(tag, "") + tail
+            buffers[tag] = ""
+            if text:
+                # A trailing partial line is still real output (a prompt with
+                # no newline, carriage-return progress); emit it.
+                self.out_view.appendPlainText(text)
+        self.__dict__["_decoders"] = {}
 
     def _on_finished(self, exit_code: int, _status) -> None:
         if self._timed_out:
@@ -332,6 +393,24 @@ class CodeRunOutputDialog(QDialog):
         self.process.kill()
         self.process.waitForFinished(3000)
 
+    def _retire_runner(self) -> None:
+        """The ONE idempotent runner-retirement path (W2-004).
+
+        Every terminal dialog lifecycle path funnels here: Stop, Timeout,
+        process error, normal finish, and -- the case the audit found missing
+        -- window close / reject / done. Before this, the title-bar X dismissed
+        the dialog without ever reaching ``_stop`` or ``_terminate_process``,
+        so the interpreter (and any descendants it spawned) survived the
+        window that owned it.
+
+        Idempotent by construction: the process reference is nulled here, and
+        ``_cleanup_process`` tolerates a second call. Output already captured
+        is flushed once, before the owner disappears.
+        """
+        if self.process is not None:
+            self._terminate_process()
+        self._cleanup_process()
+
     def _cleanup_process(self) -> None:
         self._flush_decoder()
         if self.process is not None:
@@ -355,5 +434,24 @@ class CodeRunOutputDialog(QDialog):
         QApplication.clipboard().setText(self.out_view.toPlainText())
 
     def _finish(self) -> None:
-        self._cleanup_process()
+        self._retire_runner()
         self.accept()
+
+    # -- W2-004: every window exit retires the runner -----------------------
+    #
+    # The dialog is shown modally and then ``deleteLater()``d by main.py, so a
+    # dismissal that skips retirement would leave a live QProcess whose owner
+    # is about to be destroyed. These three overrides close that hole; each
+    # delegates to the same idempotent method.
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt name)
+        self._retire_runner()
+        super().closeEvent(event)
+
+    def reject(self) -> None:  # noqa: D401 (Qt override)
+        self._retire_runner()
+        super().reject()
+
+    def done(self, result: int) -> None:
+        self._retire_runner()
+        super().done(result)

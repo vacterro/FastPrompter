@@ -7,7 +7,9 @@ Never mutates Markdown, selection, clipboard, or bundle behavior.
 
 from __future__ import annotations
 
+import bisect
 import hashlib
+import heapq
 import re
 import time
 from collections.abc import Sequence
@@ -130,16 +132,73 @@ class CoverageMap:
     _line_owner: dict[int, CoverageItem | None] = field(
         default_factory=dict, compare=False, repr=False)
 
+    def __post_init__(self) -> None:
+        """Build a compressed ownership index ONCE, at construction.
+
+        ``get_line_state`` used to scan the entire requirement tuple for every
+        line it had not seen, so the first traversal of a large document cost
+        O(lines x requirements). Recording only the START lines was not enough
+        (PERF-001, audit/18): an earlier interval can still reach the line, so
+        the lookup walked BACKWARDS over every earlier start and stayed
+        quadratic -- measured 1000 -> 0.058s, 2000 -> 0.209s, 4000 -> 0.769s,
+        i.e. doubling N quadrupled the time.
+
+        A sweep line now reduces the document to maximal segments of constant
+        ownership. There are at most 2N boundaries for N intervals, so the
+        structure costs O(N) memory in the number of requirements -- never a
+        dense array across unused line-number gaps -- and lookup is one
+        bisect. Ownership semantics are unchanged: the owner of a line is the
+        FIRST requirement in tuple order whose range covers it.
+        """
+        items = self.requirements
+        # (start, index) pairs for every VALID interval, in sweep order.
+        starts_sorted = sorted(
+            (item.line_start, index)
+            for index, item in enumerate(items)
+            if item.line_end >= item.line_start)
+        bounds = sorted({
+            position
+            for item in items if item.line_end >= item.line_start
+            for position in (item.line_start, item.line_end + 1)
+        })
+
+        owner_segments: list[CoverageItem | None] = []
+        active: list[int] = []          # heap of requirement indices
+        ends: dict[int, int] = {}       # index -> line_end
+        cursor = 0
+        for boundary in bounds:
+            while cursor < len(starts_sorted) and starts_sorted[cursor][0] <= boundary:
+                index = starts_sorted[cursor][1]
+                heapq.heappush(active, index)
+                ends[index] = items[index].line_end
+                cursor += 1
+            # Lazy deletion: the heap is ordered by tuple index, so an expired
+            # entry cannot be popped from the middle. Discard from the top
+            # until the minimum index is genuinely live at this boundary.
+            while active and ends[active[0]] < boundary:
+                heapq.heappop(active)
+            owner_segments.append(items[active[0]] if active else None)
+
+        # The dataclass is frozen; this is derived state, never part of
+        # equality and never serialized.
+        object.__setattr__(self, "_bounds", tuple(bounds))
+        object.__setattr__(self, "_owners", tuple(owner_segments))
+
+    def _owner_for(self, line_no: int) -> CoverageItem | None:
+        """First requirement in tuple order whose range covers ``line_no``."""
+        bounds = self.__dict__.get("_bounds") or ()
+        if not bounds:
+            return None
+        position = bisect.bisect_right(bounds, line_no)
+        if position == 0:
+            return None
+        return self.__dict__["_owners"][position - 1]
+
     def get_line_state(
         self, line_no: int,
     ) -> tuple[CoverageState | None, CoverageItem | None]:
         if line_no not in self._line_owner:
-            owner: CoverageItem | None = None
-            for item in self.requirements:
-                if item.line_start <= line_no <= item.line_end:
-                    owner = item
-                    break
-            self._line_owner[line_no] = owner
+            self._line_owner[line_no] = self._owner_for(line_no)
         owner = self._line_owner[line_no]
         if owner is None:
             return None, None
@@ -182,6 +241,16 @@ def create_bundle_coverage_event(
         line_offsets.append(curr_offset)
         curr_offset += len(line) + 1  # newline
 
+    # PERF-003: per-event invariants, computed once rather than per requirement.
+    if selected_span is not None:
+        sel_bounds = (selected_span[0], selected_span[1])
+    elif selected_text is not None:
+        found = markdown_text.find(selected_text)
+        sel_bounds = (found, found + len(selected_text))
+    else:
+        sel_bounds = (0, 0)
+    norm_sel = " ".join(selected_text.split()) if selected_text else ""
+
     for req in idx.requirements:
         ckey = requirement_coverage_key(req.text, req.media)
         curr_ord = ordinals.get(ckey, 0) + 1
@@ -194,11 +263,13 @@ def create_bundle_coverage_event(
             req_end_line_idx = min(len(lines) - 1, req.line_end - 1)
             req_end_char = line_offsets[req_end_line_idx] + len(lines[req_end_line_idx])
 
-            if selected_span is not None:
-                sel_start, sel_end = selected_span
-            else:
-                sel_start = markdown_text.find(selected_text)
-                sel_end = sel_start + len(selected_text)
+            # PERF-003 (audit/18): the selection position and its normalized
+            # form are INVARIANTS of one event, but the old loop recomputed
+            # both per requirement -- a full ``find`` plus a whole-document
+            # re-split, which cost 3.12s against 0.08s at 3200 requirements.
+            # Both are resolved once, before the loop; the exact span stays
+            # authoritative.
+            sel_start, sel_end = sel_bounds
 
             # Intersection check
             overlap_start = max(req_start_char, sel_start)
@@ -210,7 +281,6 @@ def create_bundle_coverage_event(
 
             # Check if fully or partially covered
             norm_req = " ".join(req.text.split())
-            norm_sel = " ".join(selected_text.split()) if selected_text else ""
             if norm_req and norm_req in norm_sel:
                 cov_kind = "full"
                 cov_seg = None
@@ -329,8 +399,11 @@ def reconcile_pack_coverage(
     if not markdown_text or not markdown_text.strip():
         return CoverageMap()
 
-    lookup = ledger if isinstance(ledger, dict) else build_receipt_index(
-        ledger.entries)
+    if ledger is None:
+        lookup = {}
+    else:
+        lookup = ledger if isinstance(ledger, dict) else build_receipt_index(
+            getattr(ledger, "entries", []) or [])
     idx = silo_index.build_silo_index(markdown_text, "source.md")
     items: list[CoverageItem] = []
     ordinals: dict[str, int] = {}
@@ -408,7 +481,13 @@ class CoverageReconciler:
 
     def _dispatch(self, token, payload) -> None:
         self.in_flight = True
-        self._runner((token, payload))
+        try:
+            self._runner((token, payload))
+        except Exception:
+            # A failed runner must not permanently hold the in-flight flag.
+            self.in_flight = False
+            self._pending = None
+            raise
 
     def result(self, token, value) -> None:
         """Deliver a finished run. Superseded results are dropped."""

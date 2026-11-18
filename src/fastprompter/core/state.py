@@ -104,6 +104,10 @@ _JSON_SETTINGS = (
     # T-1466: user-defined default table layout template. A dict, must
     # round-trip as JSON or the saved layout reloads as one str() blob.
     "table_default_layout",
+    # File Container chest: {folder_key: {filename: slot_index}}. Sparse, stable
+    # per-folder slot positions. Without JSON/codec, str(dict) round-trips as a
+    # string and file_container._chest_saved_slots() crashes on .get() (P1).
+    "silo_chest_order",
 )
 
 # Never stored in the settings table: they have tables of their own.
@@ -389,6 +393,11 @@ _STRUCTURED_CODECS = {
     # manual_cols, manual_rows, word_wrap}. Global/profile scope — controls
     # NEW tables only; per-silo presentation is in silo_view_state_all.
     "table_default_layout": (dict, {}, True),
+    # File Container chest: {folder_key: {filename: slot_index}}. Sparse, stable
+    # slot positions per silo folder. legacy_ast=True so pre-fix rows written as
+    # Python str(dict) (single quotes) recover via ast.literal_eval; a clean save
+    # rewrites canonical JSON. Malformed/wrong-type rows fall to {} safely.
+    "silo_chest_order": (dict, {}, True),
 }
 
 
@@ -1339,10 +1348,6 @@ def _backup_retire_worker(key, token):
                     _BACKUP_GENERATION.pop(key, None)
 
 
-def _backup_workers_locked(key):
-    return _BACKUP_WORKERS.get(key, set())
-
-
 def _backup_request_backup(db_path, profile_id):
     """T01 / T02 / T03: ONE non-blocking atomic registration for a GUI
     backup request.
@@ -1604,6 +1609,7 @@ def _schedule_periodic_backup(db_path, profile_id, on_published=None):
                         try:
                             tmp = _prepare_backup_candidate(src, dest)
                         except Exception:
+                            _log.exception("backup candidate preparation failed (%s)", dest)
                             tmp = None
                         if tmp is not None:
                             published = _backup_publish_candidate_authorized(
@@ -1745,12 +1751,6 @@ class FatalRestoreError(RestoreError):
     def __init__(self, *args, repaired=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.repaired = bool(repaired)
-
-
-def _remove_checked(path):
-    """Remove ``path`` or raise; used where a leftover sidecar must refuse a
-    swap rather than be silently swallowed (CORE-001)."""
-    os.remove(path)
 
 
 def _restore_live_from_safety(destination, safety, owned_quarantines=()):
@@ -1940,6 +1940,27 @@ def _same_file(a, b):
                 == os.path.normcase(os.path.abspath(b)))
 
 
+def _aliases(a, b):
+    """True when two pathnames denote the same physical file.
+
+    ``_same_file`` answers for two EXISTING files. The safety-snapshot case
+    needs the same judgement for a path that is about to be created, so a
+    missing side falls back to a resolved, case-normalized comparison of the
+    real parent plus the basename -- which is what catches the alternate
+    spellings (``./live.db.prerestore.bak``) the restore dialog can hand in.
+    """
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        pass
+    try:
+        return (os.path.normcase(os.path.realpath(a))
+                == os.path.normcase(os.path.realpath(b)))
+    except OSError:
+        return (os.path.normcase(os.path.abspath(a))
+                == os.path.normcase(os.path.abspath(b)))
+
+
 def _open_read_only(path):
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2.0)
 
@@ -2057,8 +2078,22 @@ def restore_database(source, destination):
     version, _ = validate_database(source)
 
     # pre-restore safety snapshot of the CURRENT (valid) live database — the
-    # SQLite backup API so a not-yet-checkpointed WAL is included
-    safety = destination + ".prerestore.bak"
+    # SQLite backup API so a not-yet-checkpointed WAL is included.
+    #
+    # W2-001 (audit/18): the safety pathname is DETERMINISTIC
+    # (``<destination>.prerestore.bak``) and the UI offers ``*.bak`` files as
+    # restore sources, so the user can select exactly the file this snapshot
+    # is about to be written to. Publishing the snapshot there overwrote the
+    # selected source BEFORE the candidate read it: the restore then reported
+    # success while restoring the live data, and the older restore point was
+    # gone. The selected source must be immutable for the whole operation, so
+    # an aliasing request allocates a distinct, invocation-owned safety path
+    # instead.
+    preferred_safety = destination + ".prerestore.bak"
+    if _aliases(preferred_safety, source):
+        safety = unique_temp_path(preferred_safety, "safety")
+    else:
+        safety = preferred_safety
     try:
         src = _open_read_only(destination)
         try:

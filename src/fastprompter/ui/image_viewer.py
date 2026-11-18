@@ -180,7 +180,9 @@ def open_image_viewer(path, parent=None, lang="EN"):
     viewer = ImageViewer(path, image, parent, lang)
     viewer.show()
     _OPEN_VIEWERS.add(viewer)
-    def _on_destroyed(obj):  # noqa: no-weak-refs
+    # The viewer is held by the closed-over name (not a weak reference) so it
+    # stays alive until Qt destroys it; the destroyed signal hands it back.
+    def _on_destroyed(obj):
         _OPEN_VIEWERS.discard(viewer)
     viewer.destroyed.connect(_on_destroyed)
     return True

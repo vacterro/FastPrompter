@@ -20,6 +20,11 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QApplication, QTextEdit, QWidget
 
+from fastprompter.core.link_tokens import (
+    is_fence_closer,
+    is_fence_line,
+    tokenize_block,
+)
 from fastprompter.core.logging import logger
 from fastprompter.core.translations import tr
 from fastprompter.ui.edit_guard import edit_block
@@ -64,6 +69,27 @@ IMAGE_COPY_GAP = 2     # px of clear space between the filename and the lane
 # inherits the font coverage those two prove instead of betting on an emoji
 # codepoint that would paint in colour. One constant, one swap.
 SILO_BUNDLE_GLYPH = "\u25a4"
+
+# PERF-004: how long a structural edit may leave the word count unreconciled
+# before the deferred recount runs. Long enough that a burst of pasted lines
+# or a held Backspace collapses into ONE traversal, short enough that the
+# top-bar count is back before the eye moves to it.
+WORD_COUNT_SETTLE_MS = 120
+
+
+def _sip_deleted(obj) -> bool:
+    """sip.isdeleted for a possibly-non-Qt object.
+
+    ``sip.isdeleted`` raises TypeError on anything that is not a sip wrapper.
+    The deferred word-count settle fires from a QTimer, so it can run after a
+    test (or a partially constructed editor) left a plain Python double in
+    ``main_win``; asking sip about that must not raise inside the event loop.
+    A non-wrapper is, by definition, not a deleted C++ object.
+    """
+    try:
+        return bool(sip.isdeleted(obj))
+    except TypeError:
+        return False
 
 
 def _mid_top(rect, size):
@@ -594,6 +620,18 @@ class VaultTextEdit(QTextEdit):
         if hasattr(_switched, "connect"):
             _switched.connect(self._on_preview_mode_changed)
 
+        # T-1494: the shared link token index. Tokens are computed per block
+        # and cached until the document changes, so a mouse move never
+        # re-scans the document. The cache is keyed by the document object
+        # and by the block text; a replacement document or an edit drops
+        # every entry at once.
+        self._link_token_cache = {}      # block number -> (text, tokens)
+        self._link_code_state = {}       # block number -> inside a code fence
+        self._link_token_cache_doc = None
+        # T-1494: the Source-view press that may turn into a link opening.
+        self._source_link_press = None   # (token, QPoint)
+        self.textChanged.connect(self._invalidate_link_tokens)
+
         # T-1415: Pack Coverage Overlay Experiment
         self._coverage_map = None
         self._session_pack_coverage_hidden = False
@@ -644,6 +682,18 @@ class VaultTextEdit(QTextEdit):
         self._in_mouse_gesture = False
         self._last_key_was_shift_nav = False
         self._suppress_interaction_recording = False
+
+        # PERF-004: a structural edit (insert/remove of a block separator, a
+        # merge, a multi-line paste, a multi-line selection delete) used to
+        # force a full O(block count) recount inside the textChanged handler,
+        # i.e. on the GUI thread between keystrokes. The recount is deferred
+        # to one bounded settle instead, and until it runs the aggregate is
+        # None so ``document_word_count`` reports the truth by counting rather
+        # than displaying a stale number as authoritative.
+        self._word_count_settle_timer = QTimer(self)
+        self._word_count_settle_timer.setSingleShot(True)
+        self._word_count_settle_timer.setInterval(WORD_COUNT_SETTLE_MS)
+        self._word_count_settle_timer.timeout.connect(self._settle_word_count)
 
     def _capture_cursor_state(self) -> CursorSelectionState:
         cur = self.textCursor()
@@ -908,6 +958,14 @@ class VaultTextEdit(QTextEdit):
         self.document().setUndoRedoEnabled(True)
         self._words_dirty = True
         self._aggregate_word_count = None
+        # PERF-004: the previous document's cached aggregate belongs to the
+        # document we just left, so it is invalid here. With the top bar in
+        # words mode the label now reads "recalculating" instead of a stale
+        # number -- so the settle timer has to be armed on the SWAP too, or
+        # the count stays blank until the user happens to type. Nothing else
+        # in this method recounts, and a doc switch is never on a keystroke
+        # path, so one deferred walk here is cheap.
+        self._arm_word_count_settle()
         # PERF-005: the metadata cache belongs to the new document
         self._invalidate_view_metadata()
         # Each silo is its own QTextDocument, so the heat hook has to follow
@@ -2273,14 +2331,20 @@ class VaultTextEdit(QTextEdit):
         so trailing/other-token prose on the token's final row is not made
         part of the target (T-1338 §6 preserved). One-row tokens return a
         single rect.
+
+        ``match`` may be a regex match (the historical callers) or a
+        ``(start, end)`` span (the T-1494 token index).
         """
         rects = []
+        if isinstance(match, tuple):
+            m_start, m_end = match
+        else:
+            m_start, m_end = match.start(), match.end()
         try:
             layout = block.layout()
             br = self.document().documentLayout().blockBoundingRect(block)
             y_off = -self.verticalScrollBar().value()
             base = block.position()
-            m_start, m_end = match.start(), match.end()
             for i in range(layout.lineCount()):
                 line = layout.lineAt(i)
                 ls = line.textStart()
@@ -2311,9 +2375,9 @@ class VaultTextEdit(QTextEdit):
             return rects
         # fallback: single rect from cursor geometry
         start = QTextCursor(block)
-        start.setPosition(block.position() + match.start())
+        start.setPosition(block.position() + m_start)
         end = QTextCursor(block)
-        end.setPosition(block.position() + match.end())
+        end.setPosition(block.position() + m_end)
         r_start, r_end = self.cursorRect(start), self.cursorRect(end)
         width = (r_end.left() - r_start.left()
                  if r_end.top() == r_start.top()
@@ -2845,10 +2909,7 @@ class VaultTextEdit(QTextEdit):
     def copy_link_at(self, url):
         """Copy a markdown link's URL to the clipboard (its ``(...)`` target)."""
         QApplication.clipboard().setText(str(url))
-        try:
-            self.main_win.play_tick_sound()
-        except Exception:
-            pass
+        self._play_link_feedback()
         return True
 
     def copy_image_at(self, path):
@@ -2956,7 +3017,9 @@ class VaultTextEdit(QTextEdit):
                 if path == target:
                     return True
             return False
-        return any(m.group(2) == target for m in MD_LINK_RE.finditer(block.text()))
+        return any(token.destination == target
+                   for token in self._link_tokens(block)
+                   if token.kind != "image")
 
     def _on_preview_mode_changed(self, *_a):
         """T-1349: a view switch re-renders the markup under the pointer, so
@@ -3013,6 +3076,13 @@ class VaultTextEdit(QTextEdit):
         """
         token = self._inline_token_at(pos)
         if token is not None:
+            # T-1494: the Copy affordance is a setting, not a law. With it
+            # off, a hovered link shows no control at all.
+            if token[0] == "link" and not (
+                    self._smart_links_enabled()
+                    and self._smart_link_flag("smart_links_copy_hover")):
+                self._clear_inline_hover()
+                return
             self._stop_inline_hover_grace()
             self._set_inline_hover(*token)
             return
@@ -3027,6 +3097,254 @@ class VaultTextEdit(QTextEdit):
             self._stop_inline_hover_grace()
             return
         self._arm_inline_hover_grace()
+
+    # ---- T-1494: the shared link token index -----------------------------
+
+    def _invalidate_link_tokens(self, *_a):
+        """Drop the cached tokens after any edit.
+
+        One signal covers every kind of change (typing, paste, undo, a
+        document replacement), so a stale token can never survive an edit.
+        """
+        self._link_token_cache = {}
+        self._link_code_state = {}
+
+    def _link_tokens(self, block):
+        """The recognised link tokens of one block.
+
+        The tokens come from the ONE shared authority
+        (``fastprompter.core.link_tokens``), so Source, Live Preview, the
+        hover Copy control and the context menu all agree on what a link is.
+        They are cached per block and dropped on every edit, so a mouse move
+        never re-scans the document.
+        """
+        if block is None or not block.isValid():
+            return []
+        doc = self.document()
+        if doc is None or sip.isdeleted(doc):
+            return []
+        if doc is not self._link_token_cache_doc:
+            self._link_token_cache = {}
+            self._link_code_state = {}
+            self._link_token_cache_doc = doc
+        number = block.blockNumber()
+        text = block.text()
+        cached = self._link_token_cache.get(number)
+        if cached is not None and cached[0] == text:
+            return cached[1]
+        tokens = tokenize_block(text, in_code=self._block_in_code(block))
+        self._link_token_cache[number] = (text, tokens)
+        return tokens
+
+    def _block_in_code(self, block):
+        """True when the block sits inside a fenced code region.
+
+        The fence state is a property of the document from the top down, so
+        it is computed once per block and cached with the tokens.  A block
+        that IS a fence line is not itself code; the blocks after it are.
+        """
+        number = block.blockNumber()
+        cached = self._link_code_state.get(number)
+        if cached is not None:
+            return cached
+        doc = self.document()
+        in_code = False
+        if doc is not None and not sip.isdeleted(doc):
+            current = doc.firstBlock()
+            while current.isValid() and current.blockNumber() < number:
+                self._link_code_state[current.blockNumber()] = in_code
+                text = current.text()
+                if is_fence_line(text):
+                    in_code = (not in_code) if is_fence_closer(text) else True
+                current = current.next()
+        self._link_code_state[number] = in_code
+        return in_code
+
+    def _link_token_at(self, pos):
+        """``(token, block)`` for the link under ``pos``, else None.
+
+        The same geometry authority as the hover Copy control, so the thing
+        the pointer is over is the thing every action acts on.
+        """
+        try:
+            block = self.cursorForPosition(pos).block()
+        except Exception:
+            return None
+        if not block.isValid():
+            return None
+        for token in self._link_tokens(block):
+            if token.kind == "image":
+                continue
+            for frag in self._link_glyph_rects(block, token.span):
+                if frag.contains(pos):
+                    return token, block
+        return None
+
+    # ---- T-1494: link settings -------------------------------------------
+
+    def _smart_link_flag(self, key, default="True"):
+        """A Smart Links setting, read from the one settings authority."""
+        data = getattr(getattr(self, "main_win", None), "data", None)
+        if not isinstance(data, dict):
+            return default == "True"
+        return str(data.get(key, default)) == "True"
+
+    def _smart_links_enabled(self):
+        """The master switch: are the Smart Links affordances on at all?
+
+        T-1494: "Automatic link detection" gates the whole feature -- the
+        hover Copy, the destination tooltip, the Source click-to-open and
+        the link context menu.  Plain text editing, and the Markdown links
+        Live Preview has always rendered, are untouched by it.
+        """
+        return self._smart_link_flag("smart_links_enabled")
+
+    def _source_link_click_mode(self):
+        """``"Single-click"`` or ``"Ctrl+Click"`` -- the Source-view gesture."""
+        data = getattr(getattr(self, "main_win", None), "data", None)
+        if not isinstance(data, dict):
+            return "Single-click"
+        return str(data.get("source_link_click", "Single-click"))
+
+    # ---- T-1494: link actions --------------------------------------------
+
+    def _play_link_feedback(self):
+        """The short confirmation sound of a link action, when it is on."""
+        if not self._smart_link_flag("smart_links_feedback"):
+            return
+        try:
+            self.main_win.play_tick_sound()
+        except Exception:
+            pass
+
+    def copy_markdown_link_at(self, token):
+        """Copy ``[label](destination)`` for a recognised link."""
+        label = token.label or token.destination
+        QApplication.clipboard().setText(f"[{label}]({token.destination})")
+        self._play_link_feedback()
+        return True
+
+    def copy_link_text_at(self, token):
+        """Copy the visible text of a recognised link."""
+        QApplication.clipboard().setText(token.label or token.destination)
+        self._play_link_feedback()
+        return True
+
+    def edit_link_at(self, token, block=None):
+        """Edit a Markdown link's destination in place."""
+        from PyQt6.QtWidgets import QInputDialog, QLineEdit
+
+        lang = getattr(getattr(self, "main_win", None), "_current_lang", "EN")
+        if block is None:
+            return False
+        new_value, ok = QInputDialog.getText(
+            self, tr("Edit Link", lang), tr("Link destination:", lang),
+            QLineEdit.EchoMode.Normal, token.destination)
+        if not ok:
+            return False
+        new_value = new_value.strip()
+        if not new_value or new_value == token.destination:
+            return False
+        cursor = QTextCursor(block)
+        cursor.setPosition(block.position() + token.target_span[0])
+        cursor.setPosition(block.position() + token.target_span[1],
+                           QTextCursor.MoveMode.KeepAnchor)
+        cursor.insertText(new_value)
+        return True
+
+    def _add_link_menu(self, menu, token, block, lang):
+        """Context actions for one recognised link.
+
+        Returns True when the "Open Containing Folder" action was added, so
+        the caller can skip the older anchor-based copy of that action.
+        """
+        folder_offered = False
+        url = self._safe_link_url(QUrl(token.normalized))
+        if url is not None:
+            menu.addAction(
+                tr("Open Link", lang),
+                lambda _c=False, u=url: VaultTextEdit.authorize_and_open_url(
+                    u, self, lang))
+        menu.addAction(
+            tr("Copy Link", lang),
+            lambda _c=False, d=token.destination: self.copy_link_at(d))
+        menu.addAction(
+            tr("Copy Markdown Link", lang),
+            lambda _c=False, t=token: self.copy_markdown_link_at(t))
+        menu.addAction(
+            tr("Copy Link Text", lang),
+            lambda _c=False, t=token: self.copy_link_text_at(t))
+        if url is not None and url.isLocalFile():
+            menu.addAction(
+                tr("Open Containing Folder", lang),
+                lambda _c=False, u=url: self.open_containing_folder(u))
+            folder_offered = True
+        if token.kind == "markdown":
+            menu.addAction(
+                tr("Edit Link…", lang),
+                lambda _c=False, t=token, b=block: self.edit_link_at(t, b))
+        menu.addSeparator()
+        return folder_offered
+
+    def _open_link_if_click(self, event):
+        """Open the link under a click that the surface is allowed to open.
+
+        The press is NOT swallowed, so a drag that starts on a link still
+        selects text and ordinary editing keeps working.  The release
+        decides: left button, the gesture the user asked for, the pointer
+        barely moved, nothing got selected, and the pointer is still over
+        the SAME token.
+
+        Live Preview always opens on a plain click.  Source view follows the
+        configured mode (Single-click or Ctrl+Click).  Alt+click is the
+        explicit "put the caret inside the link" gesture and never opens
+        anything.
+        """
+        pending = getattr(self, "_source_link_press", None)
+        self._source_link_press = None
+        if pending is None:
+            return False
+        if not self._smart_links_enabled():
+            return False
+        surface = self._preview_mode()
+        if surface not in ("Source View", "Live Preview"):
+            return False
+        if event.button() != Qt.MouseButton.LeftButton:
+            return False
+        mods = event.modifiers()
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        alt = bool(mods & Qt.KeyboardModifier.AltModifier)
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        if surface == "Live Preview":
+            if ctrl or alt or shift:
+                return False
+        else:
+            mode = self._source_link_click_mode()
+            if mode == "Single-click":
+                # Alt+click is the explicit "put the caret here" gesture, so
+                # it never opens anything.
+                if ctrl or alt or shift:
+                    return False
+            elif mode == "Ctrl+Click":
+                if not ctrl or alt or shift:
+                    return False
+            else:
+                return False
+        if self.textCursor().hasSelection():
+            return False
+        token, press_pos = pending
+        if (event.pos() - press_pos).manhattanLength() \
+                > QApplication.startDragDistance():
+            return False
+        current = self._link_token_at(event.pos())
+        if current is None or current[0].span != token.span:
+            return False
+        url = self._safe_link_url(QUrl(token.normalized))
+        if url is None:
+            return False
+        lang = getattr(getattr(self, "main_win", None), "_current_lang", "EN")
+        VaultTextEdit.authorize_and_open_url(url, self, lang)
+        return True
 
     def _inline_token_at(self, pos):
         """(kind, target, target_rect, copy_rect) for the image pill or link
@@ -3050,12 +3368,14 @@ class VaultTextEdit(QTextEdit):
                             url.toLocalFile()))
                         return ("image", block, path, pill,
                                 self._image_copy_lane_rect(pill))
-        for m in MD_LINK_RE.finditer(text):
-            for frag in self._link_glyph_rects(block, m):
+        for token in self._link_tokens(block):
+            if token.kind == "image":
+                continue
+            for frag in self._link_glyph_rects(block, token.span):
                 if frag.contains(pos):
                     # anchor Copy to the ACTUAL visual fragment hovered, so a
                     # wrapped link's row-2 hover puts Copy on row 2 (T-1339).
-                    return ("link", block, m.group(2), frag,
+                    return ("link", block, token.destination, frag,
                             self._inline_copy_rect(block, frag))
         return None
 
@@ -3464,6 +3784,13 @@ class VaultTextEdit(QTextEdit):
             # Live Preview: remember a link under the press (open is deferred to
             # release, so a drag/selection that starts on a link still works).
             self._record_pending_link(event)
+            # T-1494: both editing surfaces record the link under the press;
+            # the release decides whether it was a click or a drag.
+            self._source_link_press = None
+            if event.button() == Qt.MouseButton.LeftButton:
+                hit = self._link_token_at(event.pos())
+                if hit is not None:
+                    self._source_link_press = (hit[0], QPoint(event.pos()))
             if event.button() == Qt.MouseButton.LeftButton:
                 # T-1337: resolve the hover Copy control from the PRESS point
                 # first, so a direct click on it (no prior move) still hits.
@@ -3471,6 +3798,9 @@ class VaultTextEdit(QTextEdit):
                 link_copy = self._link_copy_at(event.pos())
                 if link_copy is not None:
                     self._pending_link = None
+                    # T-1494: a press on the Copy control must never open the
+                    # link underneath it.
+                    self._source_link_press = None
                     self._link_copy_pressed = link_copy[0]
                     self.viewport().update()
                     event.accept()
@@ -3618,6 +3948,20 @@ class VaultTextEdit(QTextEdit):
             self._line_drag_hover_block = None
             event.accept()
             return
+        # T-1494: in Source view with the Ctrl+Click gesture selected, a
+        # Ctrl+click ON A LINK is a link action. Every other word keeps the
+        # Ctrl+click word-pin gesture, so the two never fight over the same
+        # click: the link is the more specific target.
+        if (event.button() == Qt.MouseButton.LeftButton
+                and event.modifiers() == Qt.KeyboardModifier.ControlModifier
+                and self._preview_mode() == "Source View"
+                and self._smart_links_enabled()
+                and self._source_link_click_mode() == "Ctrl+Click"):
+            hit = self._link_token_at(event.pos())
+            if hit is not None:
+                self._source_link_press = (hit[0], QPoint(event.pos()))
+                event.accept()
+                return
         # exact match, so Ctrl+Shift doesn't also fire the bullet toggle
         if event.button() == Qt.MouseButton.LeftButton and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             # Plain Ctrl+click on a word pins it as a persistent selection
@@ -3876,6 +4220,10 @@ class VaultTextEdit(QTextEdit):
         # across a link still selects text.
         if self._open_pending_link_if_click(event):
             return
+        # T-1494: Source view opens a link under the gesture the user chose;
+        # Live Preview opens it on a plain click.
+        if self._open_link_if_click(event):
+            return
 
     def _open_pending_link_if_click(self, event):
         """Open a link recorded on press, but only if it was a real click.
@@ -4131,12 +4479,31 @@ class VaultTextEdit(QTextEdit):
         self._idle_timer.start()
 
     def _on_idle_timeout(self):
-        """Capture silo state after 2 s of inactivity (scroll-only browsing)."""
+        """Capture silo state after 2 s of inactivity (scroll-only browsing).
+
+        A raised exception has nowhere to go here: Qt delivers this slot from
+        the event loop, so PyQt6 escalates it to ``qFatal()`` and the process
+        aborts inside whatever unrelated code pumped the loop next -- no
+        failing test name, no traceback the caller can act on. The owner must
+        be asked whether it can still service the capture before calling it,
+        because a half-torn-down window and a test double both reach this slot
+        with ``main_win`` set and no ``capture_silo_state``.
+        """
         mw = getattr(self, "main_win", None)
-        if mw is not None:
-            mw.capture_silo_state()
+        capture = getattr(mw, "capture_silo_state", None)
+        if not callable(capture):
+            return
+        try:
+            capture()
             # PERF-002: scroll-idle capture is view metadata (settings)
-            mw.mark_dirty("settings")
+            mark_dirty = getattr(mw, "mark_dirty", None)
+            if callable(mark_dirty):
+                mark_dirty("settings")
+        except Exception:
+            # The capture is view metadata: losing one snapshot of the scroll
+            # position costs nothing, while letting this escape aborts the
+            # process from inside the event loop.
+            logger.debug("idle capture failed", exc_info=True)
 
     def rehover_from_pointer(self, point=None):
         """Re-derive the hovered line without the mouse having moved.
@@ -4260,6 +4627,20 @@ class VaultTextEdit(QTextEdit):
         shortcut and does not show it is the defect this fixes, so the glyph
         is no exception.
         """
+        # T-1494: a link shows its destination, so the user can see where a
+        # click would go BEFORE clicking it. The tooltip is a setting.
+        if self._smart_links_enabled() and self._smart_link_flag(
+                "smart_links_tooltip"):
+            hit = self._link_token_at(event.pos())
+            if hit is not None:
+                from PyQt6.QtWidgets import QToolTip
+                tip = hit[0].destination
+                if len(tip) > 120:
+                    tip = tip[:117] + "..."
+                QToolTip.showText(event.globalPos(), tip, self)
+                event.accept()
+                return None
+
         # T-1415: Tooltip on viewport coverage marker (when gutter is disabled)
         if not self._gutter_active() and self.is_pack_coverage_visible() and event.pos().x() <= 8:
             blk = self.cursorForPosition(event.pos()).block()
@@ -4375,9 +4756,19 @@ class VaultTextEdit(QTextEdit):
                 lambda _c=False, p=img_path: copy_image_path(p))
             menu.addSeparator()
 
+        # T-1494: link actions for the recognised token under the pointer.
+        # The token comes from the shared index, so a bare URL behaves like a
+        # Markdown link: same actions, same destination, same safety route.
+        link_hit = self._link_token_at(event.pos())
+        link_folder_offered = False
+        if link_hit is not None and self._smart_links_enabled():
+            link_lang = getattr(self.main_win, '_current_lang', 'EN')
+            link_folder_offered = self._add_link_menu(
+                menu, link_hit[0], link_hit[1], link_lang)
+
         # Handle "Open Folder" for local file links
         url = self.anchor_url_at(event.pos())
-        if url is not None and url.isLocalFile():
+        if url is not None and url.isLocalFile() and not link_folder_offered:
             path = os.path.normpath(url.toLocalFile())
             action = menu.addAction(
                 f"Open folder containing {os.path.basename(path)}\tCtrl+RClick")
@@ -6231,9 +6622,42 @@ class VaultTextEdit(QTextEdit):
     def invalidate_word_count(self):
         self._words_dirty = True
         self._aggregate_word_count = None
-        
+        self._arm_word_count_settle()
+
+    def _arm_word_count_settle(self):
+        """Schedule the deferred recount that clears a dirty aggregate.
+
+        PERF-004: an authoritative recount is a walk over every block. It is
+        cheap per block but it is still O(block count), and it used to run
+        inside the textChanged handler — i.e. between two keystrokes, on the
+        GUI thread — for every structural edit. One settle per burst costs the
+        same walk once and keeps typing latency flat.
+        """
+        timer = getattr(self, "_word_count_settle_timer", None)
+        if timer is None or sip.isdeleted(timer):
+            return
+        timer.start()
+
+    def word_count_if_known(self):
+        """The cached total, or None while the aggregate is untrustworthy.
+
+        PERF-004: a caller that only wants to DISPLAY a number must use this.
+        ``document_word_count`` is exact but may pay a full traversal; asking
+        it from a per-keystroke label refresh is what made structural edits
+        expensive. None means "no honest answer cached yet" — the settle timer
+        will publish one shortly.
+        """
+        if getattr(self, "_words_dirty", True):
+            return None
+        return getattr(self, "_aggregate_word_count", None)
+
     def document_word_count(self):
-        """O(1) total word count, or O(B) fallback if dirty."""
+        """Exact total word count: O(1) cached, O(B) when the cache is stale.
+
+        A stale aggregate still only re-splits the blocks whose per-block
+        cache was invalidated — every untouched block contributes its cached
+        integer — so the traversal is a sum, not a re-tokenisation.
+        """
         doc = self.document()
         if not doc:
             return 0
@@ -6253,8 +6677,33 @@ class VaultTextEdit(QTextEdit):
                 block = block.next()
             self._aggregate_word_count = total
             self._words_dirty = False
+            timer = getattr(self, "_word_count_settle_timer", None)
+            if timer is not None and not sip.isdeleted(timer):
+                timer.stop()   # the recount already happened
             return total
         return self._aggregate_word_count
+
+    def _settle_word_count(self):
+        """Timer body: recount once, then tell the top bar the real number."""
+        if _sip_deleted(self):
+            return
+        if not getattr(self, "_words_dirty", False):
+            return
+        self.document_word_count()
+        self._publish_word_count()
+
+    def _publish_word_count(self):
+        """Hand the freshly reconciled count to whoever paints it."""
+        mw = getattr(self, "main_win", None)
+        if mw is None or _sip_deleted(mw):
+            return
+        update = getattr(mw, "_update_token_count_label", None)
+        if update is None:
+            return
+        try:
+            update()
+        except Exception:
+            logger.debug("word count label refresh failed")
 
     def _on_contents_change(self, position, removed, added):
         """Document changed — rebuild the background tints and word count."""
@@ -6277,23 +6726,30 @@ class VaultTextEdit(QTextEdit):
                         mw._undo_kinds()[:] = [k for k in kinds if k != "interaction"]
             first = doc.findBlock(position)
             last = doc.findBlock(max(position, position + added))
-            
-            # Fast path: single-block edit
-            if first == last and not getattr(self, "_words_dirty", False):
+
+            # PERF-004 fast path: a PURE insertion inside ONE block. That is
+            # the only shape whose aggregate delta is provably just this
+            # block's own difference — nothing was removed, and no other
+            # block's cached count became wrong.
+            #
+            # A deletion (even one that lands inside a single block, which is
+            # what `first == last` used to match) can REMOVE whole blocks, and
+            # Qt has already destroyed their userData by the time this handler
+            # runs: their contribution is unrecoverable here. Merging two lines
+            # through that path inflated the aggregate by the removed block's
+            # words on every merge.
+            if (removed == 0 and added > 0 and first == last
+                    and not getattr(self, "_words_dirty", False)):
                 data = first.userData()
-                if data:
-                    old_wc = getattr(data, 'word_count', -1)
-                    if old_wc != -1:
-                        new_wc = len(first.text().split())
-                        data.word_count = new_wc
-                        if hasattr(self, "_aggregate_word_count") and self._aggregate_word_count is not None:
-                            self._aggregate_word_count += (new_wc - old_wc)
-                    else:
-                        self._words_dirty = True
+                old_wc = getattr(data, 'word_count', -1) if data is not None else -1
+                if old_wc != -1 and getattr(self, "_aggregate_word_count", None) is not None:
+                    new_wc = len(first.text().split())
+                    data.word_count = new_wc
+                    self._aggregate_word_count += (new_wc - old_wc)
                 else:
-                    self._words_dirty = True
+                    self._mark_words_dirty()
             else:
-                self._words_dirty = True
+                self._mark_words_dirty()
                 block = first
                 while block.isValid():
                     data = block.userData()
@@ -6303,6 +6759,18 @@ class VaultTextEdit(QTextEdit):
                         break
                     block = block.next()
         self.refresh_extra_selections()
+
+    def _mark_words_dirty(self):
+        """Invalidate the aggregate and let the settle timer recount it.
+
+        PERF-004: the recount itself is still exact — every block outside the
+        edited span keeps its cached integer and only the span is re-split —
+        but it now happens once per burst, off the keystroke path, instead of
+        synchronously inside every contentsChange.
+        """
+        self._words_dirty = True
+        self._aggregate_word_count = None
+        self._arm_word_count_settle()
 
     def _stamp_edited_blocks(self, position, removed, added):
         """Timestamp every block the change touched."""

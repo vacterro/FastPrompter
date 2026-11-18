@@ -93,16 +93,27 @@ def test_disabled_or_not_shown_returns_none():
 
 def test_active_hour_window_gates_impossible_occurrence():
     fake = _bind(_Fake([]))
-    # active window 08:00-12:00, all_day False; now 10:00, 60m clock next
-    # boundary 11:00 (inside) -> countdown; rule with window 13:00-18:00 ->
-    # next occurrence outside -> None
+    # CORE-006: the active window filters OCCURRENCES, not merely the nearest
+    # mathematical boundary. A rule whose window has already closed today does
+    # not lose its countdown -- the next occurrence is tomorrow inside the
+    # window. Returning None there was the reported defect.
     r = _rule("r", 60, show_in_top_bar=True, all_day=False, start_minute=8 * 60, end_minute=12 * 60,
               last_fired_minute="2026-01-01 10:00")
     rem = _rem(fake, r, RealDateTime(2026, 1, 1, 10, 0, 0))
     assert rem is not None and rem > 0
+
+    # Window 13:00-18:00 measured at 10:00: the next in-window occurrence is
+    # 13:00 today, three hours away. It must be advertised, not suppressed.
     r2 = _rule("r2", 60, show_in_top_bar=True, all_day=False, start_minute=13 * 60, end_minute=18 * 60,
                last_fired_minute="2026-01-01 10:00")
-    assert _rem(fake, r2, RealDateTime(2026, 1, 1, 10, 0, 0)) is None
+    rem2 = _rem(fake, r2, RealDateTime(2026, 1, 1, 10, 0, 0))
+    assert rem2 == 3 * 3600
+
+    # After the window closes for the day the rule still counts down to the
+    # first in-window occurrence TOMORROW (13:00 -> 21 hours away, not None).
+    rem3 = _rem(fake, r2, RealDateTime(2026, 1, 1, 20, 0, 0))
+    assert rem3 == 17 * 3600
+
 
 
 def test_elapsed_mode_uses_last_fired_anchor():

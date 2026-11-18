@@ -40,8 +40,13 @@ from fastprompter.core.usage_limits.service import UsageLimitService
 
 
 class TestCanonicalPath:
-    def test_lowercases_on_windows(self):
-        os.environ["USERPROFILE"] = "C:\\Users\\Test"
+    def test_lowercases_on_windows(self, monkeypatch):
+        # Through monkeypatch, NOT the raw mapping: written directly this left
+        # ``~`` pointing at C:\\Users\\Test for the rest of the process, and
+        # every later ``expanduser("~")`` in the same run then resolved into a
+        # directory this account cannot write (observed: PermissionError from
+        # the portable-backup export in a full-suite run).
+        monkeypatch.setenv("USERPROFILE", "C:\\Users\\Test")
         a = canonical_path("C:\\Users\\TEST\\.codex")
         b = canonical_path("c:/users/test/.codex")
         assert a == b

@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 
 import markdown
 
+from fastprompter.core.link_tokens import tokenize_block
+
 # --------------------------------------------------------------------------
 # public vocabulary
 # --------------------------------------------------------------------------
@@ -212,6 +214,11 @@ def parse_bbcode(source: str) -> _Node:
     root = _Node("root")
     stack: list[_Node] = [root]
     pos = 0
+    # PERF-002: the case-folded source is a loop invariant, but it used to be
+    # rebuilt by ``source.lower()`` for every opening ``[code]`` -- O(N^2) on a
+    # document of N code blocks. Built once, lazily, so a document with no code
+    # tags allocates nothing extra.
+    lowered: str | None = None
     for match in _TOKEN_RE.finditer(source):
         if match.start() < pos:
             continue          # already consumed as part of a [code] block
@@ -252,7 +259,9 @@ def parse_bbcode(source: str) -> _Node:
             continue
         if name == "code":
             # [code] content is literal until the matching [/code]
-            end = source.lower().find("[/code]", pos)
+            if lowered is None:
+                lowered = source.lower()
+            end = lowered.find("[/code]", pos)
             if end < 0:
                 _append_text(stack[-1], source[match.start():])
                 pos = len(source)
@@ -285,16 +294,37 @@ _RE_MD_BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
 _RE_MD_ITALIC = re.compile(r"(?<!\*)\*([^*\n]+?)\*(?!\*)")
 _RE_MD_STRIKE = re.compile(r"~~(.+?)~~", re.S)
 _RE_MD_CODE = re.compile(r"`([^`\n]+)`")
-_RE_AUTOLINK = re.compile(r"(?<![\w(\"'=>])(https?://[^\s<>\"]+[^\s<>\".,;:!?)\]}])")
 
 
 def _escape_and_linkify(text: str) -> str:
-    out = html.escape(text, quote=False)
-    out = _RE_AUTOLINK.sub(
-        lambda m: f'<a href="{html.escape(m.group(1), quote=True)}">{m.group(1)}</a>',
-        out,
-    )
-    return out
+    """Escape a text run and turn recognised bare links into anchors.
+
+    T-1494: the link shapes come from the ONE shared tokenizer
+    (``core.link_tokens``) -- the same authority the Source editor and the
+    Live Preview use -- so Reading mode recognises the same URLs and no
+    second, drifting link parser exists.
+
+    The destination is escaped exactly ONCE.  The old order (escape the
+    text, then run a regex over the ESCAPED text) turned ``?a=1&b=2`` into
+    ``?a=1&amp;amp;b=2`` inside the href, which the reader then saw as a
+    literal ``&amp;``.  Tokenising the RAW text and escaping each piece
+    keeps the query and the fragment intact.
+    """
+    pieces: list[str] = []
+    cursor = 0
+    for token in tokenize_block(text):
+        # Markdown and BBCode links become anchors in their own parsers
+        # upstream; only a BARE link is linkified here.
+        if token.kind != "autolink" or not token.is_supported:
+            continue
+        start, end = token.span
+        pieces.append(html.escape(text[cursor:start], quote=False))
+        pieces.append(f'<a href="{html.escape(token.normalized, quote=True)}">'
+                      f'{html.escape(token.destination, quote=False)}</a>')
+        cursor = end
+    pieces.append(html.escape(text[cursor:], quote=False))
+    return "".join(pieces)
+
 
 
 def _inline_markdown(text: str) -> str:
@@ -456,7 +486,7 @@ _VOID_TAGS = {"br", "hr"}
 # BBCode emits b/i, and the preview should not care which produced the run.
 _TAG_ALIASES = {"strong": "b", "em": "i", "del": "s", "ins": "u",
                 "thead": "thead", "tbody": "tbody"}
-_SAFE_SCHEMES = ("http", "https", "mailto", "file")
+_SAFE_SCHEMES = ("http", "https", "ftp", "mailto", "file")
 
 _STYLE_PROP_RE = re.compile(
     r"^(color|font-size|text-align|font-weight|font-style|text-decoration|"

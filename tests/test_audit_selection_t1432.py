@@ -16,14 +16,18 @@ selection reuse the SAME ZIP without allocating a ``_2``.
 from __future__ import annotations
 
 import inspect
+import json
 import os
 import zipfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from _bundle_op_wait import pump_until_idle
 
 from fastprompter.core import silo_bundle as sb
 from fastprompter.main import FastPrompter
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _png(dirpath, name="shot.png", data=b"\x89PNG\r\n\x1a\npayload"):
@@ -92,7 +96,9 @@ class _SelHarness:
         self.editing_snippet = False
         self.silo_dir = str(silo_dir)
         self.category = category
-        self.VERSION = "0.8.71"
+        # T-1458: no literal VERSION attribute. The shipped entry point asks
+        # the real _bundle_app_version, which reads the VERSION file.
+        self._bundle_version_cache = None
         self._current_lang = "EN"
         self._last_bundle_path = None
         self._bound = bound
@@ -165,6 +171,9 @@ class _SelHarness:
 
 _SelHarness._active_silo_bundle_context = FastPrompter._active_silo_bundle_context
 _SelHarness.fast_pack_selection = FastPrompter.fast_pack_selection
+# T-1458: the selection path records the same app version as the silo path,
+# read from the VERSION file, so the harness grafts the real reader too.
+_SelHarness._bundle_app_version = FastPrompter._bundle_app_version
 # PERF-001: Fast Pack dispatches through the shared bundle worker and completes
 # through the shared completion half, so the harness carries both.
 _SelHarness._silo_bundle_dispatch = FastPrompter._silo_bundle_dispatch
@@ -300,3 +309,31 @@ def test_core006_tampered_candidate_is_rejected_and_republished(
     assert len(harness.records) == 2
     with zipfile.ZipFile(second, "r") as zf:
         assert "manifest.json" in zf.namelist()
+
+
+# --- T-1458: selection bundle records the shipped version -------------------
+
+def test_selection_bundle_records_the_version_file_not_a_literal(
+        qapp, tmp_path, monkeypatch):
+    harness = _SelHarness(tmp_path / "silo", "• Hello World item")
+    os.makedirs(harness.silo_dir, exist_ok=True)
+    _patch_clipboard(monkeypatch, harness)
+
+    harness.fast_pack_selection()
+    assert pump_until_idle(harness)
+    path = harness._last_bundle_path
+    assert path and os.path.isfile(path)
+
+    canonical = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    assert canonical, "VERSION file is empty"
+    with zipfile.ZipFile(path, "r") as zf:
+        assert json.loads(zf.read("manifest.json"))["app_version"] == canonical
+
+
+def test_selection_entry_point_has_no_literal_version_fallback():
+    """T-1458: main.py:6476 passed getattr(self, 'VERSION', '0.8.72') and no
+    class in src/ ever assigns self.VERSION, so every selection manifest
+    recorded 0.8.72 while the shipped release was 0.8.73."""
+    src = inspect.getsource(FastPrompter.fast_pack_selection)
+    assert 'getattr(self, "VERSION"' not in src
+    assert 'self._bundle_app_version()' in src

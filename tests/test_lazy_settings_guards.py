@@ -87,10 +87,16 @@ os._exit(0)
 def test_hotkeys_and_ctrl_c_work_before_settings_are_built():
     src = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
     env = dict(os.environ, QT_QPA_PLATFORM="offscreen", PYTHONPATH=src)
+    # The child must be BOUNDED.  Without a timeout a child that hangs (the
+    # offscreen Qt start blocked under load) makes communicate() block, the
+    # pytest-timeout thread method then kills the WHOLE process at 180s and
+    # the entire suite dies with no summary.  A timeout turns that into one
+    # bounded test failure: the child is killed and TimeoutExpired is raised.
     proc = subprocess.run(
         [sys.executable, "-c", _SCRIPT],
         env=env, capture_output=True, text=True,
         cwd=os.path.dirname(__file__),
+        timeout=120,
     )
     assert proc.returncode == 0, (
         f"stdout={proc.stdout!r}\nstderr={proc.stderr[-2000:]!r}")

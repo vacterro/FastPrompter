@@ -157,8 +157,22 @@ def _wait_for(predicate, timeout_ms=BUDGET_MS, step_ms=20):
     return predicate()
 
 
-def _read_all(sock):
-    _pump(20)
+def _read_all(sock, budget_ms=200):
+    """Everything the peer has delivered, after waiting for the ACK to arrive.
+
+    The wait is a STATE POLL, never a duration assumption.  A fixed 20 ms pump
+    reads an empty pipe while the ACK is still in flight whenever this host
+    deschedules the process — which is how these tests reddened at the 60 %
+    mark of a full-suite run while passing standalone, the exact class of
+    load-dependent failure the module docstring says must not exist.  Callers
+    that EXPECT bytes pass the generous ``BUDGET_MS``; callers that expect
+    none have already settled the outcome through ``_wait_for`` and pay only
+    the short default.
+    """
+    waited = 0
+    while sock.bytesAvailable() == 0 and waited < budget_ms:
+        _pump(20)
+        waited += 20
     return bytes(sock.readAll().data())
 
 
@@ -232,7 +246,7 @@ def test_the_gui_path_never_calls_a_socket_wait(ipc, monkeypatch):
     assert _wait_for(lambda: len(ipc._test_calls) == 1), "the valid frame was not served"
 
     assert spy.waits == [], spy.reason()
-    assert _read_all(sock) == b"ACK"
+    assert _read_all(sock, BUDGET_MS) == b"ACK"
 
 
 def test_a_stalled_client_does_not_delay_a_valid_sibling(ipc, monkeypatch):
@@ -250,7 +264,7 @@ def test_a_stalled_client_does_not_delay_a_valid_sibling(ipc, monkeypatch):
 
     assert served, "a stalled sibling delayed a valid command"
     assert spy.waits == [], spy.reason()
-    assert _read_all(good) == b"ACK"
+    assert _read_all(good, BUDGET_MS) == b"ACK"
     assert ipc._test_calls == [1]
 
 
@@ -273,7 +287,7 @@ def test_fragmented_valid_frame_is_accepted_exactly_once(ipc):
 
     assert _wait_for(lambda: len(ipc._test_calls) == 1), "the fragmented frame was not served"
     assert ipc._test_calls == [1], "the frame was resolved more than once"
-    assert _read_all(sock) == b"ACK"
+    assert _read_all(sock, BUDGET_MS) == b"ACK"
 
 
 def test_the_ack_is_written_without_a_blocking_write_wait(ipc, monkeypatch):
@@ -290,7 +304,7 @@ def test_the_ack_is_written_without_a_blocking_write_wait(ipc, monkeypatch):
     sock.write(f"TOKEN:{ipc.token}|SHOW".encode())
     sock.flush()
     assert _wait_for(lambda: len(ipc._test_calls) == 1), "the valid frame was not served"
-    assert _read_all(sock) == b"ACK"
+    assert _read_all(sock, BUDGET_MS) == b"ACK"
     assert spy.waits == [], spy.reason()
 
 
@@ -303,7 +317,7 @@ def test_every_concurrent_client_gets_its_own_ack(ipc):
     assert _wait_for(lambda: len(ipc._test_calls) == 3), "not every client was served"
     assert ipc._test_calls == [1, 1, 1]
     for sock in socks:
-        assert _read_all(sock) == b"ACK"
+        assert _read_all(sock, BUDGET_MS) == b"ACK"
 
 
 # --------------------------------------------------------------------------

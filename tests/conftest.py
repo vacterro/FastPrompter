@@ -6,6 +6,12 @@ import threading
 # construct a QApplication on a machine with no display; the offscreen platform
 # is the standard headless backend and exercises the same code paths.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Personal-audio mode is OFF by default so the public behaviour is what a
+# clean install gets. Tests that exercise the operator's personal
+# configuration must set FASTPROMPTER_PERSONAL_AUDIO themselves
+# (see test_t1437_personal_audio_red_controls.py); otherwise that branch of
+# resolve_sound_ref would never execute in this tree.
+os.environ.setdefault("FASTPROMPTER_PERSONAL_AUDIO", "0")
 
 from unittest.mock import patch
 

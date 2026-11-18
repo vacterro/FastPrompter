@@ -324,7 +324,19 @@ EVENT_LABELS: dict[str, str] = {
 }
 
 
-_DISCOVERED_CACHE: dict[tuple[str, bool], tuple[float, list[str]]] = {}
+_DISCOVERED_CACHE: dict[tuple[str, bool], tuple[tuple[int, int, float], list[str]]] = {}
+
+#: PERF-003: outer-directory-mtime-only cache validity was WRONG for a
+#: recursive listing -- adding ``sounds/cs_style/second.wav`` does not change
+#: ``sounds/``'s own mtime, so the new file stayed invisible for the WHOLE
+#: process life. The cache identity is now three facts: the sound-library
+#: mutation generation (an application-owned import/removal converges at
+#: once), the root directory mtime, and a bounded time window that lets an
+#: external tool's nested write converge without ever walking the tree to
+#: decide validity. The fast path is one ``stat`` and a monotonic compare, so
+#: an unchanged library stays as cheap as before.
+_DISCOVERY_REFRESH_SECONDS = 2.0
+
 
 #: Private sound namespaces.  A directory whose name starts with "_" is a
 #: VAULT: shipped raw material (GoldSrc vox/fvox fragments, alternate packs)
@@ -352,13 +364,18 @@ def discover_sound_files(sounds_dir: str, force: bool = False, *,
         return []
 
     cache_key = (sounds_dir, bool(include_vault))
+    generation = sound_library.library_generation()
     if not force and cache_key in _DISCOVERED_CACHE:
-        mtime, cached = _DISCOVERED_CACHE[cache_key]
-        try:
-            if os.path.getmtime(sounds_dir) <= mtime:
-                return list(cached)
-        except OSError:
-            pass
+        gen, mtime, stamp, cached = _DISCOVERED_CACHE[cache_key]
+        # PERF-003: a stale nested file is only invisible until the next
+        # bounded refresh, never for the process lifetime. ``stamp`` is when
+        # the entry was validated, so this is one stat + one compare.
+        if gen == generation and (time.monotonic() - stamp) < _DISCOVERY_REFRESH_SECONDS:
+            try:
+                if os.path.getmtime(sounds_dir) <= mtime:
+                    return list(cached)
+            except OSError:
+                pass
 
     # Recursive: cs_style/ is a real subfolder and its three files are the
     # ones the CS 1.6 style names, so a flat listdir left them unreachable
@@ -376,7 +393,8 @@ def discover_sound_files(sounds_dir: str, force: bool = False, *,
                 rel = os.path.relpath(os.path.join(root, f), sounds_dir)
                 wav_files.append(rel.replace(os.sep, "/"))
         wav_files.sort()
-        _DISCOVERED_CACHE[cache_key] = (cur_mtime, wav_files)
+        _DISCOVERED_CACHE[cache_key] = (
+            generation, cur_mtime, time.monotonic(), wav_files)
         logger.debug("Discovered %d sound files in %s", len(wav_files), sounds_dir)
     except OSError:
         logger.error("Failed to list sounds directory: %s", sounds_dir)

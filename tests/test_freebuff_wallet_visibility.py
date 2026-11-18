@@ -76,18 +76,19 @@ def test_case_B_depleted_meter_with_wallet_is_has_usage():
                                           wallet=30.0)) is True
 
 
-def test_case_C_no_wallet_no_usage_follows_normal_filtering():
-    # untouched meter, no wallet -> the 0%-usage filter still hides it
-    assert account_has_usage(_fb_snapshot(wallet=0.0)) is False
-    # everything exhausted, no wallet -> hidden as before
+def test_case_C_no_wallet_fresh_capacity_is_not_hidden():
+    # T-1462: untouched 100% is full capacity, not "no usage". Hide-exhausted
+    # must keep such an account even with no wallet.
+    assert account_has_usage(_fb_snapshot(wallet=0.0)) is True
+    # everything exhausted, no wallet -> still hidden (the negative control)
     assert account_has_usage(_fb_snapshot(five_h_used=100.0,
                                           weekly_used=100.0,
                                           wallet=0.0)) is False
 
 
-def test_case_D_normal_account_zero_used_remains_filtered():
-    # existing hide-zero behavior must not change for wallet-less providers
-    assert account_has_usage(_plain_snapshot("claude", 0.0, 0.0)) is False
+def test_case_D_normal_account_zero_used_is_full_capacity():
+    # Untouched (0% used) accounts are healthy, not empty -- T-1462.
+    assert account_has_usage(_plain_snapshot("claude", 0.0, 0.0)) is True
     assert account_has_usage(_plain_snapshot("codex", 12.5, 0.0)) is True
 
 
@@ -255,11 +256,13 @@ def test_T1254_invariant_wallet_positive_predicates_agree(meter):
 
 @_pytest.mark.parametrize("meter", ["fresh", "exhausted", "reset_pending", "empty"])
 def test_T1254_invariant_zero_wallet_walletless_predicates_unchanged(meter):
-    """The invariant must NOT extend to zero-wallet snapshots: existing
-    hide-zero behavior for wallet-less accounts is pinned."""
+    """The wallet invariant never extends to zero-wallet snapshots; those are
+    judged by metered capacity alone. After T-1462 an untouched 100% meter is
+    capacity, so the 'fresh' case is True; exhausted/pending/empty are False.
+    """
     if meter == "fresh":
         snap = _fb_snapshot(wallet=0.0)
-        assert account_has_usage(snap, now=_NOW) is False
+        assert account_has_usage(snap, now=_NOW) is True
     elif meter == "exhausted":
         snap = _fb_snapshot(wallet=0.0, five_h_used=100.0, weekly_used=100.0)
         assert account_has_usage(snap, now=_NOW) is False
@@ -330,10 +333,14 @@ def test_gauges_retain_depleted_freebuff_with_wallet_under_hide_unusable(win):
     assert "freebuff:stable_fb" in shown
 
 
-def test_gauges_still_filter_walletless_zero_usage(win):
+def test_gauges_keep_untouched_and_filter_exhausted_walletless(win):
+    # Untouched capacity survives the filter without a wallet (T-1462).
     snap = _fb_snapshot(wallet=0.0)
-    assert "freebuff:stable_fb" not in _fb_visible_in_gauges(win, snap)
-    plain = _plain_snapshot("claude", 0.0, 0.0)
+    assert "freebuff:stable_fb" in _fb_visible_in_gauges(win, snap)
+    # Genuinely exhausted (0% LEFT) is still removed.
+    drained = _fb_snapshot(wallet=0.0, five_h_used=100.0, weekly_used=100.0)
+    assert "freebuff:stable_fb" not in _fb_visible_in_gauges(win, drained)
+    plain = _plain_snapshot("claude", 100.0, 100.0)
     w = win
     w.data["limit_gauges"] = "True"
     w.data["limit_gauges_hide_zero_usage"] = "True"

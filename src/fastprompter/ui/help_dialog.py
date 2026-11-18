@@ -32,7 +32,7 @@ def build_help_html(data, lang="EN") -> str:
         (g("lock_window_hotkey", "Alt+E"), "Lock / unlock window size & position"),
         (g("always_on_top_hotkey", "Alt+S"), "Toggle always-on-top"),
         (g("hide_on_clickout_hotkey", "Alt+A"), "Toggle Hide on Click-Out"),
-        ("F1&ndash;F10 (global)", "Paste snippet 1&ndash;10 into the active app"),
+        ("F1&ndash;F10", "Switch to project 1&ndash;10 (or paste snippet 1&ndash;10 when F-key action is set to Snippets)"),
     ], lang)
     def hk(key, default):
         """The sequence the user actually has, for a configurable hk_* key.
@@ -49,7 +49,7 @@ def build_help_html(data, lang="EN") -> str:
         (hk("hk_new_snippet", "Ctrl+N"), "New empty silo at the top"),
         ("Alt+Up / Alt+Down", "Previous / next silo"),
         ("Ctrl+1&ndash;Ctrl+0", "Jump to silo 1&ndash;10"),
-        ("F1&ndash;F10 / Ctrl+Shift+1&ndash;9", "Paste snippet 1&ndash;10 into the editor"),
+        ("F1&ndash;F10 / Ctrl+Shift+1&ndash;9", "Switch to project 1&ndash;10 (F-keys) / paste snippet 1&ndash;9 (Ctrl+Shift)"),
         (hk("hk_save_snippet", "Ctrl+S"), "Save text as snippet / update the edited snippet"),
         (hk("hk_divider", "Ctrl+W"), "Insert a spaced --- divider (toolbar Line command)"),
         ("Alt+W", "Insert a spaced --- divider and start a fresh &bull; bullet (old behavior)"),

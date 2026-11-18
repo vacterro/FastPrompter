@@ -49,9 +49,21 @@ def test_the_name_shown_is_the_registry_name():
 
 def test_a_registry_without_a_badge_falls_back_to_the_local_rule():
     # Not every registry entry carries one; the account must still get a badge
-    # rather than an empty header cell.
+    # rather than an empty header cell. The fallback is the name-derived
+    # ordinal (AG1), not a static "AG": the control plane issues AG1/AG2/AG3,
+    # so a bare "AG" was the one badge matching no registry entry and it made
+    # the first Antigravity slot draw differently from its own siblings.
     account = _shared(name="Antigravity 1", compact="")
-    assert default_account_label(account) == "AG"
+    assert default_account_label(account) == "AG1"
+
+
+def test_the_antigravity_badges_are_the_registry_ones():
+    # The badge the operator reads must agree with the badge every other
+    # consumer of the same registry shows, for every slot, not just the ones
+    # this application did not have locally.
+    for ordinal in ("1", "2", "3"):
+        account = _shared(name=f"Antigravity {ordinal}", compact=f"AG{ordinal}")
+        assert default_account_label(account) == f"AG{ordinal}"
 
 
 def test_a_local_account_is_untouched_by_the_registry_badge():

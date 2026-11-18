@@ -37,7 +37,6 @@ FIXED_SHORTCUTS = {
     "redo": "Ctrl+Y",              # add_fixed
     "escape": "Esc",               # add_fixed
     "copy": "Ctrl+C",              # add_fixed / standard
-    "help": "F1",                  # add_fixed
     "home": "Home",                # add_fixed / navigation
     "end": "End",                  # add_fixed / navigation
 }
@@ -97,12 +96,6 @@ def resolve(owner, name, lang="EN"):
     return shortcut_display(owner, name) or fixed_shortcut(name)
 
 
-def tooltip_lines(owner, description, name, lang="EN"):
-    """`tooltip_with_shortcut` fed by `resolve`: the one-line form every
-    hoverable command should use."""
-    return tooltip_with_shortcut(description, resolve(owner, name, lang), lang)
-
-
 # The controls whose hover has to carry a key, and where each key lives.
 # (button attribute on the window, description template, key name)
 #
@@ -155,9 +148,6 @@ SHORTCUT_TOOLTIP_ROWS = (
     ("btn_copy",
      "Copy all text ({})\nRight-click: Copy + Close FastPrompter.",
      "copy"),
-    ("btn_help",
-     "Help ({})\nEvery hotkey, gesture and feature (click).",
-     "help"),
     ("btn_silo_up", "Previous Silo ({})", "prev_silo"),
     ("btn_silo_down", "Next Silo ({})", "next_silo"),
     ("btn_home", "Home ({})", "home"),

@@ -72,6 +72,16 @@ class LimitHoverCard(QFrame):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self._focus_lock_taken = False
         LimitHoverCard._live_cards.add(self)
+        # A Qt.Tool window is top-level by definition, so it is NOT destroyed
+        # with the widget it annotates. Without this the card -- and, through
+        # `self._anchor`, the whole header that owns it -- outlived every
+        # rebuild, and a process that rebuilt the header repeatedly accumulated
+        # live top-level widgets until Qt's heap gave out (0xc0000374 in the
+        # suite). Tie the lifetime to the anchor explicitly.
+        try:
+            anchor.destroyed.connect(self._release_with_anchor)
+        except (AttributeError, RuntimeError):
+            pass
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
@@ -109,6 +119,11 @@ class LimitHoverCard(QFrame):
         self._session_x: int | None = None
         self._session_y: int | None = None
         self._session_anchor_global: QPoint | None = None
+        #: T-1449: the key-SEQUENCE answer for Shift (None before the first
+        #: key event of this session).  It outranks the ambient modifier
+        #: mirror, which is one event behind while a modifier key event is
+        #: in flight -- see the event filter.
+        self._shift_down: bool | None = None
 
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -148,8 +163,21 @@ class LimitHoverCard(QFrame):
                     self.hide_now()
         elif event.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and self.isVisible():
             if event.key() == Qt.Key.Key_Shift:
+                # T-1449: the answer comes from the SEQUENCE, never from the
+                # ambient modifier state.  Qt mirrors the last event it
+                # processed, and Windows marks a modifier's keydown with the
+                # PRE-press bit and its keyup with the PRE-release one, so
+                # ``QApplication.keyboardModifiers()`` reads "no Shift" during
+                # the press that turns it on and "Shift" during the release
+                # that turns it off -- which is why the reveal only ever
+                # arrived on the way up.  A Shift keydown means held until its
+                # keyup, and that is what the anchor is told.  Remembered on
+                # the card as well, because the per-second re-render asks
+                # again with no key event in flight and must not fall back to
+                # the mirror that the press already proved wrong.
+                self._shift_down = event.type() == QEvent.Type.KeyPress
                 if hasattr(self._anchor, "refresh_hover_card"):
-                    self._anchor.refresh_hover_card()
+                    self._anchor.refresh_hover_card(shift_down=self._shift_down)
             elif event.key() == Qt.Key.Key_Escape and event.type() == QEvent.Type.KeyPress:
                 self.hide_now()
         elif event.type() == QEvent.Type.Move and self.isVisible():
@@ -436,7 +464,27 @@ class LimitHoverCard(QFrame):
         if self.isVisible():
             self.hide()
 
+    def _release_with_anchor(self, *_args) -> None:
+        """Destroy the card when the widget it annotates is destroyed.
+
+        Deferred rather than immediate: `destroyed` fires inside the anchor's
+        own C++ teardown, and deleting a top-level widget from there can land
+        in a half-torn-down Qt state.
+        """
+        LimitHoverCard._live_cards.discard(self)
+        self._anchor = None
+        self._hide_timer.stop()
+        try:
+            self.deleteLater()
+        except RuntimeError:
+            pass
+
     def hideEvent(self, event):  # noqa: N802 (Qt naming)
+        # A closed card carries no gesture: the next hover asks the ambient
+        # source at open time instead of inheriting this session's key.  Set
+        # here rather than in hide_now() because the grace timer hides through
+        # a plain hide(), and both routes must clear it.
+        self._shift_down = None
         self._release_focus_lock()
         app = QApplication.instance()
         if app is not None and getattr(self, "_app_filter_installed", False):

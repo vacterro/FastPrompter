@@ -500,6 +500,70 @@ def build_settings_tabs(self):
         lambda i: self.apply_silo_tabs_mode(
             (self.cb_silo_mode.itemData(i) or "sidebar") == "tabs"))
 
+    # --- T-1494: Smart Links ------------------------------------------------
+    # One compact section for the whole link system: what is recognised, what
+    # the pointer does, and how Source view opens a link.
+    self.lbl_source_link_click = _tr_label("Source click:", self._current_lang)
+    self.cb_source_link_click = QComboBox()
+    self.cb_source_link_click.addItem(
+        tr("Single-click", self._current_lang), "Single-click")
+    self.cb_source_link_click.addItem(
+        tr("Ctrl+Click", self._current_lang), "Ctrl+Click")
+    self.cb_source_link_click.setToolTip(tr(
+        "Single-click: a click on a link in Source view opens it\n"
+        "Ctrl+Click: only Ctrl+click opens it, so a plain click is free\n"
+        "Alt+click always puts the caret inside a link without opening it",
+        self._current_lang))
+    _idx = self.cb_source_link_click.findData(
+        str(self.data.get("source_link_click", "Single-click")))
+    if _idx >= 0:
+        self.cb_source_link_click.setCurrentIndex(_idx)
+    self.cb_source_link_click.currentIndexChanged.connect(
+        lambda i: (self.data.update(
+            {"source_link_click": self.cb_source_link_click.itemData(i)
+             or "Single-click"})
+            or self.mark_dirty()))
+
+    def _apply_smart_links(key, checked):
+        """Store one Smart Links switch and push it to the Reading surface.
+
+        T-1494: the switches live in the ONE settings authority, so Reading
+        mode has to learn about a change at once -- not at the next render.
+        """
+        self.data.update({key: "True" if checked else "False"})
+        self.mark_dirty()
+        refresh = getattr(self, "refresh_preview_link_settings", None)
+        if callable(refresh):
+            refresh()
+
+    self.cb_smart_links = create_footer_cb(
+        "🔗 Smart Links",
+        "Recognise links anywhere in a note: bare URLs, www hosts,\n"
+        "mailto addresses, Markdown links and local files.\n"
+        "Click one to open it, hover it to copy its destination.",
+        self.data.get("smart_links_enabled", "True") == "True",
+        lambda checked: _apply_smart_links("smart_links_enabled", checked),
+    )
+    self.cb_smart_links_copy = create_footer_cb(
+        "📋 Copy on Hover",
+        "Show a small Copy button next to the link under the pointer.\n"
+        "It copies the destination only, query string and fragment included.",
+        self.data.get("smart_links_copy_hover", "True") == "True",
+        lambda checked: _apply_smart_links("smart_links_copy_hover", checked),
+    )
+    self.cb_smart_links_tooltip = create_footer_cb(
+        "💡 Link Tooltips",
+        "Show the destination of the link under the pointer.",
+        self.data.get("smart_links_tooltip", "True") == "True",
+        lambda checked: _apply_smart_links("smart_links_tooltip", checked),
+    )
+    self.cb_smart_links_feedback = create_footer_cb(
+        "✅ Link Feedback",
+        "Play the short confirmation sound when a link action runs.",
+        self.data.get("smart_links_feedback", "True") == "True",
+        lambda checked: _apply_smart_links("smart_links_feedback", checked),
+    )
+
     self.cb_double_line = create_footer_cb(
         "⇕ Double-Space Lists",
         "With Auto-Bullet on, Enter after a list item adds a blank\n"
@@ -1590,6 +1654,11 @@ def build_settings_tabs(self):
         _settings_group("Typos", [
             self.cb_typo_check, self.btn_typo_colour,
             self.btn_typo_clear,
+        ]),
+        _settings_group("Smart Links", [
+            self.cb_smart_links, self.cb_smart_links_copy,
+            self.cb_smart_links_tooltip, self.cb_smart_links_feedback,
+            self.lbl_source_link_click, self.cb_source_link_click,
         ]),
     ]), tr("Editor", self._current_lang))
 

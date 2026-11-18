@@ -47,7 +47,29 @@ configure_silent_platform()
 #
 # Production keeps the shared cache — being reusable across app runs is the
 # whole point of it. Only the tests get a private root.
-_TEST_TMP_ROOT = tempfile.mkdtemp(prefix=f"fastprompter-tests-{os.getpid()}-")
+#
+# This module can be executed more than once in ONE process: a test that loads
+# it by absolute path (tests/test_suite_exit_contract.py does, to inspect the
+# hook below) re-runs the body, and each run used to mint another root nested
+# inside the first and repoint `tempfile.tempdir` at it. The outer root then
+# owns the inner one, so whoever removes the outer — session finish, or any
+# later cleanup — silently takes the live temp dir with it, and the next
+# `tempfile.TemporaryDirectory()` dies with WinError 3 on a path that existed a
+# moment earlier. Measured: a full-suite run failed exactly that way in
+# tests/test_usage_limits_troubleshooter.py on
+# `.../fastprompter-tests-<pid>-A/fastprompter-tests-<pid>-B/tmpXXXX`.
+#
+# The root is therefore created ONCE per process and recorded on the tempfile
+# module, which survives this module being re-executed; the instance that
+# created it is its only deleter.
+_EXISTING_TMP_ROOT = getattr(tempfile, "_fastprompter_test_root", None)
+if _EXISTING_TMP_ROOT and os.path.isdir(_EXISTING_TMP_ROOT):
+    _TEST_TMP_ROOT = _EXISTING_TMP_ROOT
+    _OWNS_TMP_ROOT = False
+else:
+    _TEST_TMP_ROOT = tempfile.mkdtemp(prefix=f"fastprompter-tests-{os.getpid()}-")
+    _OWNS_TMP_ROOT = True
+    tempfile._fastprompter_test_root = _TEST_TMP_ROOT
 tempfile.tempdir = _TEST_TMP_ROOT
 
 
@@ -55,8 +77,79 @@ _SESSION_EXIT = {}
 
 
 def pytest_sessionfinish(session, exitstatus):
-    shutil.rmtree(_TEST_TMP_ROOT, ignore_errors=True)
+    # A re-executed copy must not delete the root it did not create: a nested
+    # in-process pytest session would otherwise wipe the outer run's temp dir.
+    if _OWNS_TMP_ROOT:
+        shutil.rmtree(_TEST_TMP_ROOT, ignore_errors=True)
     _SESSION_EXIT["code"] = int(exitstatus)
+
+
+# T-1443 P0: a test session must never read or write the operator's LIVE data
+# directory.
+#
+# Roughly fifty modules in tests/ and tests_smoke/ construct the real
+# FastPrompter window. Each one patched the DATABASE path and stopped there, so
+# `get_data_dir()` kept resolving to the checkout's `data/` — the live tree for
+# a source run. `_files_root()` is built from it, which means every test that
+# moved, trashed or deleted a silo folder wrote into real user data.
+#
+# Measured, not suspected: one module (`tests/test_t1227_silo_integrity.py`)
+# created 8 files in the operator's `data/files/` on a single run — six
+# `_trash/bravo-*.md`, `newbie-*.md`, `arc-one-*.md` and `code/untitled/asset.txt`
+# — with payloads that match that module's fixtures verbatim. A full-suite run
+# left 68 such files in one window, and `data/files/PROJB/` has been collecting
+# `untitled-N/` folders since 24 Oct. The same fixture strings have been landing
+# in `data/files/_trash` since at least July.
+#
+# The fix belongs here rather than in each harness: a module that hand-rolls its
+# own window and forgets one of two roots is exactly how this happens, and the
+# next one will be written the same way. `get_data_dir` is redirected for the
+# whole session; a test that needs the real value (there is one red control that
+# reads it deliberately) opts back in through `live_data_dir`.
+_LIVE_DATA_DIR = {"value": None}
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _private_data_dir(tmp_path_factory):
+    """Point every data-dir consumer at a session-private root.
+
+    The seam is `get_exe_dir`, not `get_data_dir`, because `get_data_dir`
+    derives the portable path from it and both functions are imported BY NAME
+    all over the tree (`from fastprompter.utils.paths import get_data_dir`).
+    Those are snapshot bindings: patching `get_data_dir` leaves every such
+    module reading the live directory, and leaves `get_db_path` — which calls
+    it internally — pointing somewhere the patched callers do not expect.
+    Rebinding the one function both of them call makes every spelling agree.
+    """
+    import fastprompter.utils.paths as paths_mod
+
+    real_get_exe_dir = paths_mod.get_exe_dir
+    try:
+        _LIVE_DATA_DIR["value"] = paths_mod.get_data_dir()
+    except Exception:                  # fail closed: no live root provable
+        _LIVE_DATA_DIR["value"] = None
+    private_exe = tmp_path_factory.mktemp("session_exe")
+    os.makedirs(str(private_exe), exist_ok=True)
+
+    paths_mod.get_exe_dir = lambda: str(private_exe)
+    try:
+        yield str(private_exe / "data")
+    finally:
+        paths_mod.get_exe_dir = real_get_exe_dir
+
+
+@pytest.fixture
+def live_data_dir(_private_data_dir):
+    """The operator's REAL data directory, for tests that must observe it.
+
+    Only reachable explicitly, so the default is isolation and a test that
+    touches the live install says so at its signature. Skipped when the real
+    path cannot be resolved, rather than silently returning the private root.
+    """
+    real = _LIVE_DATA_DIR["value"]
+    if not real or not os.path.isdir(real):
+        pytest.skip("no live data directory on this installation")
+    return real
 
 
 # One-shot boundary cleanup: the release gate runs `pytest tests/ tests_smoke/`
@@ -385,3 +478,37 @@ def _no_sai_accounts_plane(monkeypatch: pytest.MonkeyPatch):
     """
     from fastprompter.core.usage_limits import sai_accounts
     monkeypatch.setattr(sai_accounts, "TestEngine", lambda: "")
+
+
+@pytest.fixture(autouse=True)
+def _home_environment_is_restored(request):
+    """A test may not leave ``~`` pointing somewhere it invented.
+
+    ``USERPROFILE``/``HOME`` written straight into ``os.environ`` outlive the
+    test that wrote them. ``os.path.expanduser("~")`` then resolves into a
+    directory the run cannot create files in, and the failure surfaces much
+    later in an unrelated module as a ``PermissionError`` from whatever
+    touches the home directory first (observed: the portable-backup export
+    trying to create ``C:\\Users\\Test\\.fastprompter`` during a full-suite
+    run). ``monkeypatch`` unwinds as a stack and cannot do this; a raw mapping
+    write can, so the values are compared and restored here.
+
+    Only the home variables are checked: they are the ones whose change is
+    both invisible at the point of the write and destructive far away.
+    """
+    names = ("USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH")
+    before = {name: os.environ.get(name) for name in names}
+    yield
+    drifted = {name: (before[name], os.environ.get(name))
+               for name in names if before[name] != os.environ.get(name)}
+    for name, (original, _current) in drifted.items():
+        if original is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = original
+    if drifted:
+        pytest.fail(
+            f"{request.node.nodeid} changed the process home environment and "
+            f"did not restore it: {drifted}. Use monkeypatch.setenv instead "
+            "of writing os.environ directly.",
+            pytrace=False)

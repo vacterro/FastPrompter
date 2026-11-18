@@ -1,0 +1,64 @@
+{
+ "_comment": [
+  "Behavioural and visual acceptance, declared per domain, validated by",
+  "tools/audit_mechanism_ledger.py. This file can only be REFUTED by the gate:",
+  "an ACCEPTED entry needs exact case ids the recorded run executed, evidence",
+  "files that exist, a written observation, and for a VISUAL claim at least one",
+  "real image capture. A green junit run cannot promote a domain to GUI or",
+  "visual acceptance, which is the whole point of separating these columns from",
+  "the import-plane status.",
+  "",
+  "Absent key = NOT_EXERCISED. That is not a pass; it means nobody has looked.",
+  "PARTIAL is the honest state for a mechanism with a known unusable plane.",
+  "Never write ACCEPTED for a plane the operator has reported as broken."
+ ],
+ "domains": {
+  "DOMAIN_18_USAGE_LIMITS": {
+   "behavioural": {
+    "status": "PARTIAL",
+    "cases": [
+     "tests/test_t1441_hover_compact.py::TestHoverShowsTheDetailTable::test_hover_opens_the_detail_view_not_a_summary",
+     "tests/test_t1441_hover_compact.py::TestHoverShowsTheDetailTable::test_the_detail_view_enumerates_every_account",
+     "tests/test_t1441_hover_compact.py::TestNoCompactMachineryRemains::test_the_card_has_no_compact_or_expand_state",
+     "tests/test_t1441_hover_compact.py::TestRefreshKeepsTheOpenViewCurrent::test_refresh_still_renders_the_detail_view",
+     "tests/test_usage_limits_gauge_layout.py::TestIdentityLabelsSurviveACrowdedRow::test_the_fit_check_and_the_painter_agree_on_the_plan",
+     "tests/test_usage_limits_gauge_layout.py::TestIdentityLabelsSurviveACrowdedRow::test_labels_are_painted_ink_not_just_reserved_width"
+    ],
+    "evidence": [
+     ".saipen/evidence/t1441/captures/hover_12_compact_4x.png",
+     ".saipen/evidence/t1441/captures/hover_12_expanded_4x.png",
+     ".saipen/evidence/t1441/captures/gauge_12_accounts_4x.png",
+     ".saipen/evidence/t1441/measure_hover.py"
+    ],
+    "observation": "Hover opens the full per-window detail table directly (T-1445 removed the compact/expand state); refresh keeps the detail view current. NOT covered: the real-mouse journey (an operator click through the running app), keyboard-only navigation of the card, and the multi-monitor / negative-origin placement cases. Those are unexercised and must not be read as accepted.",
+    "not_covered": [
+     "operator-driven mouse journey in the running application",
+     "keyboard and screen-reader access to the hover detail",
+     "multi-monitor placement with a negative-origin virtual desktop"
+    ]
+   },
+   "visual": {
+    "status": "PARTIAL",
+    "plane": "VISUAL",
+    "observation": "Rendered offscreen through the real application widget with the real Verdana face added to the font database, then enlarged 4x for inspection. At 12 accounts the compact card measures 392x63 px (3.5% of the reported 1033x679 editor window) and shows 'Claude x12', an 8% worst-window bar, 'resets in 2h', and the four accounts under 50%. The gauge row paints 'CLA...t 0/1/2' -- the ordinal survives, half the badge is the redundant word 'Account'. NOT accepted: nobody has confirmed this on the operator's display at their DPI and scaling.",
+    "evidence": [
+     ".saipen/evidence/t1441/captures/hover_12_compact.png",
+     ".saipen/evidence/t1441/captures/hover_12_compact_4x.png",
+     ".saipen/evidence/t1441/captures/hover_12_expanded_4x.png",
+     ".saipen/evidence/t1441/captures/gauge_12_accounts_4x.png",
+     ".saipen/evidence/t1441/captures/gauge_08_accounts_4x.png"
+    ],
+    "cases": [
+     "tests/test_t1441_hover_compact.py::TestHoverShowsTheDetailTable::test_twelve_accounts_are_all_present_and_the_card_stays_capped",
+     "tests/test_usage_limits_gauge_layout.py::TestIdentityLabelsSurviveACrowdedRow::test_a_crowded_row_still_paints_some_labels"
+    ],
+    "not_covered": [
+     "operator display at 100/125/150% scaling",
+     "800x600 and 1280x720 windows",
+     "long translated labels in a non-Latin locale",
+     "high-contrast and custom theme palettes"
+    ]
+   }
+  }
+ }
+}

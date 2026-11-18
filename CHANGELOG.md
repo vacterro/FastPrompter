@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.74 - 2026-11-18
+
+- **File Container Chest persistence repair:** the per-silo chest slot order is
+  stored through a real JSON codec again. Loading old `str(dict)` rows no longer
+  crashes with `silo_chest_order AttributeError`; malformed or wrong-type rows
+  are preserved without overwriting user data.
+- **AI Usage Limits visibility corrected:** accounts with an untouched, fully
+  available quota (0% used, 100% left) are healthy and stay visible. Genuinely
+  exhausted accounts are still hidden. CommandCode GOAT, OpenCode Go,
+  Antigravity and Codex quotas behave correctly under both hide filters, and an
+  unavailable or reset-pending window no longer falsely vetoes its live pool.
+  Offline or unknown telemetry is never presented as usable capacity.
+- **Acceptance and ledger consistency:** retired usage-limit hover acceptance
+  cases were re-pointed to their verified full-detail successors, and the
+  mechanism ledger was regenerated from an authentic full test run.
+- **Shared LIMISAW snapshot:** CommandCode and OpenCode Go accounts are read
+  from the shared snapshot published by LIMISAW, with no second polling loop.
+
 ## 0.8.72 - 2026-10-04
 
 - **Pack Silo structured AI-ingestion and bundle engine:** export and package silos

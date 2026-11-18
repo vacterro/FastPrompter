@@ -568,7 +568,13 @@ def _do_export(data: dict, profile_id=1) -> None:
         # cats_order. DB recovery deliberately preserves categories that are
         # missing from cats_order, so an orphan ("Visible" + "Orphan" both
         # populated) must still be exported and included in the manifest.
-        if cats and categories:
+        #
+        # W2-003 (audit/18): the branch used to be gated on ``cats and
+        # categories``, so an empty ``cats_order`` skipped EVERY snippet even
+        # when the authoritative mapping held populated records -- and
+        # ``_COMPLETE`` was published anyway. Completeness is a property of the
+        # data, not of the presentation order.
+        if categories:
             snips_dir = os.path.join(tmp_dir, "snippets")
             os.makedirs(snips_dir, exist_ok=True)
             for cat in categories:

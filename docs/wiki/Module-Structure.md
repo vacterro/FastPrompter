@@ -17,6 +17,8 @@ src/fastprompter/
 │   ├── audio_hub.py            # ONE audio authority: buses, MIX/QUEUE/REPLACE, STOP ALL (T-1238-G)
 │   ├── audio_level.py          # Deterministic loudness analysis for Auto Level (T-1242)
 │   ├── audio_render.py         # Device-rate WAV pre-rendering: band-limited polyphase resampler (T-1242)
+│   ├── code_detection.py       # Smart Code Runner detection: fences, shebangs, caret/selection scans, prose rejection (T-1456)
+│   ├── code_runners.py         # Smart Code Runner interpreter registry: argument-vector execution, no shell, per-adapter encoding + cwd policy (T-1456)
 │   ├── config.py               # Theme color extractors, tray icon generators
 │   ├── ctrlw.py                # Ctrl+W / Alt+W divider insertion engine
 │   ├── default_profile.py      # Shipped defaults map, merged into state.reset_data()
@@ -26,15 +28,21 @@ src/fastprompter/
 │   ├── hotkey_filter.py        # QAbstractNativeEventFilter: WM_HOTKEY/WM_SYSCOMMAND dispatch
 │   ├── hotkeys.py              # Win32 RegisterHotKey + layout-aware VK resolution
 │   ├── instance_lock.py        # Win32 named-mutex single-instance ownership (T-788; T-1247: IPC no-ACK never authorizes a kill)
+│   ├── interval_preset_store.py # Durable interval-notification preset library: one JSON doc per preset under the data dir, journal + locking + recovery, rename/duplicate/replace_all (T-1517)
 │   ├── interval_presets.py     # Interval presets and duration options
+│   ├── interval_preview.py     # One-preview-per-gesture controller for interval sound browsing (T-1517)
+│   ├── interval_schedule.py    # THE canonical interval-occurrence calculator: scheduler + countdown read one clock-aligned truth (CORE-004)
 │   ├── ipc_server.py           # QLocalServer single-instance IPC
 │   ├── limits.py               # Agent reset-limit scanner + timer creation
+│   ├── link_tokens.py          # THE shared, Qt-free link tokenization authority: every surface recognises links through it (T-1494)
 │   ├── logging.py              # Logger setup, rotating file handler
 │   ├── markdown_refs.py        # Markdown image and link reference extractor
 │   ├── pomodoro.py             # Pomodoro state machine (work/break)
+│   ├── preview_media.py        # External-media policy + bounded HTTPS loader: 8 MB streamed cap, 8 s timeout, 3 concurrent + 64-request FIFO, 24-item/48 MB cache (T-1484)
 │   ├── profile_flags.py        # Runtime profile flags and mode toggles
 │   ├── problip.py              # Pure Problip scheduling model: states, intervals, cue timing (T-1238-A)
 │   ├── problip_store.py        # Global Problip persistence + statistics (problip.db, T-1238-A)
+│   ├── rich_preview.py         # Reading-mode renderer: Markdown/BBCode → sanitized HTML + media refs, Qt-free (T-1484)
 │   ├── project_sync.py         # Sync-Project folder↔silo two-way sync, pure logic (Qt-free)
 │   ├── silo_bundle.py          # Silo bundle archive creation and manifest (T-1414, T-1416)
 │   ├── silo_coverage.py        # Silo pack coverage event tracking and history store (T-1415)
@@ -57,7 +65,7 @@ src/fastprompter/
 │   ├── weather.py              # Key-free Open-Meteo weather provider for ambience rules (opt-in, T-1238-C3.11)
 │   ├── win_clipboard.py        # Windows clipboard GENERATION diagnostics: counters + owner PID/process name via ctypes, never clipboard text (T-1269)
 │   ├── i18n/                   # 33-locale resource pack (32 languages + Дед)
-│   │   ├── __init__.py, _compat.py, _container.py, _context.py, _engine.py
+│   │   ├── __init__.py, _compat.py, _container.py, _engine.py
 │   │   └── en.py, ru.py, est.py, ja.py, ded.py, ... (33 locale modules)
 │   │
 │   └── usage_limits/           # AI usage-limit probing (provider-neutral) — a core/ sibling, not an i18n child
@@ -75,7 +83,7 @@ src/fastprompter/
 │           ├── antigravity.py   #   Antigravity (+_antigravity_cli.py, _antigravity_brain.py)
 │           ├── claude.py        #   Claude (+_claude_cli.py, _claude_desktop.py, _claude_transcripts.py)
 │           ├── codex.py         #   Codex (+_codex_probe.py)
-│           ├── freebuff.py      #   Freebuff (+_freebuff_http.py; T-1243, in flight)
+│           ├── freebuff.py      #   Freebuff (+_freebuff_http.py; T-1243)
 │           └── zcode.py         #   zcode (+_zcode_http.py)
 │
 ├── ui/                         # PyQt6 UI components + mixins
@@ -86,6 +94,8 @@ src/fastprompter/
 │   ├── backup_dialog.py        # DB export/import + backup snapshot dialog
 │   ├── button_sound.py         # App-level default click sound for every button (T-1225)
 │   ├── clipboard_watch.py      # Counts QClipboard changed/dataChanged notifications — the Qt half of the paste record (T-1269)
+│   ├── clipboard_tsv.py        # One clipboard TSV codec for the table grid: rectangle copy/paste, multiline cells quoted (T-1457)
+│   ├── code_run_dialog.py      # Smart Code Runner review + output dialogs; output decoded with the adapter's encoding (T-1456/T-1460)
 │   ├── ctrlw_settings.py       # Ctrl+W/Alt+W template config UI
 │   ├── cursor_mixin.py         # Cursor set capture/apply + system install (T-785)
 │   ├── cursor_theme.py         # Retro cursor theme overlay manager
@@ -119,9 +129,11 @@ src/fastprompter/
 │   ├── problip_settings.py     # Fifth Settings tab: Problip page widgets (T-1238-C2)
 │   ├── project_numbox_reorder.py # Numbered project tabs reordering widget
 │   ├── qt_lifetime.py          # Qt callback helpers whose scheduling cannot extend widget lifetimes
+│   ├── qt_style.py             # Deterministic cross-Windows control rendering: pinned Fusion style + control-surface QSS (T-1461)
 │   ├── qt_text_coords.py       # Single UTF-16 ↔ code-point conversion boundary: formatting spans + typo-span handover (T-1269)
 │   ├── reset_queue_card.py     # Reset-queue hover content: structured `# | Account | Pool | Window | Left` rich-text table (T-1279)
 │   ├── resizers.py             # Window resize handle controls
+│   ├── rich_preview_view.py    # Reading-mode block surface: HTML blocks + animated/still media, honest failure causes, suspend/resume lifecycle (T-1484/T-1486)
 │   ├── scaling_mixin.py        # UI DPI + font scaling mixin
 │   ├── scroll_sound.py         # Wheel scroll sound filter
 │   ├── search_mixin.py         # Multi-word AND search filter
@@ -139,6 +151,10 @@ src/fastprompter/
 │   ├── snippet_ops_mixin.py    # Silo ops (trash, move, duplicate, clear)
 │   ├── snippet_panel.py        # Silo tree + F1-F10 snippet buttons
 │   ├── sound_settings_dialog.py # Sound Settings dialog: event table + Audio Hub pages (Presets/Playback/Voice/Ambience)
+│   ├── table_edit_dialog.py    # Edit ONE markdown table at the caret in a text silo; writes back through table_edit_target (T-1462)
+│   ├── table_edit_target.py    # Whole-line table region replace with content-ownership check, one undo step (T-1462)
+│   ├── table_grid.py           # Interactive QTableView grid: rectangle selection, resize, row/col insert, grid undo/redo (T-1462)
+│   ├── table_model.py          # Model half of the table grid (cells, spans, paste limits) (T-1462)
 │   ├── table_widget.py         # Table view widget (silo_table backend)
 │   ├── theme_mixin.py          # Vintage theme styling + QSS generator
 │   ├── timer_dialog.py         # Pomodoro + alarm timer setup dialog
@@ -223,9 +239,9 @@ src/fastprompter/
 
 ## Module Count Summary
 
-- **core/**: 44 modules + i18n/ (33 locales + 5 infra files = 38) + usage_limits/ (10 + 14 provider files = 24)
-- **ui/**: 75 modules
+- **core/**: 52 modules + i18n/ (33 locales + 4 infra files = 37) + usage_limits/ (10 + 14 provider files = 24)
+- **ui/**: 83 modules
 - **utils/**: 5 modules
 - **theme/**: 1 module
 - **top level**: main.py + __init__.py (2) + sound/problip/ catalog helpers (2)
-- **Total**: 191 `.py` files under `src/fastprompter/` (+ `presets/` ships as a non-code data dir; `sound/` ships ~1295 audio assets: 525 top-level + problip catalog + `_vault/` archive of 759 (614 vox, 140 fvox, gman + cs_style))
+- **Total**: 206 `.py` files under `src/fastprompter/` (+ `presets/` ships as a non-code data dir; `sound/` ships ~1295 audio assets: 525 top-level + problip catalog + `_vault/` archive of 759 (614 vox, 140 fvox, gman + cs_style))

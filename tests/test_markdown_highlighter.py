@@ -257,8 +257,8 @@ class TestInit:
 
     def test_rules_populated_after_init(self):
         h = make_highlighter()
-        assert len(h._highlighting_rules) == 20, (
-            f"Expected 20 rules, got {len(h._highlighting_rules)}"
+        assert len(h._highlighting_rules) == 18, (
+            f"Expected 18 rules, got {len(h._highlighting_rules)}"
         )
 
     def test_degraded_rules_hide_checkbox_markers(self):

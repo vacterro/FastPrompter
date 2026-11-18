@@ -13,6 +13,7 @@ Verifies that:
 import os
 import tempfile
 
+from PyQt6 import sip
 from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtWidgets import QApplication
 
@@ -165,5 +166,36 @@ def test_rebuild_after_show_keeps_buttons_visible():
             assert not btn.isHidden(), \
                 f"rebuild-after-show left button {i + 1} hidden"
         _assert_row_sane(w, "rebuild-after-show")
+    finally:
+        _teardown(w)
+
+
+def test_a_rebuild_promotes_no_replaced_button_to_a_window():
+    """T-1441 lifecycle: retirement must not turn a button into a window.
+
+    ``setParent(None)`` on a VISIBLE child makes it a top-level widget, and
+    the show event it already has queued is then delivered to its new top
+    level — so the removed "1 2 3" row painted itself over the desktop as
+    three floating windows. Every rebuild that happens while the header is up
+    did this, and the stray buttons outlived the rebuild by a whole event
+    turn, which is long enough to be seen and clicked.
+    """
+    w = _make_window()
+    try:
+        before = list(w._cat_num_buttons)
+        assert before and all(b.isVisible() for b in before)
+
+        w._rebuild_cat_numbox()
+        # One event turn is exactly the window in which the strays appeared;
+        # DeferredDelete has NOT run yet, so this measures the promotion and
+        # not the eventual destruction.
+        _app.processEvents()
+
+        promoted = [b for b in before
+                    if not sip.isdeleted(b) and b.isVisible()
+                    and b.parentWidget() is None]
+        assert not promoted, (
+            "a replaced number button became a visible top-level window: "
+            f"{[b.text() for b in promoted]}")
     finally:
         _teardown(w)
