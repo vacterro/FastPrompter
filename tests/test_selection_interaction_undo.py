@@ -503,3 +503,48 @@ class TestSelectionInteractionUndo:
         assert ed.textCursor().anchor() == 0
         assert ed.textCursor().position() == 6
         assert win.isVisible()
+
+
+def test_failed_redo_does_not_consume_undo_kind(win):
+    """Ctrl+Y must not pop the kind when the replay actually fails.
+
+    The old code popped the kind BEFORE trying the redo. An obsolete or
+    already-consumed step then left the stack empty, so the NEXT Ctrl+Y
+    reported "Nothing to redo" even though the data/text stacks still held a
+    valid step -- the intermittent 'Ctrl+Y does nothing' shape.
+    """
+    win._undo_kinds()[:] = ["interaction"]
+    # No redo is available in any source: interaction history, data stack,
+    # native doc history and persistent step all empty.
+    from fastprompter.ui.interaction_undo import get_document_interaction_history
+    history = get_document_interaction_history(win.text_area.document())
+    history.clear_redo()
+    win.data_redo_stack = []
+    win.text_area.document().clearUndoRedoStacks()
+
+    win._smart_redo()
+    assert win._undo_kinds() == ["interaction"], "failed redo must keep the kind"
+
+
+def test_status_bar_hidden_until_a_message(win, monkeypatch):
+    """The status bar reserves no space until there is something to read."""
+    from PyQt6.QtCore import QTimer
+
+    bar = win.statusBar()
+    bar.setVisible(False)
+    _app.processEvents()
+    assert not bar.isVisible()
+
+    win._status_message("hello", 50)
+    _app.processEvents()
+    assert bar.isVisible()
+    assert "hello" in bar.currentMessage()
+
+    # Let the auto-hide timer fire.
+    QTimer.singleShot(80, lambda: None)
+    import time as _time
+    deadline = _time.monotonic() + 2
+    while _time.monotonic() < deadline and bar.isVisible():
+        _app.processEvents()
+        _time.sleep(0.02)
+    assert not bar.isVisible(), "status bar must hide after the message expires"

@@ -56,6 +56,7 @@ from PyQt6.QtWidgets import (
     QSlider,
     QSpinBox,
     QSplitter,
+    QStatusBar,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -1452,6 +1453,13 @@ class FastPrompter(
         self._visible_silos = 10  # dynamically adjusted
         self._snippet_widget_cache = {}  # {(cat, idx): widget} for O(1) lookup
 
+        # The status bar starts hidden: an empty bar only reserves dead space
+        # at the bottom of the window. _status_message reveals it on demand and
+        # hides it again once the message has expired.
+        try:
+            self.statusBar().setVisible(False)
+        except Exception:
+            pass
         self.setup_single_instance_server()
         _t_state_0 = time.perf_counter()
         self.state = FastPrompterState()
@@ -2480,6 +2488,30 @@ class FastPrompter(
             logger.debug("in-app toast failed")
             return None
 
+    def _status_message(self, message, msecs=2000):
+        """Show a transient status message, then hide the bar again.
+
+        The status bar is hidden by default: an empty bar only reserves dead
+        vertical space at the bottom of the window. It is revealed just long
+        enough to read a message and hides itself on a timer afterwards.
+        """
+        try:
+            bar = self.statusBar()
+            if bar is None:
+                return
+            bar.showMessage(message, msecs)
+            bar.setVisible(True)
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(max(1, int(msecs)), weak_qt_callback(
+                self, lambda w: w.statusBar().setVisible(False)))
+        except Exception:
+            # Synthetic windows in tests provide only showMessage(); a message
+            # there must still be delivered, so fall back to the plain call.
+            try:
+                self.statusBar().showMessage(message, msecs)
+            except Exception:
+                pass
+
     def _show_limit_popup(self, title, message, duration_sec=None, color=None, symbol=None):
         """Silent in-app notification for real quota alerts and previews."""
         from types import SimpleNamespace
@@ -2523,7 +2555,7 @@ class FastPrompter(
         # and would race the SoundManager-owned alert. A silent status-bar
         # message is the guaranteed-silent fallback.
         try:
-            self.statusBar().showMessage(f"{title}: {message}", 8000)
+            self._status_message(f"{title}: {message}", 8000)
         except Exception:
             pass
 
@@ -15383,7 +15415,7 @@ class FastPrompter(
                 kinds.append("ptext")
                 self.play_sound("undo")
             else:
-                self.statusBar().showMessage(tr("Nothing to undo", getattr(self, "_current_lang", "EN")), 2000)
+                self._status_message(tr("Nothing to undo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_undo = False
             # T-1462 Stage 3: whatever this undo reversed, the active visual
@@ -15428,52 +15460,60 @@ class FastPrompter(
         self._increment_focus_lock()
         try:
             kinds = self._undo_kinds()
-            kind = kinds.pop() if kinds else None
+            # Pop ONLY on success. _smart_undo appends a kind after it reverses
+            # an action; the mirror must remove it only after it actually
+            # replays that action. Popping first made a failed/obsolete redo
+            # silently drop the kind, so the next Ctrl+Y had no idea what to
+            # replay and reported "Nothing to redo" even though the stacks
+            # still held the step -- the intermittent "Ctrl+Y does nothing"
+            # shape. Each branch below falls through to the other redo sources
+            # before giving up, and the kind is consumed only by the winner.
             doc = self._active_doc()
-            if kind == "interaction":
+            if kinds and kinds[-1] == "interaction":
                 if self._redo_interaction():
+                    kinds.pop()
                     self.play_sound("redo")
                     return
-                self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
-                return
-            if kind == "text":
+            if kinds and kinds[-1] == "text":
                 if doc is not None and doc.isRedoAvailable():
                     self.text_area.redo()
                     self.text_area.invalidate_word_count()
+                    kinds.pop()
                     self.play_sound("redo")
                     return
                 if self.redo_action():
+                    kinds.pop()
                     return
-                self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
-                return
-            if kind == "data":
+            if kinds and kinds[-1] == "data":
                 if self.redo_action():
+                    kinds.pop()
                     return
-                self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
-                return
-            if kind == "ptext":
+            if kinds and kinds[-1] == "ptext":
                 # T-1227 §14: replay the persistent-history recovery step.
                 if self._persistent_text_step(forward=True):
+                    kinds.pop()
                     self.play_sound("redo")
                     return
-                self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
-                return
-            # No recorded history (fresh session, or the stacks were trimmed):
-            # data first, text as the fallback, so nothing is unreachable.
+            # Recorded kind was stale (or absent): try every remaining source,
+            # as _smart_undo does on a fresh session. Never consume a kind on a
+            # failed attempt.
             if self.redo_action():
+                if kinds:
+                    kinds.pop()
                 return
             if doc is not None and doc.isRedoAvailable():
                 self.text_area.redo()
                 self.text_area.invalidate_word_count()
+                if kinds:
+                    kinds.pop()
                 self.play_sound("redo")
                 return
             if self._redo_interaction():
+                if kinds:
+                    kinds.pop()
                 self.play_sound("redo")
                 return
-            if self._persistent_text_step(forward=True):
-                self.play_sound("redo")
-                return
-            self.statusBar().showMessage(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
+            self._status_message(tr("Nothing to redo", getattr(self, "_current_lang", "EN")), 2000)
         finally:
             self._in_smart_redo = False
             # T-1462 Stage 3: mirror of _smart_undo — a redone table edit must

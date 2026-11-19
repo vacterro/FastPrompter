@@ -79,6 +79,7 @@ def _bind(fake):
         "_notify_productivity",
         "_show_in_app_toast",
         "_show_limit_popup",
+        "_status_message",
         "_notify_timer",
     ):
         setattr(fake, name, getattr(main_mod.FastPrompter, name).__get__(fake))
