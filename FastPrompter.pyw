@@ -66,6 +66,24 @@ def _missing_startup_requirements():
     return missing
 
 
+def _detach_inherited_console():
+    """Detach from a console inherited from a launcher or parent process.
+
+    Nuitka builds this as a GUI-subsystem binary (--windows-console-mode=disable),
+    so a direct launch allocates no console. A shortcut or wrapper that starts
+    the EXE from cmd/powershell can still hand it one; on Windows that shows as
+    an empty black window sitting behind the real GUI. GUI mode never writes to
+    stdout, so dropping the inherited handle is safe. The status-line bridge is
+    excluded by its caller because it legitimately reads stdin and writes stdout.
+    """
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.kernel32.FreeConsole()
+    except Exception:
+        pass
+
+
 def _ensure_venv_python():
     """Re-exec under the project venv interpreter when startup dependencies are missing.
 
@@ -101,6 +119,7 @@ if __name__ == "__main__":
         if "--claude-statusline-bridge" in sys.argv:
             from fastprompter.core.usage_limits.claude_statusline import bridge_main
             sys.exit(bridge_main())
+        _detach_inherited_console()
         _ensure_venv_python()
         # Import inside the guard so a broken bundle/env also produces
         from fastprompter.main import main_entry

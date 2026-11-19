@@ -288,9 +288,12 @@ def _forward_original(raw: bytes, directory: Path) -> int:
         if not command or BRIDGE_ARG in str(command):
             return 0
         # Preserve the user's explicitly installed shell statusline command.
+        # CREATE_NO_WINDOW: a hook invoked by Claude Code must never flash a
+        # console window on the user's desktop.
         result = subprocess.run(str(command), input=raw, shell=True,  # nosec B602 - local user-authored hook, not provider output
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.DEVNULL, timeout=5,
+                                creationflags=0x08000000 if os.name == "nt" else 0,
                                 check=False)
         if result.stdout:
             sys.stdout.buffer.write(result.stdout)
