@@ -13058,9 +13058,11 @@ def test_timer_sound_picker_offers_the_whole_library(win):
     assert listed, f"the sound allowlist is empty: {manifest}"
 
     packaged_dir = root / "src" / "fastprompter" / "sound"
+    audio_suffixes = {".wav", ".mp3", ".ogg", ".flac"}
     packaged = {
         path.relative_to(packaged_dir).as_posix().lower()
-        for path in packaged_dir.rglob("*.wav")
+        for path in packaged_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in audio_suffixes
     }
     unexpected = sorted(packaged - listed)
     assert not unexpected, (

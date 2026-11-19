@@ -2,10 +2,10 @@
  "schema_version": 3,
  "audit_campaign": "TOTAL MECHANISM AUDIT AND AUTONOMOUS REPAIR",
  "baseline_version": "0.8.72",
- "source_identity": "6d7232c1d8f9e167e48c93e1416908219406fc9f",
+ "source_identity": "f0fbcf1bec41b0963d20636f1d282c4fffe6c6a1",
  "record": {
-  "path": ".saipen/evidence/t1461/ledger_record_current.xml",
-  "sha256": "16bd72bf82bbda04dfc21760ee1497a4883304f90ea15e423bc9857cad214dd9",
+  "path": ".saipen/evidence/t1439/run.xml",
+  "sha256": "4346ea28d1c28e9477cda9fe1183c6a400990d891a246a1a7b0da7e07dda0b75",
   "module_sha256": {
    "src/fastprompter/core/ambience_engine.py": "804d06ac83f2d3238ec2ed33f41972cc5eb925235b7278485d3d06f8a1f86897",
    "src/fastprompter/core/ambience_store.py": "90328316daa76754a1399a2b1a4a5719a8f59544baf0bbaf242bbad6f3bf67db",
@@ -115,7 +115,7 @@
    "src/fastprompter/ui/limit_gauges.py": "953a8fd90bffcc924f84f0bc9cc71dd7952992552eaf1b86f38d117cf47a234d",
    "src/fastprompter/ui/limit_hover_card.py": "26eeb583871d908646d0a11384dc1e47f1c09a9043caa2495c654d379460c56a",
    "src/fastprompter/ui/limit_overview.py": "5e841a3876912962bbf06ecb46100e2174729407c7faa7ab87595b2e44f52384",
-   "src/fastprompter/ui/limit_settings_dialog.py": "9f3a9dd74875ac024632c85191c3dc63a0ec023a30a5d25c92a3fdcfb40bac6c",
+   "src/fastprompter/ui/limit_settings_dialog.py": "3a6fb4a421f9b4b286886e5fb4637ca1a4a4c6656fa307f1aeb38cb5ea41ebe2",
    "src/fastprompter/ui/problip_controller.py": "ca8af3f019de98f0328e0d713109fd8f94f0290830b8a595aa793a63cec65b6e",
    "src/fastprompter/ui/project_numbox_reorder.py": "9814c39936e68c558df5d8a93cefda6738ef465dd443e0656da03b0771b528d3",
    "src/fastprompter/ui/qt_lifetime.py": "d667a00ff72b1463e23e985bfae291f70edea58ec02e9caed0e558a04ac16ed7",
@@ -291,7 +291,7 @@
     "tests_smoke/test_transfer_wave.py",
     "tests_smoke/test_worker_shutdown_waits.py"
    ],
-   "test_count": 2502,
+   "test_count": 2503,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -767,7 +767,7 @@
     "tests_smoke/test_silo_folder_identity.py",
     "tests_smoke/test_transfer_wave.py"
    ],
-   "test_count": 2170,
+   "test_count": 2171,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -1104,7 +1104,7 @@
     "tests_smoke/test_transfer_wave.py",
     "tests_smoke/test_worker_shutdown_waits.py"
    ],
-   "test_count": 2411,
+   "test_count": 2412,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -1541,12 +1541,10 @@
     "tests/test_silo_presets.py",
     "tests/test_t1439_mechanism_ledger_red_controls.py"
    ],
-   "test_count": 99,
-   "status": "DEFECT_FOUND",
-   "defects": [
-    "tests/test_t1439_mechanism_ledger_red_controls.py"
-   ],
-   "next_action": "repair the failing test files listed in defects",
+   "test_count": 100,
+   "status": "VERIFIED",
+   "defects": [],
+   "next_action": null,
    "planes": {
     "UNIT": "EXERCISED",
     "GUI": "EXERCISED",
@@ -2449,7 +2447,7 @@
     "tests_smoke/_smoke_support.py",
     "tests_smoke/test_app_smoke.py"
    ],
-   "test_count": 1904,
+   "test_count": 1892,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -2657,6 +2655,7 @@
     }
    ],
    "helper_modules_not_collected": [
+    "tests/test_perf002_chunked_resample.py",
     "tests_smoke/_smoke_support.py"
    ],
    "acceptance": {
@@ -2869,7 +2868,7 @@
     "tests_smoke/test_silo_folder_identity.py",
     "tests_smoke/test_transfer_wave.py"
    ],
-   "test_count": 2156,
+   "test_count": 2157,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -3272,7 +3271,7 @@
     "tests_smoke/test_app_smoke.py",
     "tests_smoke/test_header_launch_density.py"
    ],
-   "test_count": 1831,
+   "test_count": 1832,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -3706,11 +3705,9 @@
     "tests_smoke/test_app_smoke.py"
    ],
    "test_count": 850,
-   "status": "DEFECT_FOUND",
-   "defects": [
-    "tests/test_typecheck_vocab.py"
-   ],
-   "next_action": "repair the failing test files listed in defects",
+   "status": "VERIFIED",
+   "defects": [],
+   "next_action": null,
    "planes": {
     "UNIT": "EXERCISED",
     "GUI": "EXERCISED",
@@ -3887,7 +3884,7 @@
     "tests_smoke/test_sync_shutdown_integrity_t1450.py",
     "tests_smoke/test_transfer_wave.py"
    ],
-   "test_count": 2246,
+   "test_count": 2247,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -4123,10 +4120,9 @@
  "summary": {
   "total_domains": 22,
   "total_test_files": 352,
-  "total_test_count": 6196,
+  "total_test_count": 6185,
   "by_status": {
-   "VERIFIED": 20,
-   "DEFECT_FOUND": 2
+   "VERIFIED": 22
   },
   "by_acceptance": {
    "behavioural": {
