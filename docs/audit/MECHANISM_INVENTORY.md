@@ -13,7 +13,7 @@ fails when this document and the tree disagree.
 `src/fastprompter/` — PyQt6 desktop application, SQLite persistence,
 QThread/QThreadPool workers, Windows named mutex single-instance.
 
-Commit: `f0fbcf1bec41b0963d20636f1d282c4fffe6c6a1`
+Commit: `ebb6852b84dbb0e1b3cb599c2c9da90879fec5a5`
 
 ## Method
 
@@ -67,13 +67,13 @@ gate can lower them, never invent them.
 | 15 | DOMAIN_15_HOTKEYS_THEMES | 3 | 12 | 821 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 16 | DOMAIN_16_PROFILE_SWITCHING | 3 | 99 | 2157 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 17 | DOMAIN_17_SNIPPET_LIFECYCLE | 2 | 16 | 735 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
-| 18 | DOMAIN_18_USAGE_LIMITS | 6 | 61 | 1832 | VERIFIED | PARTIAL | PARTIAL |
+| 18 | DOMAIN_18_USAGE_LIMITS | 6 | 62 | 1835 | VERIFIED | PARTIAL | PARTIAL |
 | 19 | DOMAIN_19_SYSTRAY_IPC | 3 | 11 | 621 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 20 | DOMAIN_20_WATCHER | 3 | 3 | 64 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 21 | DOMAIN_21_INTERNATIONALIZATION | 2 | 13 | 850 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 22 | DOMAIN_22_BACKUPS_RECOVERY | 5 | 105 | 2247 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 
-**Domains: 22. Test files: 352. Collected tests: 6185.**
+**Domains: 22. Test files: 353. Collected tests: 6188.**
 
 Status legend: `VERIFIED` every module on disk with an importing test, a
 non-zero collected count, and zero failing cases in the recorded run;
@@ -153,7 +153,7 @@ judged rather than trusted.
 - **DOMAIN_15_HOTKEYS_THEMES**: UNIT ← `tests/test_fancy_zones_ui_state.py`, `tests/test_pie_menu.py`, `tests/test_second_wave.py` (+3); GUI ← `tests/test_sound_event_icons.py`, `tests/test_t1461_control_rendering.py`, `tests/test_themes.py` (+2); PERSISTENCE ← `tests/test_second_wave.py`, `tests/test_state.py`, `tests_smoke/test_app_smoke.py`; RECOVERY ← `tests/test_pie_menu.py`, `tests/test_second_wave.py`, `tests/test_state.py` (+1); WINDOWS ← `tests/test_hotkey_filter.py`
 - **DOMAIN_16_PROFILE_SWITCHING**: UNIT ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_audit_core_t1432.py`, `tests/test_audit_overflow.py` (+39); GUI ← `tests/test_app_filter_lifetime_t1296.py`, `tests/test_audit_silo_history_routing_perf_t1432.py`, `tests/test_audit_sync_fresh_cas_t1435.py` (+54); PERSISTENCE ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_audit_core_t1432.py`, `tests/test_audit_overflow.py` (+38); RECOVERY ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_db_durability.py`, `tests/test_editor_paste_shortcut_t1269.py` (+23)
 - **DOMAIN_17_SNIPPET_LIFECYCLE**: UNIT ← `tests/test_audit_recovery_journal_t1437.py`, `tests/test_core001_trash.py`, `tests/test_core002_retirement_journal.py`; GUI ← `tests/test_mt9141_audit.py`, `tests/test_new_empty_silos.py`, `tests/test_silo_color_gesture.py` (+10); PERSISTENCE ← `tests/test_core002_retirement_journal.py`, `tests/test_mt9141_audit.py`, `tests/test_user_regressions_20260905.py` (+2); RECOVERY ← `tests/test_audit_recovery_journal_t1437.py`, `tests/test_core002_retirement_journal.py`, `tests/test_mt9141_audit.py` (+2)
-- **DOMAIN_18_USAGE_LIMITS**: UNIT ← `tests/test_antigravity_multi_account_consumer_t1402.py`, `tests/test_audit_13_layer_t1427.py`, `tests/test_claude_reset_timezone_t1378.py` (+24); GUI ← `tests/test_codex_identity_pinning.py`, `tests/test_codex_multi_pool_ui_t1274.py`, `tests/test_freebuff_compact_prices.py` (+31); PERSISTENCE ← `tests/test_antigravity_multi_account_consumer_t1402.py`, `tests/test_audit_13_layer_t1427.py`, `tests/test_codex_identity_pinning.py` (+27); RECOVERY ← `tests/test_limit_alert_copy.py`, `tests/test_modal_dialog_retirement_tnext.py`, `tests/test_reset_offers_t1360.py` (+8)
+- **DOMAIN_18_USAGE_LIMITS**: UNIT ← `tests/test_antigravity_multi_account_consumer_t1402.py`, `tests/test_audit_13_layer_t1427.py`, `tests/test_claude_reset_timezone_t1378.py` (+25); GUI ← `tests/test_codex_identity_pinning.py`, `tests/test_codex_multi_pool_ui_t1274.py`, `tests/test_freebuff_compact_prices.py` (+31); PERSISTENCE ← `tests/test_antigravity_multi_account_consumer_t1402.py`, `tests/test_audit_13_layer_t1427.py`, `tests/test_codex_identity_pinning.py` (+28); RECOVERY ← `tests/test_limit_alert_copy.py`, `tests/test_modal_dialog_retirement_tnext.py`, `tests/test_reset_offers_t1360.py` (+8)
 - **DOMAIN_19_SYSTRAY_IPC**: UNIT ← `tests/test_audit_core_tickets.py`, `tests/test_ipc_grace.py`, `tests/test_ipc_server.py` (+4); GUI ← `tests/test_src101_w2002_ipc_event_loop.py`, `tests_smoke/test_app_smoke.py`, `tests_smoke/test_pre_exit_finalization_ownership.py`; PERSISTENCE ← `tests/test_instance_lock.py`, `tests/test_t1504_owner_record_read_silence.py`, `tests_smoke/test_app_smoke.py` (+2); RECOVERY ← `tests/test_ipc_server.py`, `tests_smoke/test_app_smoke.py`; WINDOWS ← `tests/test_instance_lock.py`
 - **DOMAIN_20_WATCHER**: GUI ← `tests/test_clipboard_interop_t1269.py`, `tests_smoke/test_altw_upward.py`, `tests_smoke/test_ctrlw_preview.py`
 - **DOMAIN_21_INTERNATIONALIZATION**: UNIT ← `tests/test_i18n_contract_t1353.py`, `tests/test_i18n_key_inventory.py`, `tests/test_limit_ui_tr_keys_t1379.py` (+3); GUI ← `tests/test_shortcut_hover_t1410.py`, `tests/test_silo_chest_viewer.py`, `tests/test_t1312_release_ux_repairs.py` (+4); PERSISTENCE ← `tests/test_i18n_key_inventory.py`, `tests/test_limit_ui_tr_keys_t1379.py`, `tests/test_second_wave.py` (+4); RECOVERY ← `tests/test_second_wave.py`, `tests/test_shortcut_hover_t1410.py`, `tests/test_table_ux_t1462.py` (+1)
