@@ -18,15 +18,10 @@
 # Overlay/Stack/Replace, voice phrases and ambience could not work at all.
 # nuitka-project: --include-module=PyQt6.QtMultimedia
 # nuitka-project: --include-data-dir=src/fastprompter/sound=sound
-# T-1238-E1.4 ASSET SAFETY: the private _vault/ namespace holds GoldSrc
-# VOX/FVOX voice material that belongs to its owners, not to this release.
-# It stays fully usable on the developer's own machine and is IMPORTED by
-# each user from their own copy of the game (Audio Hub -> Voice -> Import
-# GoldSrc / AMX...), but it is never bundled into a build.
-# nuitka-project: --noinclude-data-files=sound/_vault/vox/*
-# nuitka-project: --noinclude-data-files=sound/_vault/fvox/*
-# nuitka-project: --noinclude-data-files=sound/_vault/gman/*
-# nuitka-project: --noinclude-data-files=sound/_vault/amx_ultimate/*
+# v0.8.74: the operator explicitly authorized redistribution of the complete
+# local sound library, including the _vault/ GoldSrc VOX/FVOX packs, in the
+# public EXE. The four former --noinclude-data-files exclusions were removed
+# so the whole sound tree rides along in the build.
 # nuitka-project: --include-data-dir=src/fastprompter/presets=presets
 # nuitka-project: --include-data-dir=_res=_res
 

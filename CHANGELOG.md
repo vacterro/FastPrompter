@@ -17,6 +17,13 @@
   mechanism ledger was regenerated from an authentic full test run.
 - **Shared LIMISAW snapshot:** CommandCode and OpenCode Go accounts are read
   from the shared snapshot published by LIMISAW, with no second polling loop.
+- **Full local sound library restored:** at the operator's explicit direction
+  the earlier "original synthesis only" policy was reversed. The complete
+  1295-file set, including the `_vault/` GoldSrc VOX/FVOX and cs_style packs,
+  is bundled into the EXE again, replacing the placeholder cues.
+- **AI Limit Settings crash fixed:** a late usage-limit refresh during dialog
+  teardown no longer raises "wrapped C/C++ object of type QScrollArea has been
+  deleted".
 
 ## 0.8.72 - 2026-10-04
 

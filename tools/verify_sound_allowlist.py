@@ -60,10 +60,13 @@ def shipped_wavs(root: Path) -> list[str]:
     sounds = root / SOUNDS_REL
     if not sounds.is_dir():
         raise SystemExit(f"shipped sound folder missing: {sounds}")
+    # Cover every audio suffix, not just .wav: the artifact gate and Nuitka
+    # both pick up .mp3/.ogg/... too, so the allowlist must name them as well
+    # or a shipped file would be reported as "manifested but absent".
     return sorted(
         path.relative_to(sounds).as_posix().lower()
         for path in sounds.rglob("*")
-        if path.is_file() and path.suffix.lower() == ".wav"
+        if path.is_file() and path.suffix.lower() in AUDIO_SUFFIXES
     )
 
 

@@ -1207,3 +1207,22 @@ def good_method(self):
 """
     violations = verify_modal_exec_retirement(ast.parse(code))
     assert violations == []
+
+
+def test_limits_updated_survives_deleted_alert_scroll(host):
+    """A late _result_ready must not crash on a torn-down QScrollArea.
+
+    Regression: _limits_updated -> _rebuild_alert_rows called
+    alert_scroll.takeWidget() after teardown had already deleted the C++
+    scroll area, raising "wrapped C/C++ object of type QScrollArea has been
+    deleted" on the GUI thread.
+    """
+    dialog = LimitSettingsDialog(host)
+    scroll = dialog.alert_scroll
+    sip.delete(scroll)
+    _APP.processEvents()
+    assert sip.isdeleted(scroll) is True
+    # Must be a no-op rather than a RuntimeError.
+    dialog._limits_updated()
+    dialog._rebuild_alert_rows()
+    retire(dialog)

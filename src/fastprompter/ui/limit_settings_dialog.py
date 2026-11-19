@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
@@ -293,6 +294,12 @@ class LimitSettingsDialog(QDialog):
         self._refresh_overview_status()
 
     def _limits_updated(self):
+        # A queued/late _result_ready can arrive while teardown has already
+        # deleted the dialog's C++ children (the QScrollArea below was seen
+        # deleted while account_selector still lived). Touching a deleted
+        # wrapper raises RuntimeError on the GUI thread, so bail out here.
+        if sip.isdeleted(self):
+            return
         self.account_selector.sync()
         self._rebuild_alert_rows()
         self._refresh_claude_status()
@@ -300,7 +307,7 @@ class LimitSettingsDialog(QDialog):
         self._refresh_zcode_status()
         self._refresh_freebuff_status()
         overview = getattr(self, "overview", None)
-        if overview is not None:
+        if overview is not None and not sip.isdeleted(overview):
             overview.refresh()
         self._refresh_overview_status()
         if hasattr(self, "btn_refresh"):
@@ -989,7 +996,10 @@ class LimitSettingsDialog(QDialog):
         ]
 
     def _rebuild_alert_rows(self):
-        old = self.alert_scroll.takeWidget() if hasattr(self, "alert_scroll") else None
+        scroll = getattr(self, "alert_scroll", None)
+        if scroll is None or sip.isdeleted(self) or sip.isdeleted(scroll):
+            return
+        old = scroll.takeWidget()
         if old is not None:
             old.deleteLater()
         self._suppress_preview = True

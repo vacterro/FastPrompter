@@ -1,13 +1,14 @@
-"""T-1238-E1.4: what the packaged build must and must not contain.
+"""T-1238-E1.4: what the packaged build must contain.
 
-Two real defects this suite pins:
+Real defects this suite pins:
 
 * the build excluded ``PyQt6.QtMultimedia`` outright, so every shipped EXE
   fell back to the degraded NullTransport and NOTHING in the Audio Hub could
   actually mix, loop, fade or stop a channel;
-* the private ``_vault/`` namespace now holds GoldSrc VOX/FVOX voice
-  material, which belongs to its owners and must never ride along in a
-  build -- users import it from their own copy of the game.
+* v0.8.74: the operator explicitly authorized the complete local sound
+  library -- including the ``_vault/`` GoldSrc VOX/FVOX packs -- in the public
+  EXE. The former exclusion policy was reversed at that direction, so the
+  whole sound tree must ride along in the build.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ PROBLIP_WAVS = (
     "blip_soft_bell.wav", "blip_bonk.wav", "blip_space.wav",
 )
 
-#: Packs that must NEVER be bundled automatically.
+#: Vault packs now bundled at the operator's explicit direction (v0.8.74).
 PROPRIETARY_VAULT_PACKS = ("vox", "fvox", "gman", "amx_ultimate")
 
 
@@ -106,13 +107,20 @@ class TestMultimediaBackend:
         assert transport.capability_mixing
 
 
-class TestProprietaryAssetSafety:
+class TestOperatorAuthorizedSoundPackaging:
     @pytest.mark.parametrize("pack", PROPRIETARY_VAULT_PACKS)
-    def test_goldsrc_packs_are_excluded_from_the_build(self, pack):
+    def test_goldsrc_packs_are_included_in_the_build(self, pack):
+        """v0.8.74: operator authorized the full local library in the EXE.
+
+        The former asset-safety policy excluded these packs; that decision was
+        reversed at the operator's explicit direction. No --noinclude-data-files
+        exclusion may reappear for any _vault pack.
+        """
         options = _nuitka_options()
-        assert any(o == f"--noinclude-data-files=sound/_vault/{pack}/*"
-                   for o in options), (
-            f"_vault/{pack}/ would be bundled into the release")
+        excluded = [o for o in options
+                    if o.startswith("--noinclude-data-files=sound/_vault/")]
+        assert not excluded, (
+            f"_vault/{pack}/ is excluded from the release again: " + ", ".join(excluded))
 
     def test_no_imported_pack_lives_outside_the_vault(self):
         """Imported game audio must stay in _vault/ or the user data dir."""

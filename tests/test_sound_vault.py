@@ -64,15 +64,15 @@ class TestDiscovery:
         _wav(tmp_path / "only.wav")
         assert discover_vault_files(str(tmp_path), force=True) == []
 
-    def test_the_shipped_library_ships_no_vault(self):
-        # The bulk raw material that used to live in _vault/ (GoldSrc vox/fvox
-        # fragments and the cs_style pack) was unlicensed third-party audio and
-        # is no longer shipped.  The namespace mechanism stays supported for a
-        # user's own private pack; the shipped library must simply be clean.
+    def test_the_shipped_library_carries_the_authorized_vault(self):
+        # v0.8.74: the operator explicitly authorized the full local sound
+        # library in the public EXE, including the _vault/ GoldSrc vox/fvox
+        # and cs_style packs. The vault must be present and resolvable, but it
+        # stays OUT of the everyday picker so the sound combos remain usable.
         packaged = get_resource_path("sound")
         everyday = discover_sound_files(packaged, force=True)
         vault = discover_vault_files(packaged, force=True)
-        assert vault == []
+        assert vault, "the operator-authorized vault must ship in the EXE"
         assert not [ref for ref in everyday if ref.startswith("_")]
 
 
