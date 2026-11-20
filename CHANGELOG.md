@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.75 - 2026-11-20
+
+- **Ambience page teardown crash fixed:** a late controller state change no
+  longer calls into a page whose QLabel has already been deleted ("wrapped
+  C/C++ object of type QLabel has been deleted"). The signal now uses a weak
+  callback and the refresh path guards deleted C++ wrappers.
+
 ## 0.8.74 - 2026-11-18
 
 - **File Container Chest persistence repair:** the per-silo chest slot order is
