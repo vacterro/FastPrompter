@@ -2,10 +2,10 @@
  "schema_version": 3,
  "audit_campaign": "TOTAL MECHANISM AUDIT AND AUTONOMOUS REPAIR",
  "baseline_version": "0.8.72",
- "source_identity": "ebb6852b84dbb0e1b3cb599c2c9da90879fec5a5",
+ "source_identity": "bf95715bd80700f216e6473f4f6488baaa03ef72",
  "record": {
   "path": ".saipen/evidence/t1439/run.xml",
-  "sha256": "a63d3f13587221e09471fed22acceee1972cf77fb1b8734c08e9aa18fae2666e",
+  "sha256": "baa351de1564d7bfcb3cc5e842c4de699f2aff7598d34742fc817c717669955b",
   "module_sha256": {
    "src/fastprompter/core/ambience_engine.py": "804d06ac83f2d3238ec2ed33f41972cc5eb925235b7278485d3d06f8a1f86897",
    "src/fastprompter/core/ambience_store.py": "90328316daa76754a1399a2b1a4a5719a8f59544baf0bbaf242bbad6f3bf67db",
@@ -104,7 +104,7 @@
    "src/fastprompter/sound/problip/catalog.py": "9e3d3c68decea4d5d1bcead57702de50383198ca911fd304a6119ab7d2c34433",
    "src/fastprompter/theme/themes.py": "d4fa62e7bf2b801f4d07f14e1927084697c8ded62b697d1809b58ec903841185",
    "src/fastprompter/ui/ambience_controller.py": "bce737a204f038f976f05c28bb7596fb89693402f64fb80ac587bd36c603f7c1",
-   "src/fastprompter/ui/audio_hub_pages.py": "88ffa65d8548bc49611d583ad5153c4da7c5748f3b79293530c8ab72af41faca",
+   "src/fastprompter/ui/audio_hub_pages.py": "53d24ccdd37dd0bd22567932fb6a2f119b9931663a56236ed22930db438bec95",
    "src/fastprompter/ui/backup_dialog.py": "844132d49ebe7cd12712292c8d898cbbbf7efaaf733f56d71feee13dc377374c",
    "src/fastprompter/ui/clipboard_watch.py": "8d2a7673d9877664bcecf6db66519a9a57088ad7e80f5ab17e9ca3d9572ecdad",
    "src/fastprompter/ui/cursor_theme.py": "2ea0e871dadb79d4809493e6017056c583fdf15cad16294ec37593fc2c630194",
@@ -2140,7 +2140,7 @@
     "tests/test_t1455_computalk1_default.py",
     "tests/test_t1475_ambience_hub_failure.py"
    ],
-   "test_count": 314,
+   "test_count": 315,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -2181,6 +2181,7 @@
     ],
     "RECOVERY": [
      "tests/test_ambience_playback_path.py",
+     "tests/test_ambience_workspace_ux.py",
      "tests/test_t1444_audit18_red_controls.py"
     ],
     "WINDOWS": []
@@ -2447,7 +2448,7 @@
     "tests_smoke/_smoke_support.py",
     "tests_smoke/test_app_smoke.py"
    ],
-   "test_count": 1892,
+   "test_count": 1893,
    "status": "VERIFIED",
    "defects": [],
    "next_action": null,
@@ -2568,6 +2569,7 @@
     ],
     "RECOVERY": [
      "tests/test_ambience_playback_path.py",
+     "tests/test_ambience_workspace_ux.py",
      "tests/test_appearance_sounds_t1245.py",
      "tests/test_audio_cache_race.py",
      "tests/test_audio_hub_playback.py",
@@ -4123,7 +4125,7 @@
  "summary": {
   "total_domains": 22,
   "total_test_files": 353,
-  "total_test_count": 6188,
+  "total_test_count": 6189,
   "by_status": {
    "VERIFIED": 22
   },

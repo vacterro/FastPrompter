@@ -13,7 +13,7 @@ fails when this document and the tree disagree.
 `src/fastprompter/` — PyQt6 desktop application, SQLite persistence,
 QThread/QThreadPool workers, Windows named mutex single-instance.
 
-Commit: `ebb6852b84dbb0e1b3cb599c2c9da90879fec5a5`
+Commit: `bf95715bd80700f216e6473f4f6488baaa03ef72`
 
 ## Method
 
@@ -60,10 +60,10 @@ gate can lower them, never invent them.
 | 08 | DOMAIN_08_SNIPPETS | 3 | 17 | 748 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 09 | DOMAIN_09_BUNDLES | 5 | 28 | 980 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 10 | DOMAIN_10_COVERAGE_BUNDLE | 1 | 8 | 173 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
-| 11 | DOMAIN_11_AMBIENCE | 3 | 18 | 314 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
+| 11 | DOMAIN_11_AMBIENCE | 3 | 18 | 315 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 12 | DOMAIN_12_VOICE | 3 | 5 | 100 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 13 | DOMAIN_13_PROB_LIP | 3 | 16 | 219 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
-| 14 | DOMAIN_14_AUDIO_SOUND | 9 | 83 | 1892 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
+| 14 | DOMAIN_14_AUDIO_SOUND | 9 | 83 | 1893 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 15 | DOMAIN_15_HOTKEYS_THEMES | 3 | 12 | 821 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 16 | DOMAIN_16_PROFILE_SWITCHING | 3 | 99 | 2157 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 17 | DOMAIN_17_SNIPPET_LIFECYCLE | 2 | 16 | 735 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
@@ -73,7 +73,7 @@ gate can lower them, never invent them.
 | 21 | DOMAIN_21_INTERNATIONALIZATION | 2 | 13 | 850 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 | 22 | DOMAIN_22_BACKUPS_RECOVERY | 5 | 105 | 2247 | VERIFIED | NOT_EXERCISED | NOT_EXERCISED |
 
-**Domains: 22. Test files: 353. Collected tests: 6188.**
+**Domains: 22. Test files: 353. Collected tests: 6189.**
 
 Status legend: `VERIFIED` every module on disk with an importing test, a
 non-zero collected count, and zero failing cases in the recorded run;
@@ -146,10 +146,10 @@ judged rather than trusted.
 - **DOMAIN_08_SNIPPETS**: UNIT ← `tests/test_audit_recovery_journal_t1437.py`, `tests/test_core001_trash.py`, `tests/test_core002_retirement_journal.py`; GUI ← `tests/test_mt9141_audit.py`, `tests/test_new_empty_silos.py`, `tests/test_silo_color_gesture.py` (+11); PERSISTENCE ← `tests/test_core002_retirement_journal.py`, `tests/test_mt9141_audit.py`, `tests/test_user_regressions_20260905.py` (+2); RECOVERY ← `tests/test_audit_recovery_journal_t1437.py`, `tests/test_core002_retirement_journal.py`, `tests/test_mt9141_audit.py` (+2)
 - **DOMAIN_09_BUNDLES**: UNIT ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_audit_bundle_relref_t1437.py`, `tests/test_audit_bundle_retention_t1437.py` (+19); GUI ← `tests/test_audit_coverage_perf_t1432.py`, `tests/test_silo_bundle_clipboard_t1409.py`, `tests/test_silo_bundle_dialog_t1409.py` (+3); PERSISTENCE ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_audit_bundle_retention_t1437.py`, `tests/test_audit_bundle_stability_t1437.py` (+17); RECOVERY ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_silo_bundle_artifact_id_t1433.py`, `tests/test_silo_bundle_resilience_t1416.py` (+4)
 - **DOMAIN_10_COVERAGE_BUNDLE**: UNIT ← `tests/test_audit_core_t1432.py`, `tests/test_audit_selection_attribution_t1435.py`, `tests/test_silo_coverage_t1415.py` (+2); GUI ← `tests/test_audit_coverage_perf_t1432.py`, `tests/test_silo_coverage_ui_t1415.py`, `tests/test_t1438_src135_red_controls.py`; PERSISTENCE ← `tests/test_audit_core_t1432.py`, `tests/test_silo_digest_and_coverage_gates_t1425.py`, `tests/test_t1438_src135_red_controls.py` (+1); RECOVERY ← `tests/test_silo_coverage_ui_t1415.py`, `tests/test_t1438_src135_red_controls.py`, `tests/test_t1444_audit18_red_controls.py`
-- **DOMAIN_11_AMBIENCE**: UNIT ← `tests/test_ambience_engine.py`, `tests/test_ambience_playback_path.py`, `tests/test_master_mute_t1244.py` (+7); GUI ← `tests/test_ambience_rule_reconcile.py`, `tests/test_ambience_runtime.py`, `tests/test_ambience_weather_ownership.py` (+5); PERSISTENCE ← `tests/test_t1437_personal_audio_red_controls.py`, `tests/test_t1444_audit18_red_controls.py`, `tests/test_t1455_computalk1_default.py`; RECOVERY ← `tests/test_ambience_playback_path.py`, `tests/test_t1444_audit18_red_controls.py`
+- **DOMAIN_11_AMBIENCE**: UNIT ← `tests/test_ambience_engine.py`, `tests/test_ambience_playback_path.py`, `tests/test_master_mute_t1244.py` (+7); GUI ← `tests/test_ambience_rule_reconcile.py`, `tests/test_ambience_runtime.py`, `tests/test_ambience_weather_ownership.py` (+5); PERSISTENCE ← `tests/test_t1437_personal_audio_red_controls.py`, `tests/test_t1444_audit18_red_controls.py`, `tests/test_t1455_computalk1_default.py`; RECOVERY ← `tests/test_ambience_playback_path.py`, `tests/test_ambience_workspace_ux.py`, `tests/test_t1444_audit18_red_controls.py`
 - **DOMAIN_12_VOICE**: UNIT ← `tests/test_t1443_data_root_isolation.py`, `tests/test_voice_engine.py`; GUI ← `tests/test_audio_silo_isolation.py`, `tests/test_t1438_src135_red_controls.py`, `tests/test_voice_runtime.py`; PERSISTENCE ← `tests/test_t1438_src135_red_controls.py`, `tests/test_voice_runtime.py`; RECOVERY ← `tests/test_t1438_src135_red_controls.py`
 - **DOMAIN_13_PROB_LIP**: UNIT ← `tests/test_audio_source_invalidation.py`, `tests/test_master_mute_facade_t1244.py`, `tests/test_problip_core.py` (+4); GUI ← `tests/test_audio_engine_settings.py`, `tests/test_audio_packaging.py`, `tests/test_audio_pcm_transport.py` (+6); PERSISTENCE ← `tests/test_audio_packaging.py`, `tests/test_problip_store.py`; RECOVERY ← `tests/test_problip_settings.py`
-- **DOMAIN_14_AUDIO_SOUND**: UNIT ← `tests/test_addon_sounds_t1457.py`, `tests/test_ambience_playback_path.py`, `tests/test_audio_cache_race.py` (+39); GUI ← `tests/test_ambience_runtime.py`, `tests/test_ambience_workspace_ux.py`, `tests/test_appearance_sounds_t1245.py` (+38); PERSISTENCE ← `tests/test_audio_packaging.py`, `tests/test_audit_soundpack_bounds_t1432.py`, `tests/test_fastprompter_night_upgrade.py` (+15); RECOVERY ← `tests/test_ambience_playback_path.py`, `tests/test_appearance_sounds_t1245.py`, `tests/test_audio_cache_race.py` (+14)
+- **DOMAIN_14_AUDIO_SOUND**: UNIT ← `tests/test_addon_sounds_t1457.py`, `tests/test_ambience_playback_path.py`, `tests/test_audio_cache_race.py` (+39); GUI ← `tests/test_ambience_runtime.py`, `tests/test_ambience_workspace_ux.py`, `tests/test_appearance_sounds_t1245.py` (+38); PERSISTENCE ← `tests/test_audio_packaging.py`, `tests/test_audit_soundpack_bounds_t1432.py`, `tests/test_fastprompter_night_upgrade.py` (+15); RECOVERY ← `tests/test_ambience_playback_path.py`, `tests/test_ambience_workspace_ux.py`, `tests/test_appearance_sounds_t1245.py` (+15)
 - **DOMAIN_15_HOTKEYS_THEMES**: UNIT ← `tests/test_fancy_zones_ui_state.py`, `tests/test_pie_menu.py`, `tests/test_second_wave.py` (+3); GUI ← `tests/test_sound_event_icons.py`, `tests/test_t1461_control_rendering.py`, `tests/test_themes.py` (+2); PERSISTENCE ← `tests/test_second_wave.py`, `tests/test_state.py`, `tests_smoke/test_app_smoke.py`; RECOVERY ← `tests/test_pie_menu.py`, `tests/test_second_wave.py`, `tests/test_state.py` (+1); WINDOWS ← `tests/test_hotkey_filter.py`
 - **DOMAIN_16_PROFILE_SWITCHING**: UNIT ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_audit_core_t1432.py`, `tests/test_audit_overflow.py` (+39); GUI ← `tests/test_app_filter_lifetime_t1296.py`, `tests/test_audit_silo_history_routing_perf_t1432.py`, `tests/test_audit_sync_fresh_cas_t1435.py` (+54); PERSISTENCE ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_audit_core_t1432.py`, `tests/test_audit_overflow.py` (+38); RECOVERY ← `tests/test_audit_bundle_meta_tx_t1436.py`, `tests/test_db_durability.py`, `tests/test_editor_paste_shortcut_t1269.py` (+23)
 - **DOMAIN_17_SNIPPET_LIFECYCLE**: UNIT ← `tests/test_audit_recovery_journal_t1437.py`, `tests/test_core001_trash.py`, `tests/test_core002_retirement_journal.py`; GUI ← `tests/test_mt9141_audit.py`, `tests/test_new_empty_silos.py`, `tests/test_silo_color_gesture.py` (+10); PERSISTENCE ← `tests/test_core002_retirement_journal.py`, `tests/test_mt9141_audit.py`, `tests/test_user_regressions_20260905.py` (+2); RECOVERY ← `tests/test_audit_recovery_journal_t1437.py`, `tests/test_core002_retirement_journal.py`, `tests/test_mt9141_audit.py` (+2)
