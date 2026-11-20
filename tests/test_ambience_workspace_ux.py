@@ -507,3 +507,24 @@ class TestAmbienceActions:
         assert expected > 1
         assert len(controller.rules()) == expected
 
+
+
+def test_state_change_after_page_teardown_does_not_crash(workspace, monkeypatch):
+    """A late controller signal must not touch deleted C++ children.
+
+    Regression: stateChanged -> _refresh_state set text on lbl_state after
+    teardown had deleted that QLabel, raising "wrapped C/C++ object of type
+    QLabel has been deleted" on the GUI thread. Simulate a deleted wrapper
+    without an actual sip.delete (which crashes this test harness at teardown).
+    """
+    page = workspace["page"]
+    controller = workspace["controller"]
+
+    # Both the signal callback (weak_qt_callback) and the explicit guard in
+    # _refresh_state consult sip.isdeleted; make it report the owner is gone.
+    monkeypatch.setattr("fastprompter.ui.audio_hub_pages.sip.isdeleted",
+                        lambda obj: True)
+    # Must be no-ops rather than a RuntimeError.
+    controller.stateChanged.emit("running")
+    _APP.processEvents()
+    page._refresh_state()

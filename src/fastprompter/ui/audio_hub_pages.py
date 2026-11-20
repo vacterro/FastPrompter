@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import time
 
+from PyQt6 import sip
 from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -61,6 +62,7 @@ from fastprompter.core.sound_presets import (
     open_preset_pack_path,
 )
 from fastprompter.core.translations import tr
+from fastprompter.ui.qt_lifetime import weak_qt_callback
 from fastprompter.core.voice_engine import COUNTDOWN_THRESHOLDS, scan_goldsrc_folder
 from fastprompter.core.voice_store import (
     PACK_TYPES,
@@ -1152,7 +1154,7 @@ class AmbiencePage(QWidget):
         if self.controller is not None:
             try:
                 self.controller.stateChanged.connect(
-                    lambda _state: self._refresh_state())
+                    weak_qt_callback(self, lambda w: w._refresh_state()))
             except (AttributeError, TypeError):
                 pass
 
@@ -1792,6 +1794,11 @@ class AmbiencePage(QWidget):
         return self.controller.state() != "stopped"
 
     def _refresh_state(self) -> None:
+        # A controller stateChanged can be emitted during teardown, after this
+        # page's C++ children (lbl_state below) have been deleted. Touching a
+        # deleted QLabel wrapper raises RuntimeError on the GUI thread.
+        if sip.isdeleted(self):
+            return
         if self.controller is None:
             return
         state = self.controller.state()
